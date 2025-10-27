@@ -1,0 +1,276 @@
+# Decision Analyzer
+
+AI-powered system for analyzing Architectural Decision Records (ADRs) using multiple personas and vector-based retrieval.
+
+## Features
+
+- **Multi-Persona Analysis**: Analyze ADRs from different viewpoints (engineer, customer support, philosopher, etc.)
+- **Vector Storage**: Store and retrieve ADRs using LightRAG for semantic search
+- **LLM Integration**: Connect to llama-cpp servers for AI-powered analysis
+- **ADR Generation**: Create new ADRs based on context and related decisions
+- **Conflict Detection**: Identify conflicts and continuity issues across ADRs
+- **Periodic Re-analysis**: Automated web search and re-assessment of decisions
+- **Web UI**: Modern React interface for ADR management and analysis
+- **Queue System**: Async processing with Redis and Celery for bulk operations
+
+## Quick Start with Docker
+
+1. Clone the repository:
+```bash
+git clone <repository-url>
+cd decision-analyzer
+```
+
+2. Start all services:
+```bash
+docker-compose up --build
+```
+
+3. Open your browser to `http://localhost:3000`
+
+The system includes:
+- **Frontend**: React/Next.js UI on port 3000
+- **Backend API**: FastAPI server on port 8000
+- **Redis**: Queue system on port 6379
+- **Celery Worker**: Background task processing
+
+## Development Setup
+
+### Backend Setup
+
+1. Install Python dependencies:
+```bash
+pip install -e .
+```
+
+2. Start Redis (if not using Docker):
+```bash
+redis-server
+```
+
+3. Run the backend API:
+```bash
+./scripts/run_backend.sh
+```
+
+### Frontend Setup
+
+1. Install Node.js dependencies:
+```bash
+cd frontend
+npm install
+```
+
+2. Start the development server:
+```bash
+npm run dev
+```
+
+3. Open `http://localhost:3000`
+
+### Manual Configuration
+
+Copy and edit environment files:
+```bash
+cp .env.example .env
+cp frontend/.env.local.example frontend/.env.local
+```
+
+## API Documentation
+
+When running, visit `http://localhost:8000/docs` for interactive API documentation.
+
+### Key Endpoints
+
+- `GET /api/v1/adrs/` - List all ADRs
+- `POST /api/v1/analysis/analyze` - Queue ADR analysis
+- `POST /api/v1/generation/generate` - Queue ADR generation
+- `GET /api/v1/analysis/task/{task_id}` - Check analysis task status
+- `GET /api/v1/generation/task/{task_id}` - Check generation task status
+
+## Architecture
+
+```
+┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
+│   React UI      │────│   FastAPI       │────│   Celery        │
+│   (Port 3000)   │    │   Backend       │    │   Workers       │
+└─────────────────┘    │   (Port 8000)   │    └─────────────────┘
+                       └─────────────────┘             │
+                              │                       │
+                              ▼                       ▼
+                       ┌─────────────────┐    ┌─────────────────┐
+                       │   Redis Queue   │    │   Llama.cpp     │
+                       │   (Port 6379)   │    │   Server         │
+                       └─────────────────┘    │   (Port 11434)   │
+                                              └─────────────────┘
+                                                       │
+                                                       ▼
+                                              ┌─────────────────┐
+                                              │   LightRAG      │
+                                              │   Vector DB     │
+                                              └─────────────────┘
+```
+
+## Usage
+
+### Web Interface
+
+1. **View ADRs**: Browse all ADRs in a card-based layout
+2. **Analyze ADR**: Click "Analyze" to queue AI analysis with multiple personas
+3. **Generate ADR**: Use the "Generate New ADR" button to create ADRs from prompts
+4. **Track Progress**: Monitor queued tasks with real-time status updates
+
+### Programmatic Usage
+
+```python
+from decision_analyzer import setup_logging, get_settings, LlamaCppClient, LightRAGClient
+
+# Setup logging
+setup_logging()
+
+# Get configuration
+settings = get_settings()
+
+# Use clients
+async with LlamaCppClient() as llama:
+    response = await llama.generate("Analyze this decision...")
+
+async with LightRAGClient() as lightrag:
+    await lightrag.store_document("adr-001", "ADR content here")
+```
+
+## Testing
+
+### Quick Start
+
+Run all tests (backend + frontend):
+```bash
+make test
+```
+
+### Backend Tests
+
+```bash
+make test-backend              # All backend tests
+make test-backend-unit         # Unit tests only
+make test-backend-integration  # Integration tests only
+make test-coverage-backend     # With coverage report
+```
+
+### Frontend Tests
+
+First, install frontend test dependencies:
+```bash
+make install-frontend-deps
+```
+
+Then run tests:
+```bash
+make test-frontend             # Run all frontend tests
+make test-coverage-frontend    # With coverage report
+```
+
+### Test Structure
+
+**Backend**: Tests are co-located with source code in `tests/` subdirectories
+```
+src/adr_generation.py → src/tests/test_adr_generation.py
+```
+
+**Frontend**: Tests live alongside source files with `.test.tsx` extension
+```
+components/ADRCard.tsx → components/ADRCard.test.tsx
+```
+
+**Integration Tests**: Located in `tests/integration/`
+
+See [docs/TESTING.md](docs/TESTING.md) for comprehensive testing guidelines.
+
+## Development
+
+### Code Quality
+
+```bash
+# Format code
+black src/ tests/
+
+# Sort imports
+isort src/ tests/
+
+# Type checking
+mypy src/
+
+# Linting
+ruff check src/ tests/
+```
+
+## Project Structure
+
+```
+decision-analyzer/
+├── src/
+│   ├── __init__.py
+│   ├── config.py          # Configuration management
+│   ├── logging.py         # Logging setup
+│   ├── models.py          # Data models (ADR, AnalysisResult, etc.)
+│   ├── llama_client.py    # llama-cpp server client
+│   └── lightrag_client.py # LightRAG server client
+├── tests/
+│   └── test_infrastructure.py
+├── docs/
+├── pyproject.toml
+├── README.md
+└── .env.example
+```
+
+## Configuration
+
+The application uses the following environment variables:
+
+### LLM Configuration
+- `LLAMA_CPP_URL`: Primary URL of the llama-cpp server (required, default: http://localhost:11434)
+- `LLAMA_CPP_URL_1`: Secondary llama-cpp server for parallel processing (optional)
+- `LLAMA_CPP_URL_EMBEDDING`: Dedicated server for embeddings (optional)
+
+See [docs/PARALLEL_PROCESSING.md](docs/PARALLEL_PROCESSING.md) for details on multi-backend configuration.
+
+### LAN Discovery Configuration
+Enable access from other machines on your local network:
+
+- `ENABLE_LAN_DISCOVERY`: Set to `true` to allow access from other machines (default: false)
+- `HOST_IP`: Your machine's IP address (e.g., `192.168.0.53`)
+
+**Example for LAN access:**
+```bash
+# In your .env file or docker-compose environment
+ENABLE_LAN_DISCOVERY=true
+HOST_IP=192.168.0.53
+```
+
+When enabled:
+- Frontend dynamically discovers the backend URL from the API
+- CORS allows all origins (instead of just localhost)
+- Access the UI from any device: `http://192.168.0.53:3003`
+- The frontend will automatically use `http://192.168.0.53:8000` for API calls
+
+See [docs/LAN_DISCOVERY.md](docs/LAN_DISCOVERY.md) for complete setup guide and troubleshooting.
+
+**Security Note**: Only enable LAN discovery on trusted networks. This feature opens your backend to all devices on the network.
+
+### Other Configuration
+- `LIGHTRAG_URL`: URL of the LightRAG server (default: http://192.168.0.192:9621)
+- `LOG_LEVEL`: Logging level (default: INFO)
+- `LOG_FORMAT`: Log format, either 'json' or 'text' (default: json)
+
+## Contributing
+
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes
+4. Add tests
+5. Run the test suite
+6. Submit a pull request
+
+## License
+
+[Add your license here]

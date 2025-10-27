@@ -1,0 +1,168 @@
+import { ADR, ADRListResponse, AnalyzeADRRequest, GenerateADRRequest, TaskResponse, TaskStatus, Persona } from '@/types/api';
+
+const DEFAULT_API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+
+class ApiClient {
+  private apiBaseUrl: string = DEFAULT_API_BASE_URL;
+  private configFetched: boolean = false;
+
+  /**
+   * Fetch the API configuration from the backend to support LAN discovery.
+   * This allows the frontend to dynamically discover the backend URL when
+   * running on different machines in the same network.
+   * 
+   * Strategy:
+   * 1. If NEXT_PUBLIC_API_URL is explicitly set to a network IP, use it
+   * 2. Otherwise, infer the backend URL from the current window location
+   *    (same host as frontend, but port 8000)
+   * 3. Fetch config from that URL to get the actual backend URL
+   * 4. Fall back to localhost if all else fails
+   */
+  /**
+   * Reset config state for testing purposes
+   * @internal For testing only
+   */
+  _resetConfigForTesting(): void {
+    this.configFetched = false;
+    this.apiBaseUrl = DEFAULT_API_BASE_URL;
+  }
+
+  /**
+   * Set test mode to bypass config fetching
+   * @internal For testing only
+   */
+  _setTestMode(testApiUrl: string): void {
+    this.configFetched = true; // Skip config fetch
+    this.apiBaseUrl = testApiUrl;
+  }
+
+  private async fetchConfig(): Promise<void> {
+    if (this.configFetched) {
+      return;
+    }
+
+    this.configFetched = true; // Mark as fetched to avoid multiple attempts
+
+    // If NEXT_PUBLIC_API_URL is already set to a non-localhost value, use it directly
+    if (DEFAULT_API_BASE_URL !== 'http://localhost:8000') {
+      console.log('Using configured API base URL:', DEFAULT_API_BASE_URL);
+      this.apiBaseUrl = DEFAULT_API_BASE_URL;
+      return;
+    }
+
+    // Infer the backend URL from the current window location
+    // If user accessed frontend via http://192.168.0.58:3003, backend is likely at http://192.168.0.58:8000
+    let inferredBackendUrl = DEFAULT_API_BASE_URL;
+
+    if (typeof window !== 'undefined') {
+      const hostname = window.location.hostname;
+      // Only infer if not running on localhost (which would be development mode)
+      if (hostname !== 'localhost' && hostname !== '127.0.0.1') {
+        inferredBackendUrl = `http://${hostname}:8000`;
+        console.log('Inferred backend URL from window location:', inferredBackendUrl);
+      }
+    }
+
+    // Try to discover the backend URL
+    try {
+      console.log('Attempting to fetch config from:', `${inferredBackendUrl}/api/v1/config`);
+      const response = await fetch(`${inferredBackendUrl}/api/v1/config`, {
+        // Add timeout to fail fast if backend is not responding
+        signal: AbortSignal.timeout(5000)
+      });
+
+      if (response.ok) {
+        const config = await response.json();
+        if (config.api_base_url) {
+          this.apiBaseUrl = config.api_base_url;
+          console.log('✅ API base URL configured:', this.apiBaseUrl);
+          if (config.lan_discovery_enabled) {
+            console.log('🌐 LAN discovery is enabled on backend');
+          }
+        } else {
+          // Config endpoint exists but no URL provided, use inferred URL
+          this.apiBaseUrl = inferredBackendUrl;
+          console.log('ℹ️ Using inferred backend URL:', this.apiBaseUrl);
+        }
+      } else {
+        console.warn('⚠️ Failed to fetch API config (HTTP %d), using inferred URL:', response.status, inferredBackendUrl);
+        this.apiBaseUrl = inferredBackendUrl;
+      }
+    } catch (error) {
+      // If config fetch fails, use inferred URL as fallback
+      console.warn('⚠️ Failed to fetch API config, using inferred URL:', inferredBackendUrl);
+      this.apiBaseUrl = inferredBackendUrl;
+    }
+  }
+
+  private async request<T>(endpoint: string, options?: RequestInit): Promise<T> {
+    // Ensure config is fetched before making requests
+    await this.fetchConfig();
+
+    const url = `${this.apiBaseUrl}${endpoint}`;
+    const response = await fetch(url, {
+      headers: {
+        'Content-Type': 'application/json',
+        ...options?.headers,
+      },
+      ...options,
+    });
+
+    if (!response.ok) {
+      throw new Error(`API request failed: ${response.status} ${response.statusText}`);
+    }
+
+    return response.json();
+  }
+
+  // ADR operations
+  async getADRs(limit = 50, offset = 0): Promise<ADRListResponse> {
+    return this.request<ADRListResponse>(`/api/v1/adrs/?limit=${limit}&offset=${offset}`);
+  }
+
+  async getADR(adrId: string): Promise<ADR> {
+    return this.request<ADR>(`/api/v1/adrs/${adrId}`);
+  }
+
+  async deleteADR(adrId: string): Promise<{ message: string }> {
+    return this.request<{ message: string }>(`/api/v1/adrs/${adrId}`, {
+      method: 'DELETE',
+    });
+  }
+
+  async pushADRToRAG(adrId: string): Promise<{ message: string; adr_id: string; title: string }> {
+    return this.request<{ message: string; adr_id: string; title: string }>(`/api/v1/adrs/${adrId}/push-to-rag`, {
+      method: 'POST',
+    });
+  }
+
+  async getPersonas(): Promise<{ personas: Persona[] }> {
+    return this.request<{ personas: Persona[] }>('/api/v1/adrs/personas');
+  }
+
+  // Analysis operations
+  async analyzeADR(request: AnalyzeADRRequest): Promise<TaskResponse> {
+    return this.request<TaskResponse>('/api/v1/analysis/analyze', {
+      method: 'POST',
+      body: JSON.stringify(request),
+    });
+  }
+
+  async getAnalysisTaskStatus(taskId: string): Promise<TaskStatus> {
+    return this.request<TaskStatus>(`/api/v1/analysis/task/${taskId}`);
+  }
+
+  // Generation operations
+  async generateADR(request: GenerateADRRequest): Promise<TaskResponse> {
+    return this.request<TaskResponse>('/api/v1/generation/generate', {
+      method: 'POST',
+      body: JSON.stringify(request),
+    });
+  }
+
+  async getGenerationTaskStatus(taskId: string): Promise<TaskStatus> {
+    return this.request<TaskStatus>(`/api/v1/generation/task/${taskId}`);
+  }
+}
+
+export const apiClient = new ApiClient();

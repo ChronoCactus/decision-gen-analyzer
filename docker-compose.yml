@@ -1,0 +1,83 @@
+version: '3.8'
+
+services:
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6380:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    ports:
+      - "8000:8000"
+    restart: unless-stopped
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+      - PYTHONPATH=/app/src
+      - ADR_STORAGE_PATH=/app/data/adrs
+      - LLAMA_CPP_URL=${LLAMA_CPP_URL:-http://192.168.0.118:11434}
+      - LLAMA_CPP_URL_1=${LLAMA_CPP_URL_1:-}
+      - LLAMA_CPP_URL_EMBEDDING=${LLAMA_CPP_URL_EMBEDDING:-}
+      - LIGHTRAG_URL=${LIGHTRAG_URL:-http://192.168.0.192:9621}
+      - LIGHTRAG_API_KEY=${LIGHTRAG_API_KEY:-}
+      - ENABLE_LAN_DISCOVERY=${ENABLE_LAN_DISCOVERY:-false}
+      - HOST_IP=${HOST_IP:-}
+    depends_on:
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./src:/app/src
+      - ./pyproject.toml:/app/pyproject.toml
+      - ./requirements.md:/app/requirements.md
+      - adr_data:/app/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  celery_worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    command: celery -A src.celery_app worker --loglevel=info
+    restart: unless-stopped
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+      - PYTHONPATH=/app/src
+      - ADR_STORAGE_PATH=/app/data/adrs
+      - LLAMA_CPP_URL=${LLAMA_CPP_URL:-http://192.168.0.118:11434}
+      - LLAMA_CPP_URL_1=${LLAMA_CPP_URL_1:-}
+      - LLAMA_CPP_URL_EMBEDDING=${LLAMA_CPP_URL_EMBEDDING:-}
+      - LIGHTRAG_URL=${LIGHTRAG_URL:-http://192.168.0.192:9621}
+      - LIGHTRAG_API_KEY=${LIGHTRAG_API_KEY:-}
+    depends_on:
+      - redis
+      - backend
+    volumes:
+      - ./src:/app/src
+      - ./pyproject.toml:/app/pyproject.toml
+      - ./requirements.md:/app/requirements.md
+      - adr_data:/app/data
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    ports:
+      - "3003:3000"
+    depends_on:
+      - backend
+
+volumes:
+  redis_data:
+  adr_data:
