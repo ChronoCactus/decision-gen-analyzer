@@ -75,54 +75,21 @@ async def get_config():
 
 @adr_router.get("/personas")
 async def list_personas():
-    """List all available analysis personas."""
-    personas = [
-        PersonaInfo(
-            value=AnalysisPersona.TECHNICAL_LEAD.value,
-            label="Technical Lead",
-            description="Focuses on technical feasibility, architecture, and implementation details"
-        ),
-        PersonaInfo(
-            value=AnalysisPersona.BUSINESS_ANALYST.value,
-            label="Business Analyst",
-            description="Evaluates business value, ROI, and stakeholder alignment"
-        ),
-        PersonaInfo(
-            value=AnalysisPersona.RISK_MANAGER.value,
-            label="Risk Manager",
-            description="Identifies potential risks, compliance issues, and mitigation strategies"
-        ),
-        PersonaInfo(
-            value=AnalysisPersona.ARCHITECT.value,
-            label="Architect",
-            description="Assesses architectural consistency, patterns, and long-term sustainability"
-        ),
-        PersonaInfo(
-            value=AnalysisPersona.PRODUCT_MANAGER.value,
-            label="Product Manager",
-            description="Evaluates user impact, product strategy alignment, and market considerations"
-        ),
-        PersonaInfo(
-            value=AnalysisPersona.CUSTOMER_SUPPORT.value,
-            label="Customer Support",
-            description="Considers support implications, user experience, and operational impact"
-        ),
-        PersonaInfo(
-            value=AnalysisPersona.SECURITY_EXPERT.value,
-            label="Security Expert",
-            description="Analyzes security implications, vulnerabilities, and threat mitigation"
-        ),
-        PersonaInfo(
-            value=AnalysisPersona.DEVOPS_ENGINEER.value,
-            label="DevOps Engineer",
-            description="Focuses on deployment, monitoring, scalability, and operational concerns"
-        ),
-        PersonaInfo(
-            value=AnalysisPersona.QA_ENGINEER.value,
-            label="QA Engineer",
-            description="Evaluates testability, quality assurance processes, and defect prevention"
-        ),
-    ]
+    """List all available analysis personas dynamically from config files."""
+    from src.persona_manager import get_persona_manager
+
+    persona_manager = get_persona_manager()
+    personas = []
+
+    # Iterate through all defined personas and get their configs
+    for persona in AnalysisPersona:
+        config = persona_manager.get_persona_config(persona)
+        personas.append(
+            PersonaInfo(
+                value=persona.value, label=config.name, description=config.description
+            )
+        )
+
     return {"personas": personas}
 
 

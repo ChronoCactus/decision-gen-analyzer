@@ -26,12 +26,19 @@ This is a **multi-persona ADR (Architectural Decision Record) analysis and gener
 ### Multi-Persona System with Parallel Processing
 The core feature: analyze ADRs through different "personas" (technical lead, business analyst, security expert, etc.). Each persona has:
 - JSON config in `config/personas/*.json` defining focus areas and evaluation criteria
-- Loaded by `PersonaManager` class
+- **Dynamic Loading**: Personas are loaded from filesystem on each API call (no caching)
+- **Customizable**: Users can add new personas by dropping JSON files in `config/personas/` (mounted as Docker volume)
+- Loaded by `PersonaManager` class from `src/persona_manager.py`
 - Used in parallel by `ADRGenerationService._generate_persona_perspectives()`
+- API endpoint `/api/v1/adrs/personas` dynamically reads from config files
+
+**10 Default Personas**: technical_lead, business_analyst, risk_manager, architect, product_manager, customer_support, security_expert, devops_engineer, qa_engineer, philosopher
 
 **Pattern**: Generate separate perspectives in parallel → synthesize into final ADR with all viewpoints considered.
 
 **Performance**: When `LLAMA_CPP_URL_1` is configured, `LlamaCppClientPool` distributes persona generation requests across multiple backends, reducing generation time by ~50%.
+
+**Customization**: See `config/personas/README.md` for instructions on adding custom personas.
 
 ## Critical Developer Workflows
 

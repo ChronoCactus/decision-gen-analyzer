@@ -37,7 +37,8 @@ class PersonaManager:
         """Initialize the persona manager."""
         if config_dir is None:
             # Default to config/personas relative to the project root
-            project_root = Path(__file__).parent.parent.parent
+            # From src/persona_manager.py: parent is src/, parent.parent is project root
+            project_root = Path(__file__).parent.parent
             config_dir = project_root / "config" / "personas"
 
         self.config_dir = Path(config_dir)
