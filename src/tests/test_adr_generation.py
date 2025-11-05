@@ -4,7 +4,7 @@ import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from src.adr_generation import ADRGenerationService
-from src.models import ADRGenerationPrompt, ADRGenerationOptions, AnalysisPersona
+from src.models import ADRGenerationPrompt, ADRGenerationOptions
 
 
 class TestADRGenerationService:
@@ -32,7 +32,7 @@ class TestADRGenerationService:
     def mock_persona_manager(self):
         """Mock PersonaManager."""
         from src.persona_manager import PersonaConfig
-        
+
         manager = MagicMock()
         persona_config = PersonaConfig(
             name="Technical Lead",
@@ -42,7 +42,7 @@ class TestADRGenerationService:
             evaluation_criteria=["technical feasibility", "maintainability"]
         )
         manager.get_persona_config.return_value = persona_config
-        manager.list_personas.return_value = [AnalysisPersona.TECHNICAL_LEAD]
+        manager.list_persona_values.return_value = ["technical_lead"]
         return manager
 
     @pytest.fixture
@@ -78,7 +78,7 @@ class TestADRGenerationService:
         """Test ADR generation with personas."""
         service = ADRGenerationService(mock_llama_client, mock_lightrag_client, mock_persona_manager)
 
-        personas = [AnalysisPersona.TECHNICAL_LEAD, AnalysisPersona.BUSINESS_ANALYST]
+        personas = ["technical_lead", "business_analyst"]
 
         result = await service.generate_adr(generation_prompt, personas=personas)
 

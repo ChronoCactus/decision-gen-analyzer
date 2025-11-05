@@ -5,9 +5,18 @@ from typing import List, Dict, Any, Optional
 from datetime import datetime, UTC
 import json
 
-from models import (
-    ADR, ADRConflict, ConflictType, ContinuityAssessment, ReassessmentRecommendation,
-    ContextualAnalysisResult, AnalysisReport, AnalysisPersona, ADRAnalysisResult
+from src.models import (
+    ADR,
+    ADRAnalysisResult,
+    ADRMetadata,
+    ADRContent,
+    ADRStatus,
+    AnalysisReport,
+    ContextualAnalysisResult,
+    ADRConflict,
+    ConflictType,
+    ContinuityAssessment,
+    ReassessmentRecommendation,
 )
 from llama_client import LlamaCppClient
 from lightrag_client import LightRAGClient
@@ -44,14 +53,14 @@ class ContextualAnalysisService:
     async def analyze_adr_contextually(
         self,
         target_adr: ADR,
-        personas: Optional[List[AnalysisPersona]] = None,
-        include_related_analysis: bool = True
+        personas: Optional[List[str]] = None,
+        include_related_analysis: bool = True,
     ) -> ContextualAnalysisResult:
         """Perform comprehensive contextual analysis of an ADR.
 
         Args:
             target_adr: The ADR to analyze
-            personas: Personas to involve in the analysis
+            personas: List of persona values to involve in the analysis
             include_related_analysis: Whether to analyze related ADRs
 
         Returns:
@@ -61,18 +70,14 @@ class ContextualAnalysisService:
             "Starting contextual ADR analysis",
             adr_id=str(target_adr.metadata.id),
             title=target_adr.metadata.title,
-            personas=[p.value for p in (personas or [])]
+            personas=personas or [],
         )
 
         start_time = datetime.now(UTC)
 
         # Default personas if none specified
         if not personas:
-            personas = [
-                AnalysisPersona.TECHNICAL_LEAD,
-                AnalysisPersona.ARCHITECT,
-                AnalysisPersona.RISK_MANAGER
-            ]
+            personas = ["technical_lead", "architect", "risk_manager"]
 
         # Find related ADRs
         related_adrs = await self._find_related_adrs(target_adr)

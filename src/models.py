@@ -18,7 +18,14 @@ class ADRStatus(str, Enum):
 
 
 class AnalysisPersona(str, Enum):
-    """Different personas for ADR analysis."""
+    """DEPRECATED: Different personas for ADR analysis.
+
+    This enum is deprecated and maintained only for backwards compatibility with existing tests.
+    Use string-based persona values instead (e.g., "technical_lead", "architect").
+    Personas are now loaded dynamically from JSON configuration files in config/personas/.
+
+    See config/personas/README.md for how to define custom personas.
+    """
     TECHNICAL_LEAD = "technical_lead"
     BUSINESS_ANALYST = "business_analyst"
     RISK_MANAGER = "risk_manager"

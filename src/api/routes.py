@@ -4,7 +4,7 @@ from fastapi import APIRouter, HTTPException, BackgroundTasks
 from typing import List, Optional
 from pydantic import BaseModel
 
-from src.models import ADR, AnalysisPersona
+from src.models import ADR
 from src.lightrag_client import LightRAGClient
 from src.celery_app import analyze_adr_task, generate_adr_task
 from src.logger import get_logger
@@ -75,18 +75,19 @@ async def get_config():
 
 @adr_router.get("/personas")
 async def list_personas():
-    """List all available analysis personas dynamically from config files."""
+    """List all available analysis personas dynamically from config files (discovers new personas automatically)."""
     from src.persona_manager import get_persona_manager
 
     persona_manager = get_persona_manager()
     personas = []
 
-    # Iterate through all defined personas and get their configs
-    for persona in AnalysisPersona:
-        config = persona_manager.get_persona_config(persona)
+    # Discover all personas from filesystem (includes new JSON files)
+    all_personas = persona_manager.discover_all_personas()
+
+    for persona_value, config in all_personas.items():
         personas.append(
             PersonaInfo(
-                value=persona.value, label=config.name, description=config.description
+                value=persona_value, label=config.name, description=config.description
             )
         )
 

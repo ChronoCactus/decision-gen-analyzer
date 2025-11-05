@@ -1,10 +1,14 @@
-"""Celery configuration for async task processing."""
+"""Celery task definitions for async job processing."""
 
 import os
+import asyncio
+from typing import Optional, List, Dict, Any
 from celery import Celery
 from celery.schedules import crontab
+from uuid import UUID
 
-from src.models import AnalysisPersona
+from src.config import settings
+from src.adr_generation import ADRGenerationService
 from src.logger import get_logger
 
 logger = get_logger(__name__)
@@ -132,28 +136,24 @@ def generate_adr_task(self, prompt: str, context: str = None, tags: list = None,
 
             # Default personas if none provided
             if not personas:
-                persona_list = [
-                    AnalysisPersona.TECHNICAL_LEAD,
-                    AnalysisPersona.ARCHITECT,
-                    AnalysisPersona.BUSINESS_ANALYST
-                ]
+                persona_list = ["technical_lead", "architect", "business_analyst"]
             else:
-                # Convert persona strings to AnalysisPersona enums
+                # Validate persona strings against available personas
+                from persona_manager import get_persona_manager
+
+                manager = get_persona_manager()
+                available_personas = manager.list_persona_values()
+
                 persona_list = []
                 for p in personas:
-                    try:
-                        persona_list.append(AnalysisPersona(p))
-                    except ValueError:
-                        # Skip invalid persona names
-                        continue
+                    if p in available_personas:
+                        persona_list.append(p)
+                    else:
+                        print(f"Warning: Skipping invalid persona: {p}")
 
                 # If all personas were invalid, use defaults
                 if not persona_list:
-                    persona_list = [
-                        AnalysisPersona.TECHNICAL_LEAD,
-                        AnalysisPersona.ARCHITECT,
-                        AnalysisPersona.BUSINESS_ANALYST
-                    ]
+                    persona_list = ["technical_lead", "architect", "business_analyst"]
 
             self.update_state(state="PROGRESS", meta={"message": f"Generating ADR with {len(persona_list)} personas"})
 

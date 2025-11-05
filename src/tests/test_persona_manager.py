@@ -8,7 +8,6 @@ from unittest.mock import patch, mock_open, MagicMock
 from tempfile import TemporaryDirectory
 
 from src.persona_manager import PersonaManager, PersonaConfig
-from src.models import AnalysisPersona
 
 
 class TestPersonaConfig:
@@ -67,25 +66,25 @@ class TestPersonaManager:
     def test_persona_manager_initialization_with_custom_dir(self):
         """Test PersonaManager with custom config directory."""
         with TemporaryDirectory() as tmpdir:
-            manager = PersonaManager(config_dir=tmpdir)
+            # Don't include defaults since temp dir doesn't have defaults/ subdirectory
+            manager = PersonaManager(config_dir=tmpdir, include_defaults=False)
 
             assert manager.config_dir == Path(tmpdir)
-            # Should load fallback configs when directory is empty
-            assert len(manager._persona_configs) > 0
+            # With no defaults and empty custom dir, should be empty
+            personas = manager.list_persona_values()
+            assert len(personas) == 0
 
-    def test_persona_manager_loads_fallback_configs(self):
-        """Test PersonaManager loads fallback configs when directory doesn't exist."""
-        # Create manager with non-existent directory
-        with tempfile.TemporaryDirectory() as temp_dir:
-            non_existent_dir = Path(temp_dir) / "non_existent"
-            manager = PersonaManager(config_dir=str(non_existent_dir))
+    def test_persona_manager_loads_default_configs(self):
+        """Test PersonaManager loads default configs when include_defaults=True."""
+        # Use the default config_dir (which has defaults/ subdirectory)
+        manager = PersonaManager(include_defaults=True)
 
-            # Should load fallback configs
-            config = manager.get_persona_config(AnalysisPersona.TECHNICAL_LEAD)
+        # Should load default configs from defaults/ subdirectory
+        config = manager.get_persona_config("technical_lead")
 
-            assert config is not None
-            assert config.name == "Technical Lead"
-            assert len(config.focus_areas) > 0
+        assert config is not None
+        assert config.name == "Technical Lead"
+        assert len(config.focus_areas) > 0
 
     def test_persona_manager_loads_json_configs(self):
         """Test PersonaManager loads JSON configs from directory."""
@@ -100,17 +99,18 @@ class TestPersonaManager:
                 "evaluation_criteria": ["Criterion1"]
             }))
 
-            manager = PersonaManager(config_dir=str(config_dir))
+            manager = PersonaManager(config_dir=str(config_dir), include_defaults=False)
 
-            config = manager.get_persona_config(AnalysisPersona.TECHNICAL_LEAD)
+            config = manager.get_persona_config("technical_lead")
+            assert config is not None
             assert config.name == "Technical Lead"
             assert config.description == "Test description"
 
     def test_get_config_returns_persona_config(self):
         """Test get_persona_config returns PersonaConfig."""
-        manager = PersonaManager()
+        manager = PersonaManager(include_defaults=True)
 
-        config = manager.get_persona_config(AnalysisPersona.BUSINESS_ANALYST)
+        config = manager.get_persona_config("business_analyst")
 
         assert isinstance(config, PersonaConfig)
         assert config.name is not None
@@ -119,50 +119,51 @@ class TestPersonaManager:
 
     def test_get_config_for_all_personas(self):
         """Test get_persona_config works for all personas."""
-        manager = PersonaManager()
+        manager = PersonaManager(include_defaults=True)
 
-        for persona in AnalysisPersona:
-            config = manager.get_persona_config(persona)
+        persona_values = manager.list_persona_values()
+        for persona_value in persona_values:
+            config = manager.get_persona_config(persona_value)
             assert config is not None
             assert isinstance(config, PersonaConfig)
 
     def test_get_all_personas(self):
-        """Test list_personas returns list of personas."""
-        manager = PersonaManager()
+        """Test list_persona_values returns list of persona strings."""
+        manager = PersonaManager(include_defaults=True)
 
-        personas = manager.list_personas()
+        personas = manager.list_persona_values()
 
         assert isinstance(personas, list)
         assert len(personas) > 0
-        assert all(isinstance(p, AnalysisPersona) for p in personas)
+        assert all(isinstance(p, str) for p in personas)
+        assert "technical_lead" in personas
 
     def test_get_persona_names(self):
-        """Test get_all_persona_configs returns dict of configs."""
-        manager = PersonaManager()
+        """Test discover_all_personas returns dict of configs."""
+        manager = PersonaManager(include_defaults=True)
 
-        configs = manager.get_all_persona_configs()
+        configs = manager.discover_all_personas()
 
         assert isinstance(configs, dict)
         assert len(configs) > 0
-        assert all(isinstance(p, AnalysisPersona) for p in configs.keys())
+        assert all(isinstance(p, str) for p in configs.keys())
         assert all(isinstance(c, PersonaConfig) for c in configs.values())
 
     def test_invalid_json_falls_back_to_default(self):
-        """Test invalid JSON falls back to default config."""
+        """Test invalid JSON returns None when defaults not enabled."""
         with tempfile.TemporaryDirectory() as temp_dir:
             config_dir = Path(temp_dir)
             config_file = config_dir / "technical_lead.json"
             config_file.write_text("invalid json {")
 
-            manager = PersonaManager(config_dir=str(config_dir))
+            manager = PersonaManager(config_dir=str(config_dir), include_defaults=False)
 
-            # Should fall back to default config
-            config = manager.get_persona_config(AnalysisPersona.TECHNICAL_LEAD)
-            assert config is not None
-            assert config.name == "Technical Lead"
+            # Should return None for invalid JSON when defaults not enabled
+            config = manager.get_persona_config("technical_lead")
+            assert config is None
 
-    def test_missing_required_field_falls_back(self):
-        """Test missing required field falls back to default."""
+    def test_missing_required_field_returns_none(self):
+        """Test missing required field returns None."""
         with tempfile.TemporaryDirectory() as temp_dir:
             config_dir = Path(temp_dir)
             config_file = config_dir / "technical_lead.json"
@@ -172,155 +173,54 @@ class TestPersonaManager:
                 "instructions": "Test",
             }))
 
-            manager = PersonaManager(config_dir=str(config_dir))
+            manager = PersonaManager(config_dir=str(config_dir), include_defaults=False)
 
-            config = manager.get_persona_config(AnalysisPersona.TECHNICAL_LEAD)
-            assert config is not None
-            assert config.description is not None
+            config = manager.get_persona_config("technical_lead")
+            assert config is None
 
     def test_persona_config_has_required_fields(self):
         """Test all persona configs have required fields."""
-        manager = PersonaManager()
+        manager = PersonaManager(include_defaults=True)
 
-        for persona in AnalysisPersona:
-            config = manager.get_persona_config(persona)
+        persona_values = manager.list_persona_values()
+        for persona_value in persona_values:
+            config = manager.get_persona_config(persona_value)
             assert config.name
             assert config.description
             assert config.instructions
             assert isinstance(config.focus_areas, list)
             assert isinstance(config.evaluation_criteria, list)
 
-    def test_persona_manager_loads_json_configs(self):
-        """Test PersonaManager loads JSON configuration files."""
-        with TemporaryDirectory() as tmpdir:
-            tmpdir_path = Path(tmpdir)
-
-            # Create a test JSON config file
-            test_config = {
-                "name": "Test Lead",
-                "description": "Test description",
-                "instructions": "Test instructions",
-                "focus_areas": ["test1", "test2"],
-                "evaluation_criteria": ["criteria1"],
-            }
-
-            config_file = tmpdir_path / "technical_lead.json"
-            with open(config_file, "w") as f:
-                json.dump(test_config, f)
-
-            manager = PersonaManager(config_dir=tmpdir)
-
-            config = manager.get_persona_config(AnalysisPersona.TECHNICAL_LEAD)
-            assert config.name == "Test Lead"
-            assert config.description == "Test description"
-            assert len(config.focus_areas) == 2
-
-    def test_get_config_returns_persona_config(self):
-        """Test get_persona_config returns a PersonaConfig."""
-        manager = PersonaManager()
-
-        config = manager.get_persona_config(AnalysisPersona.BUSINESS_ANALYST)
-
-        assert isinstance(config, PersonaConfig)
-        assert config.name is not None
-        assert isinstance(config.focus_areas, list)
-        assert isinstance(config.evaluation_criteria, list)
-
-    def test_get_config_for_all_personas(self):
-        """Test get_persona_config works for all persona types."""
-        manager = PersonaManager()
-
-        for persona in AnalysisPersona:
-            config = manager.get_persona_config(persona)
-            assert config is not None
-            assert isinstance(config, PersonaConfig)
-
-    def test_get_all_personas(self):
-        """Test list_personas returns list of all personas."""
-        manager = PersonaManager()
-
-        personas = manager.list_personas()
-
-        assert isinstance(personas, list)
-        assert len(personas) == len(AnalysisPersona)
-        # Check each persona type explicitly since enum isinstance can be tricky
-        for p in personas:
-            assert hasattr(p, 'value'), f"Persona {p} should be an enum with value attribute"
-            assert p in AnalysisPersona, f"Persona {p} should be in AnalysisPersona enum"
-
-    def test_get_persona_names(self):
-        """Test getting all persona configs returns dict."""
-        manager = PersonaManager()
-
-        configs = manager.get_all_persona_configs()
-
-        assert isinstance(configs, dict)
-        assert len(configs) == len(AnalysisPersona)
-        # Check keys are personas
-        for p in configs.keys():
-            assert hasattr(p, 'value'), f"Key {p} should be an enum with value attribute"
-            assert p in AnalysisPersona, f"Key {p} should be in AnalysisPersona enum"
-        # Check values are PersonaConfig
-        assert all(isinstance(c, PersonaConfig) for c in configs.values())
-
-    def test_invalid_json_falls_back_to_default(self):
-        """Test that invalid JSON falls back to default config."""
-        with TemporaryDirectory() as tmpdir:
-            tmpdir_path = Path(tmpdir)
-
-            # Create an invalid JSON file
-            config_file = tmpdir_path / "technical_lead.json"
-            with open(config_file, "w") as f:
-                f.write("invalid json {{{")
-
-            manager = PersonaManager(config_dir=tmpdir)
-
-            # Should still have a config (fallback)
-            config = manager.get_persona_config(AnalysisPersona.TECHNICAL_LEAD)
-            assert config is not None
-            assert isinstance(config, PersonaConfig)
-
-    def test_missing_required_field_falls_back(self):
-        """Test that JSON missing required fields falls back."""
-        with TemporaryDirectory() as tmpdir:
-            tmpdir_path = Path(tmpdir)
-
-            # Create JSON with missing required fields
-            test_config = {
-                "name": "Test",
-                # Missing 'description' and 'instructions'
-            }
-
-            config_file = tmpdir_path / "technical_lead.json"
-            with open(config_file, "w") as f:
-                json.dump(test_config, f)
-
-            manager = PersonaManager(config_dir=tmpdir)
-
-            # Should still have a config (fallback)
-            config = manager.get_persona_config(AnalysisPersona.TECHNICAL_LEAD)
-            assert config is not None
-            assert config.instructions is not None
-
-    def test_persona_config_has_required_fields(self):
-        """Test that all persona configs have required fields."""
-        manager = PersonaManager()
-
-        for persona in AnalysisPersona:
-            config = manager.get_persona_config(persona)
-            
-            assert config.name, f"Persona {persona} missing name"
-            assert config.description, f"Persona {persona} missing description"
-            assert config.instructions, f"Persona {persona} missing instructions"
-            assert isinstance(config.focus_areas, list)
-            assert isinstance(config.evaluation_criteria, list)
-
     def test_default_config_dir_resolution(self):
         """Test that default config dir is resolved correctly."""
-        manager = PersonaManager()
+        manager = PersonaManager(include_defaults=True)
 
         assert manager.config_dir is not None
         assert isinstance(manager.config_dir, Path)
         # Should contain 'config' and 'personas' in path
         assert "config" in str(manager.config_dir).lower()
         assert "personas" in str(manager.config_dir).lower()
+
+    def test_custom_persona_overrides_default(self):
+        """Test that custom persona overrides default with same name."""
+        with TemporaryDirectory() as tmpdir:
+            config_dir = Path(tmpdir)
+            config_file = config_dir / "technical_lead.json"
+            config_file.write_text(
+                json.dumps(
+                    {
+                        "name": "Custom Technical Lead",
+                        "description": "Custom description",
+                        "instructions": "Custom instructions",
+                        "focus_areas": ["CustomArea"],
+                        "evaluation_criteria": ["CustomCriterion"],
+                    }
+                )
+            )
+
+            manager = PersonaManager(config_dir=str(config_dir), include_defaults=True)
+
+            config = manager.get_persona_config("technical_lead")
+            assert config is not None
+            assert config.name == "Custom Technical Lead"
+            assert config.description == "Custom description"

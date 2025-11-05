@@ -2,9 +2,20 @@
 
 This directory contains JSON configuration files for analysis personas used in ADR generation and analysis.
 
+## 🚀 Quick Start
+
+**Adding a new persona is as simple as:**
+1. Create a `.json` file in this directory (e.g., `my_expert.json`)
+2. Define the persona configuration (see format below)
+3. **Done!** No restart needed - it appears immediately in the UI
+
 ## Overview
 
-Each persona provides a unique perspective during ADR (Architectural Decision Record) generation. The system dynamically loads all personas from this directory, allowing you to customize existing personas or add new ones.
+Each persona provides a unique perspective during ADR (Architectural Decision Record) generation. The system **automatically discovers all `.json` files** in this directory, allowing you to:
+- Add new personas without code changes
+- Customize existing personas
+- Remove personas by deleting their files
+- All changes are picked up immediately (hot-reload)
 
 ## Persona Configuration Format
 
@@ -53,55 +64,63 @@ The system includes 10 default personas:
 
 ## Adding Custom Personas
 
-### Step 1: Define the Persona in Code
+You can add custom personas in two ways:
 
-First, add your persona to the `AnalysisPersona` enum in `src/models.py`:
+### Option 1: Quick Add (JSON File Only) - Recommended
 
-```python
-class AnalysisPersona(str, Enum):
-    # ... existing personas ...
-    MY_CUSTOM_PERSONA = "my_custom_persona"
-```
+Simply create a JSON file in this directory - **no code changes required**! The system automatically discovers all `.json` files.
 
-### Step 2: Create Configuration File
-
-Create a new JSON file in this directory named `{persona_value}.json` (e.g., `my_custom_persona.json`):
+**Example:** Create `data_engineer.json`:
 
 ```json
 {
-  "name": "My Custom Persona",
-  "description": "A custom perspective for specialized analysis",
-  "instructions": "Focus on [specific aspects]. Consider [key factors]. Evaluate [criteria].",
+  "name": "Data Engineer",
+  "description": "Data architecture and pipeline perspective",
+  "instructions": "Focus on data architecture, ETL pipelines, data quality...",
   "focus_areas": [
-    "Focus area 1",
-    "Focus area 2",
-    "Focus area 3"
+    "Data pipeline architecture",
+    "ETL/ELT design",
+    "Data quality"
   ],
   "evaluation_criteria": [
-    "How does this affect [aspect]?",
-    "What are the implications for [concern]?",
-    "Does this align with [principle]?"
+    "How does this affect data pipelines?",
+    "What are the data quality implications?"
   ]
 }
 ```
 
-### Step 3: Restart Services
+**That's it!** The filename (without `.json`) becomes the persona value. The system automatically discovers it on the next API call.
 
-If running in Docker:
-```bash
-docker compose restart backend celery_worker
+### Option 2: Add to Enum (For Code Integration)
+
+If you want the persona to be available in code (e.g., for type checking), also add it to `src/models.py`:
+
+```python
+class AnalysisPersona(str, Enum):
+    # ... existing personas ...
+    DATA_ENGINEER = "data_engineer"
 ```
 
-If running locally:
-```bash
-# Restart your backend server
-```
+This is **optional** - personas work fine without being in the enum. The enum is only needed if you want compile-time type safety.
 
-The new persona will be automatically discovered and available in the UI.
+### Using Your New Persona
+
+**No restart required!** The system automatically discovers new JSON files.
+
+Simply:
+1. Create or edit a `.json` file in `config/personas/`
+2. Refresh the UI (or call `/api/v1/adrs/personas`)
+3. Your new persona appears immediately in the selection list
 
 ## Customizing Existing Personas
 
-You can modify any existing persona configuration by editing its JSON file. Changes will be picked up on the next API call (no caching).
+You can modify any existing persona configuration by editing its JSON file. **Changes are picked up immediately** - no restart required!
+
+The system reloads persona configurations from disk on every API call, so:
+- Edit a JSON file
+- Save it
+- Refresh the UI or make a new API request
+- Your changes will be reflected immediately
 
 ### Example: Customizing the DevOps Engineer Persona
 
@@ -152,9 +171,11 @@ All changes are immediately available without rebuilding Docker images.
 4. **Consistent Tone**: Match the expertise level and perspective in all fields
 5. **Comprehensive Coverage**: Ensure the persona covers all aspects of their domain
 
-## Example Custom Personas
+## Example: Adding Custom Personas
 
-### Data Engineer Persona
+These examples show how easy it is to add new personas. Just create the `.json` file!
+
+### Example 1: Data Engineer (Save as `data_engineer.json`)
 
 ```json
 {
@@ -178,7 +199,7 @@ All changes are immediately available without rebuilding Docker images.
 }
 ```
 
-### Compliance Officer Persona
+### Example 2: Compliance Officer (Save as `compliance_officer.json`)
 
 ```json
 {
