@@ -13,6 +13,62 @@ services:
       timeout: 3s
       retries: 5
 
+  lightrag:
+    image: ghcr.io/hkuds/lightrag:v1.4.9.3
+    ports:
+      - "9621:9621"
+    environment:
+      # Server Configuration
+      - PORT=9621
+      - HOST=0.0.0.0
+      - WEBUI_TITLE=Decision Analyzer Graph KB
+      - WEBUI_DESCRIPTION=Simple and Fast Graph Based RAG System
+      - OLLAMA_EMULATING_MODEL_TAG=latest
+      # LLM Configuration
+      - LLM_BINDING=ollama
+      - LLM_MODEL=${LIGHTRAG_LLM_MODEL:-llama3.1:8b}
+      - LLM_BINDING_HOST=${LIGHTRAG_LLM_HOST:-${LLAMA_CPP_URL}}
+      - LLM_BINDING_API_KEY=${LIGHTRAG_LLM_API_KEY:-}
+      - OLLAMA_LLM_NUM_CTX=${LIGHTRAG_LLM_NUM_CTX:-64000}
+      # Embedding Configuration
+      - EMBEDDING_BINDING=ollama
+      - EMBEDDING_BINDING_HOST=${LIGHTRAG_EMBEDDING_HOST:-${LLAMA_CPP_URL_EMBEDDING:-${LLAMA_CPP_URL}}}
+      - EMBEDDING_MODEL=${LIGHTRAG_EMBEDDING_MODEL:-nomic-embed-text}
+      - EMBEDDING_DIM=${LIGHTRAG_EMBEDDING_DIM:-768}
+      - EMBEDDING_BINDING_API_KEY=${LIGHTRAG_EMBEDDING_API_KEY:-}
+      - OLLAMA_EMBEDDING_NUM_CTX=${LIGHTRAG_EMBEDDING_NUM_CTX:-4096}
+      # CORS Configuration
+      - CORS_ORIGINS=${LIGHTRAG_CORS_ORIGINS:-http://localhost:3003}
+      # Directory Configuration
+      - INPUT_DIR=/app/data/inputs
+      - WORKING_DIR=/app/data/rag_storage
+      # Logging Configuration
+      - LOG_LEVEL=${LIGHTRAG_LOG_LEVEL:-INFO}
+      - VERBOSE=${LIGHTRAG_VERBOSE:-False}
+      # RAG Configuration
+      - HISTORY_TURNS=${LIGHTRAG_HISTORY_TURNS:-3}
+      - COSINE_THRESHOLD=${LIGHTRAG_COSINE_THRESHOLD:-0.2}
+      - TOP_K=${LIGHTRAG_TOP_K:-60}
+      - MAX_TOKEN_TEXT_CHUNK=${LIGHTRAG_MAX_TOKEN_TEXT_CHUNK:-4000}
+      - MAX_TOKEN_RELATION_DESC=${LIGHTRAG_MAX_TOKEN_RELATION_DESC:-4000}
+      - MAX_TOKEN_ENTITY_DESC=${LIGHTRAG_MAX_TOKEN_ENTITY_DESC:-4000}
+      # Summary Configuration
+      - SUMMARY_LANGUAGE=${LIGHTRAG_SUMMARY_LANGUAGE:-English}
+      - MAX_TOKEN_SUMMARY=${LIGHTRAG_MAX_TOKEN_SUMMARY:-500}
+      # Document Processing
+      - CHUNK_SIZE=${LIGHTRAG_CHUNK_SIZE:-1200}
+      - CHUNK_OVERLAP_SIZE=${LIGHTRAG_CHUNK_OVERLAP_SIZE:-100}
+    volumes:
+      - lightrag_data:/app/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9621/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 10s
+    profiles:
+      - lightrag
+
   backend:
     build:
       context: .
@@ -24,10 +80,10 @@ services:
       - REDIS_URL=redis://redis:6379/0
       - PYTHONPATH=/app/src
       - ADR_STORAGE_PATH=/app/data/adrs
-      - LLAMA_CPP_URL=${LLAMA_CPP_URL:-http://192.168.0.118:11434}
+      - LLAMA_CPP_URL=${LLAMA_CPP_URL:-http://localhost:11434}
       - LLAMA_CPP_URL_1=${LLAMA_CPP_URL_1:-}
       - LLAMA_CPP_URL_EMBEDDING=${LLAMA_CPP_URL_EMBEDDING:-}
-      - LIGHTRAG_URL=${LIGHTRAG_URL:-http://192.168.0.192:9621}
+      - LIGHTRAG_URL=${LIGHTRAG_URL:-http://lightrag:9621}
       - LIGHTRAG_API_KEY=${LIGHTRAG_API_KEY:-}
       - ENABLE_LAN_DISCOVERY=${ENABLE_LAN_DISCOVERY:-false}
       - HOST_IP=${HOST_IP:-}
@@ -56,10 +112,10 @@ services:
       - REDIS_URL=redis://redis:6379/0
       - PYTHONPATH=/app/src
       - ADR_STORAGE_PATH=/app/data/adrs
-      - LLAMA_CPP_URL=${LLAMA_CPP_URL:-http://192.168.0.118:11434}
+      - LLAMA_CPP_URL=${LLAMA_CPP_URL:-http://localhost:11434}
       - LLAMA_CPP_URL_1=${LLAMA_CPP_URL_1:-}
       - LLAMA_CPP_URL_EMBEDDING=${LLAMA_CPP_URL_EMBEDDING:-}
-      - LIGHTRAG_URL=${LIGHTRAG_URL:-http://192.168.0.192:9621}
+      - LIGHTRAG_URL=${LIGHTRAG_URL:-http://lightrag:9621}
       - LIGHTRAG_API_KEY=${LIGHTRAG_API_KEY:-}
     depends_on:
       - redis
@@ -83,3 +139,4 @@ services:
 volumes:
   redis_data:
   adr_data:
+  lightrag_data:
