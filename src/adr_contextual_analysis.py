@@ -92,11 +92,11 @@ class ContextualAnalysisService:
                         persona,
                         include_context=True
                     )
-                    persona_analyses[persona.value] = analysis
+                    persona_analyses[persona] = analysis
                 except Exception as e:
                     logger.warning(
                         "Failed to analyze ADR with persona",
-                        persona=persona.value,
+                        persona=persona,
                         error=str(e)
                     )
 

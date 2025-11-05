@@ -231,7 +231,7 @@ class ADRGenerationService:
                 except Exception as e:
                     logger.warning(
                         "Failed to generate perspective in parallel",
-                        persona=personas[idx].value,
+                        persona=personas[idx],
                         error=str(e),
                     )
                     return (idx, "")
@@ -274,7 +274,7 @@ class ADRGenerationService:
                 try:
                     if progress_callback:
                         progress_callback(
-                            f"Generating perspective {index}/{total_personas}: {personas[index-1].value.replace('_', ' ').title()}"
+                            f"Generating perspective {index}/{total_personas}: {personas[index-1].replace('_', ' ').title()}"
                         )
 
                     async with self.llama_client:

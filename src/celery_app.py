@@ -335,7 +335,7 @@ Considered Options:
                 "status": "proposed",
                 "created_date": adr.metadata.created_at.isoformat(),
                 "confidence_score": result.confidence_score if hasattr(result, 'confidence_score') else None,
-                "personas_used": result.personas_used if hasattr(result, 'personas_used') and result.personas_used else [p.value for p in persona_list]
+                "personas_used": result.personas_used if hasattr(result, 'personas_used') and result.personas_used else persona_list
             }
 
         # Run the async generation

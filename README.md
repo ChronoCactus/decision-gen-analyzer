@@ -21,18 +21,32 @@ git clone <repository-url>
 cd decision-analyzer
 ```
 
-2. Start all services:
+2. Configure your environment (copy `.env.example` to `.env` and update):
 ```bash
-docker-compose up --build
+cp .env.example .env
+# Edit .env to set LLAMA_CPP_URL to your Ollama server
 ```
 
-3. Open your browser to `http://localhost:3000`
+3. Start all services with bundled LightRAG:
+```bash
+docker compose --profile lightrag up --build
+```
+
+Or without bundled LightRAG (requires external LightRAG instance):
+```bash
+docker compose up --build
+```
+
+4. Open your browser to `http://localhost:3003`
 
 The system includes:
-- **Frontend**: React/Next.js UI on port 3000
+- **Frontend**: React/Next.js UI on port 3003
 - **Backend API**: FastAPI server on port 8000
 - **Redis**: Queue system on port 6379
 - **Celery Worker**: Background task processing
+- **LightRAG**: Vector database and RAG service on port 9621 (optional via `--profile lightrag`)
+
+> **Note**: The system includes an optional bundled LightRAG service. Use `--profile lightrag` to enable it, or point to your own external LightRAG instance. See [LightRAG Configuration](#lightrag-configuration) for details.
 
 ## Development Setup
 
@@ -257,8 +271,56 @@ See [docs/LAN_DISCOVERY.md](docs/LAN_DISCOVERY.md) for complete setup guide and 
 
 **Security Note**: Only enable LAN discovery on trusted networks. This feature opens your backend to all devices on the network.
 
+### LightRAG Configuration
+
+The system includes an **optional bundled LightRAG service** that provides vector storage and graph-based RAG capabilities. No separate LightRAG deployment is required!
+
+**Using the Bundled Service**
+
+Start with the `lightrag` profile:
+```bash
+docker compose --profile lightrag up --build
+```
+
+The LightRAG service will automatically:
+- Use your existing Ollama server (configured via `LLAMA_CPP_URL`)
+- Start on port 9621
+- Persist data in a Docker volume
+
+No additional configuration needed! Just make sure your Ollama server is accessible.
+
+**Customizing the Bundled Service**
+
+Override defaults in your `.env`:
+```bash
+# Use different models
+LIGHTRAG_LLM_MODEL=llama3.1:8b
+LIGHTRAG_EMBEDDING_MODEL=nomic-embed-text
+
+# Tune RAG performance
+LIGHTRAG_TOP_K=100
+LIGHTRAG_COSINE_THRESHOLD=0.3
+
+# Use dedicated Ollama servers for LightRAG
+LIGHTRAG_LLM_HOST=http://192.168.0.200:11434
+LIGHTRAG_EMBEDDING_HOST=http://192.168.0.201:11434
+```
+
+**Using an External LightRAG Instance**
+
+If you have an existing LightRAG deployment:
+```bash
+# In .env - point to your instance
+LIGHTRAG_URL=http://your-lightrag-server:9621
+LIGHTRAG_API_KEY=your-api-key
+
+# Start without the bundled service (no --profile flag)
+docker compose up --build
+```
+
+See [docs/LIGHTRAG_DOCKER_COMPOSE.md](docs/LIGHTRAG_DOCKER_COMPOSE.md) for complete configuration reference and troubleshooting.
+
 ### Other Configuration
-- `LIGHTRAG_URL`: URL of the LightRAG server (default: http://192.168.0.192:9621)
 - `LOG_LEVEL`: Logging level (default: INFO)
 - `LOG_FORMAT`: Log format, either 'json' or 'text' (default: json)
 
