@@ -24,14 +24,35 @@ This is a **multi-persona ADR (Architectural Decision Record) analysis and gener
 **Important**: These services run on external IPs configured in docker-compose environment variables. Always use async context managers (`async with client:` or `async with pool:`) for these clients.
 
 ### Multi-Persona System with Parallel Processing
-The core feature: analyze ADRs through different "personas" (technical lead, business analyst, security expert, etc.). Each persona has:
-- JSON config in `config/personas/*.json` defining focus areas and evaluation criteria
-- Loaded by `PersonaManager` class
-- Used in parallel by `ADRGenerationService._generate_persona_perspectives()`
+The core feature: analyze ADRs through different "personas" (technical lead, business analyst, security expert, etc.). **Fully config-driven** architecture:
 
-**Pattern**: Generate separate perspectives in parallel → synthesize into final ADR with all viewpoints considered.
+**Persona Configuration**:
+- JSON config files define focus areas and evaluation criteria
+- **Default Personas**: Shipped in `config/personas/defaults/` directory (10 personas)
+- **Custom Personas**: User-defined in `config/personas/` directory (mounted as Docker volume)
+- Custom personas with same filename override defaults
+- **Hot-Reload**: Personas loaded from filesystem on each API call (no caching)
+- **Dynamic Discovery**: New JSON files automatically detected without restart
+
+**Environment Variables**:
+- `INCLUDE_DEFAULT_PERSONAS` (default: `true`) - Include shipped defaults
+- `PERSONAS_CONFIG_DIR` (optional) - Override default config directory
+
+**PersonaManager API** (`src/persona_manager.py`):
+- `get_persona_config(persona_value: str) -> Optional[PersonaConfig]` - Load single persona
+- `list_persona_values() -> List[str]` - Get all persona string identifiers
+- `discover_all_personas() -> Dict[str, PersonaConfig]` - Scan filesystem for all personas
+- **String-Based**: All functions use persona string values (e.g., `"technical_lead"`, `"architect"`)
+
+**Deprecated**: `AnalysisPersona` enum in `src/models.py` is deprecated, maintained only for backwards compatibility with existing tests. Use strings in all new code.
+
+**10 Default Personas**: technical_lead, business_analyst, risk_manager, architect, product_manager, customer_support, security_expert, devops_engineer, qa_engineer, philosopher
+
+**Pattern**: Generate separate perspectives in parallel → synthesize into final ADR with all viewpoints considered. See `ADRGenerationService._generate_persona_perspectives()` in `src/adr_generation.py`.
 
 **Performance**: When `LLAMA_CPP_URL_1` is configured, `LlamaCppClientPool` distributes persona generation requests across multiple backends, reducing generation time by ~50%.
+
+**Customization**: See `config/personas/README.md` for instructions on adding custom personas.
 
 ## Critical Developer Workflows
 

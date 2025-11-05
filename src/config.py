@@ -75,6 +75,18 @@ class Settings(BaseSettings):
     job_check_interval: int = Field(default=3600, description="Interval to check for scheduled jobs in seconds")
     max_concurrent_jobs: int = Field(default=3, description="Maximum number of concurrent jobs")
 
+    # Persona Configuration
+    include_default_personas: bool = Field(
+        default=True,
+        description="Include default personas from config/personas/defaults/ directory",
+        alias="INCLUDE_DEFAULT_PERSONAS",
+    )
+    personas_config_dir: Optional[str] = Field(
+        default=None,
+        description="Custom personas configuration directory (defaults to config/personas)",
+        alias="PERSONAS_CONFIG_DIR",
+    )
+
     class Config:
         """Pydantic configuration."""
         model_config = SettingsConfigDict(

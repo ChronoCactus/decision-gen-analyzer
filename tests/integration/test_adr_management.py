@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, MagicMock
 from datetime import datetime, UTC
 
 from src.models import ADR, ADRAnalysisResult, ADRWithAnalysis
-from src.adr_validation import ADRAnalysisService, AnalysisPersona
+from src.adr_validation import ADRAnalysisService
 from src.adr_generation import ADRGenerationService
 from src.models import ADRGenerationPrompt, ADRGenerationResult, ADRGenerationOptions
 from src.persona_manager import PersonaManager
@@ -65,7 +65,7 @@ class TestADRAnalysisService:
 }'''
         mock_llama_client.generate.return_value = mock_response
 
-        result = await analysis_service.analyze_adr(sample_adr, AnalysisPersona.TECHNICAL_LEAD)
+        result = await analysis_service.analyze_adr(sample_adr, "technical_lead")
 
         assert isinstance(result, ADRAnalysisResult)
         assert result.persona == "technical_lead"
@@ -98,7 +98,7 @@ class TestADRAnalysisService:
 
         mock_llama_client.generate.side_effect = mock_generate
 
-        personas = [AnalysisPersona.TECHNICAL_LEAD, AnalysisPersona.BUSINESS_ANALYST, AnalysisPersona.RISK_MANAGER]
+        personas = ["technical_lead", "business_analyst", "risk_manager"]
         result = await analysis_service.analyze_adr_with_multiple_personas(sample_adr, personas)
 
         assert isinstance(result, ADRWithAnalysis)
@@ -124,7 +124,7 @@ class TestADRAnalysisService:
         # Mock AI response
         mock_llama_client.generate.return_value = "SCORE: 5\nANALYSIS WITHOUT CONTEXT..."
 
-        result = await analysis_service.analyze_adr(sample_adr, AnalysisPersona.TECHNICAL_LEAD)
+        result = await analysis_service.analyze_adr(sample_adr, "technical_lead")
 
         assert isinstance(result, ADRAnalysisResult)
         assert result.persona == "technical_lead"
@@ -134,8 +134,8 @@ class TestADRAnalysisService:
 
     def test_persona_instructions(self, analysis_service):
         """Test that persona instructions are properly defined."""
-        for persona in AnalysisPersona:
-            instructions = analysis_service._get_persona_instructions(persona)
+        for persona_value in ["technical_lead", "business_analyst", "architect"]:
+            instructions = analysis_service._get_persona_instructions(persona_value)
             assert "role" in instructions
             assert "instructions" in instructions
             assert len(instructions["instructions"]) > 0
@@ -143,7 +143,9 @@ class TestADRAnalysisService:
     def test_analysis_prompt_construction(self, analysis_service, sample_adr):
         """Test that analysis prompts are properly constructed."""
         context = "Sample context from LightRAG"
-        prompt = analysis_service._build_analysis_prompt(sample_adr, AnalysisPersona.TECHNICAL_LEAD, context)
+        prompt = analysis_service._build_analysis_prompt(
+            sample_adr, "technical_lead", context
+        )
 
         assert sample_adr.metadata.title in prompt
         assert sample_adr.content.context_and_problem in prompt
@@ -169,7 +171,7 @@ class TestADRAnalysisService:
             '''{"strengths": "Good", "weaknesses": "Some", "risks": "Low", "recommendations": "Monitor", "overall_assessment": "ACCEPT", "score": 8}'''
         ]
 
-        result = await service.analyze_adr(sample_adr, AnalysisPersona.TECHNICAL_LEAD)
+        result = await service.analyze_adr(sample_adr, "technical_lead")
 
         assert isinstance(result, ADRAnalysisResult)
         assert result.score == 8
@@ -191,7 +193,7 @@ class TestADRAnalysisService:
         mock_llama_client.generate.side_effect = slow_response
 
         with pytest.raises(RuntimeError, match="timed out"):
-            await service.analyze_adr(sample_adr, AnalysisPersona.TECHNICAL_LEAD)
+            await service.analyze_adr(sample_adr, "technical_lead")
 
     @pytest.mark.asyncio
     async def test_context_relevance_scoring(self, analysis_service, mock_llama_client, mock_lightrag_client, sample_adr):
@@ -205,7 +207,7 @@ class TestADRAnalysisService:
 
         mock_llama_client.generate.return_value = '''{"strengths": "Good", "weaknesses": "Some", "risks": "Low", "recommendations": "Monitor", "overall_assessment": "ACCEPT", "score": 8}'''
 
-        result = await analysis_service.analyze_adr(sample_adr, AnalysisPersona.TECHNICAL_LEAD)
+        result = await analysis_service.analyze_adr(sample_adr, "technical_lead")
 
         assert isinstance(result, ADRAnalysisResult)
         # Should have called retrieve_documents multiple times for comprehensive search
@@ -219,7 +221,7 @@ class TestADRAnalysisService:
         # Mock invalid JSON response
         mock_llama_client.generate.return_value = "INVALID JSON RESPONSE\nSCORE: 6\nSTRENGTHS: Some good points"
 
-        result = await analysis_service.analyze_adr(sample_adr, AnalysisPersona.TECHNICAL_LEAD)
+        result = await analysis_service.analyze_adr(sample_adr, "technical_lead")
 
         # Should still return a result using fallback parsing
         assert isinstance(result, ADRAnalysisResult)
@@ -267,8 +269,7 @@ class TestADRAnalysisService:
         mock_llama_client.generate.side_effect = mock_generate
 
         result = await service.analyze_adr_with_multiple_personas(
-            complex_adr,
-            [AnalysisPersona.TECHNICAL_LEAD, AnalysisPersona.BUSINESS_ANALYST, AnalysisPersona.ARCHITECT]
+            complex_adr, ["technical_lead", "business_analyst", "architect"]
         )
 
         assert isinstance(result, ADRWithAnalysis)
@@ -394,8 +395,7 @@ class TestADRGenerationService:
         )
 
         result = await generation_service.generate_adr(
-            sample_generation_prompt,
-            personas=[AnalysisPersona.TECHNICAL_LEAD]
+            sample_generation_prompt, personas=["technical_lead"]
         )
 
         assert isinstance(result, ADRGenerationResult)

@@ -4,7 +4,13 @@ from typing import List, Dict, Any, Optional
 from datetime import datetime, UTC
 import asyncio
 
-from src.models import ADR, ADRStatus, AnalysisPersona, ADRAnalysisResult, ADRWithAnalysis, AnalysisSections
+from src.models import (
+    ADR,
+    ADRStatus,
+    ADRAnalysisResult,
+    ADRWithAnalysis,
+    AnalysisSections,
+)
 from logger import get_logger
 from llama_client import LlamaCppClient
 from lightrag_client import LightRAGClient
@@ -29,10 +35,7 @@ class ADRAnalysisService:
         self.max_retries = max_retries
 
     async def analyze_adr(
-        self,
-        adr: ADR,
-        persona: AnalysisPersona,
-        include_context: bool = True
+        self, adr: ADR, persona: str, include_context: bool = True
     ) -> ADRAnalysisResult:
         """Analyze an ADR using AI with a specific persona."""
         last_exception = None
@@ -66,25 +69,27 @@ class ADRAnalysisService:
 
                 # Structure the analysis result
                 structured_analysis = ADRAnalysisResult(
-                    persona=persona.value,
+                    persona=persona,
                     timestamp=datetime.now(UTC).isoformat(),
                     sections=AnalysisSections(
                         strengths=parsed_response.get("strengths", ""),
                         weaknesses=parsed_response.get("weaknesses", ""),
                         risks=parsed_response.get("risks", ""),
                         recommendations=parsed_response.get("recommendations", ""),
-                        overall_assessment=parsed_response.get("overall_assessment", "")
+                        overall_assessment=parsed_response.get(
+                            "overall_assessment", ""
+                        ),
                     ),
                     score=parsed_response.get("score"),
-                    raw_response=analysis_result
+                    raw_response=analysis_result,
                 )
 
                 logger.info(
                     "ADR analysis completed",
                     adr_id=str(adr.metadata.id),
-                    persona=persona.value,
+                    persona=persona,
                     title=adr.metadata.title,
-                    attempt=attempt + 1
+                    attempt=attempt + 1,
                 )
 
                 return structured_analysis
@@ -94,8 +99,8 @@ class ADRAnalysisService:
                 logger.warning(
                     "Analysis timeout on attempt",
                     attempt=attempt + 1,
-                    persona=persona.value,
-                    adr_id=str(adr.metadata.id)
+                    persona=persona,
+                    adr_id=str(adr.metadata.id),
                 )
                 if attempt < self.max_retries:
                     await asyncio.sleep(2 ** attempt)  # Exponential backoff
@@ -105,9 +110,9 @@ class ADRAnalysisService:
                 logger.warning(
                     "Analysis failed on attempt",
                     attempt=attempt + 1,
-                    persona=persona.value,
+                    persona=persona,
                     adr_id=str(adr.metadata.id),
-                    error=str(e)
+                    error=str(e),
                 )
                 if attempt < self.max_retries:
                     await asyncio.sleep(2 ** attempt)  # Exponential backoff
@@ -116,26 +121,27 @@ class ADRAnalysisService:
         logger.error(
             "ADR analysis failed after all attempts",
             adr_id=str(adr.metadata.id),
-            persona=persona.value,
+            persona=persona,
             total_attempts=self.max_retries + 1,
-            final_error=str(last_exception)
+            final_error=str(last_exception),
         )
         raise last_exception or RuntimeError("Analysis failed after all retries")
 
     async def analyze_adr_with_multiple_personas(
-        self,
-        adr: ADR,
-        personas: List[AnalysisPersona] = None,
-        include_context: bool = True
+        self, adr: ADR, personas: List[str] = None, include_context: bool = True
     ) -> ADRWithAnalysis:
         """Analyze ADR with multiple personas for comprehensive evaluation."""
         if personas is None:
-            personas = list(AnalysisPersona)
+            # Get default personas from persona manager
+            from src.persona_manager import PersonaManager
+
+            persona_manager = PersonaManager()
+            personas = persona_manager.list_persona_values()
 
         results = {}
         for persona in personas:
             analysis = await self.analyze_adr(adr, persona, include_context)
-            results[persona.value] = analysis
+            results[persona] = analysis
 
         adr_with_analysis = ADRWithAnalysis(
             adr=adr,
@@ -145,10 +151,10 @@ class ADRAnalysisService:
         logger.info(
             "Multi-persona analysis completed",
             adr_id=str(adr.metadata.id),
-            personas=[p.value for p in personas],
+            personas=personas,
             title=adr.metadata.title,
             average_score=adr_with_analysis.average_score,
-            consensus_recommendation=adr_with_analysis.consensus_recommendation
+            consensus_recommendation=adr_with_analysis.consensus_recommendation,
         )
 
         return adr_with_analysis
@@ -307,7 +313,7 @@ class ADRAnalysisService:
             logger.error("Failed to retrieve contextual information", error=str(e))
             return "Context retrieval failed."
 
-    def _build_analysis_prompt(self, adr: ADR, persona: AnalysisPersona, context: str) -> str:
+    def _build_analysis_prompt(self, adr: ADR, persona: str, context: str) -> str:
         """Build analysis prompt for the specified persona."""
         persona_instructions = self._get_persona_instructions(persona)
 
@@ -355,12 +361,12 @@ IMPORTANT: Your response must be valid JSON only. Do not include any text before
 
         return prompt
 
-    def _get_persona_instructions(self, persona: AnalysisPersona) -> Dict[str, str]:
+    def _get_persona_instructions(self, persona: str) -> Dict[str, str]:
         """Get instructions for a specific analysis persona."""
         persona_manager = get_persona_manager()
         return persona_manager.get_persona_instructions(persona)
 
-    def _parse_text_response(self, response: str, persona: AnalysisPersona) -> Dict[str, Any]:
+    def _parse_text_response(self, response: str, persona: str) -> Dict[str, Any]:
         """Parse the AI analysis response into structured data."""
         # Handle markdown-formatted sections like **STRENGTHS**
         sections = {}
@@ -430,9 +436,9 @@ IMPORTANT: Your response must be valid JSON only. Do not include any text before
                 pass
 
         return {
-            "persona": persona.value,
+            "persona": persona,
             "timestamp": datetime.now(UTC).isoformat(),
             "sections": sections,
             "score": score,
-            "raw_response": response
+            "raw_response": response,
         }

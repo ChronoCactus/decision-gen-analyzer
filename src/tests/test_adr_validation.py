@@ -4,7 +4,7 @@ import pytest
 from unittest.mock import AsyncMock, MagicMock
 
 from src.adr_validation import ADRAnalysisService
-from src.models import ADR, AnalysisPersona
+from src.models import ADR
 
 
 class TestADRAnalysisService:
@@ -44,9 +44,7 @@ class TestADRAnalysisService:
         """Test analyzing ADR with single persona."""
         service = ADRAnalysisService(mock_llama_client, mock_lightrag_client)
 
-        result = await service.analyze_adr(
-            sample_adr, persona=AnalysisPersona.TECHNICAL_LEAD
-        )
+        result = await service.analyze_adr(sample_adr, persona="technical_lead")
 
         assert result is not None
         mock_llama_client.generate.assert_called()
@@ -62,8 +60,8 @@ class TestADRAnalysisService:
         result = await service.analyze_adr_with_multiple_personas(
             sample_adr,
             personas=[
-                AnalysisPersona.TECHNICAL_LEAD,
-                AnalysisPersona.BUSINESS_ANALYST,
+                "technical_lead",
+                "business_analyst",
             ],
         )
 

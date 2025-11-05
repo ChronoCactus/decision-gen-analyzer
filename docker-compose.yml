@@ -36,6 +36,7 @@ services:
         condition: service_healthy
     volumes:
       - ./src:/app/src
+      - ./config:/app/config
       - ./pyproject.toml:/app/pyproject.toml
       - ./requirements.md:/app/requirements.md
       - adr_data:/app/data
@@ -65,6 +66,7 @@ services:
       - backend
     volumes:
       - ./src:/app/src
+      - ./config:/app/config
       - ./pyproject.toml:/app/pyproject.toml
       - ./requirements.md:/app/requirements.md
       - adr_data:/app/data

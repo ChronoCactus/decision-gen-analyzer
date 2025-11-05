@@ -6,13 +6,17 @@ from typing import Dict, List, Optional, Any, Union
 from datetime import datetime, UTC
 
 from src.models import (
-    ADR, ADRMetadata, ADRContent, ADRGenerationPrompt, ADRGenerationResult, ADRGenerationOptions,
-    PersonaSynthesisInput, AnalysisPersona
+    ADR,
+    ADRMetadata,
+    ADRContent,
+    ADRGenerationPrompt,
+    ADRGenerationResult,
+    ADRGenerationOptions,
+    PersonaSynthesisInput,
 )
 from src.persona_manager import PersonaManager, PersonaConfig
 from src.llama_client import LlamaCppClient, LlamaCppClientPool
 from src.lightrag_client import LightRAGClient
-from src.persona_manager import PersonaManager
 from src.logger import get_logger
 
 logger = get_logger(__name__)
@@ -42,7 +46,7 @@ class ADRGenerationService:
     async def generate_adr(
         self,
         prompt: ADRGenerationPrompt,
-        personas: Optional[List[AnalysisPersona]] = None,
+        personas: Optional[List[str]] = None,
         include_context: bool = True,
         progress_callback: Optional[callable] = None,
     ) -> ADRGenerationResult:
@@ -50,7 +54,7 @@ class ADRGenerationService:
 
         Args:
             prompt: The generation prompt with context and requirements
-            personas: Personas to involve in the generation process
+            personas: List of persona values (e.g., ['technical_lead', 'architect'])
             include_context: Whether to retrieve related context from vector DB
             progress_callback: Optional callback function for progress updates
 
@@ -58,18 +62,12 @@ class ADRGenerationService:
             ADRGenerationResult: The generated ADR with all components
         """
         logger.info(
-            "Starting ADR generation",
-            title=prompt.title,
-            personas=[p.value for p in (personas or [])]
+            "Starting ADR generation", title=prompt.title, personas=personas or []
         )
 
         # Default personas if none specified
         if not personas:
-            personas = [
-                AnalysisPersona.TECHNICAL_LEAD,
-                AnalysisPersona.BUSINESS_ANALYST,
-                AnalysisPersona.ARCHITECT
-            ]
+            personas = ["technical_lead", "business_analyst", "architect"]
 
         # Retrieve related context if requested
         related_context = []
@@ -178,7 +176,7 @@ class ADRGenerationService:
     async def _generate_persona_perspectives(
         self,
         prompt: ADRGenerationPrompt,
-        personas: List[AnalysisPersona],
+        personas: List[str],
         related_context: List[str],
         progress_callback: Optional[callable] = None,
     ) -> List[PersonaSynthesisInput]:
@@ -186,7 +184,7 @@ class ADRGenerationService:
 
         Args:
             prompt: The generation prompt
-            personas: Personas to generate perspectives for
+            personas: List of persona values to generate perspectives for
             related_context: Related context from vector DB
             progress_callback: Optional callback for progress updates
 
@@ -201,13 +199,16 @@ class ADRGenerationService:
         # Build prompts for all personas
         persona_prompts = []
         persona_configs = []
-        for persona in personas:
-            persona_config = self.persona_manager.get_persona_config(persona)
-            persona_configs.append((persona, persona_config))
-            system_prompt = self._create_persona_generation_prompt(
-                persona_config, prompt, related_context
-            )
-            persona_prompts.append(system_prompt)
+        for persona_value in personas:
+            persona_config = self.persona_manager.get_persona_config(persona_value)
+            if persona_config:
+                persona_configs.append((persona_value, persona_config))
+                system_prompt = self._create_persona_generation_prompt(
+                    persona_config, prompt, related_context
+                )
+                persona_prompts.append(system_prompt)
+            else:
+                logger.warning(f"Skipping unknown persona: {persona_value}")
 
         # Use parallel generation if pool is available
         if self.use_pool:
@@ -251,7 +252,7 @@ class ADRGenerationService:
 
                 if progress_callback:
                     in_progress = total_personas - completed_count
-                    persona_name = personas[idx].value.replace("_", " ").title()
+                    persona_name = personas[idx].replace("_", " ").title()
 
                     if in_progress > 0:
                         progress_callback(
@@ -284,14 +285,14 @@ class ADRGenerationService:
                 except Exception as e:
                     logger.warning(
                         "Failed to generate perspective for persona",
-                        persona=personas[index - 1].value,
+                        persona=personas[index - 1],
                         error=str(e),
                     )
                     responses.append("")
 
         # Parse all responses
         synthesis_inputs = []
-        for (persona, _), response in zip(persona_configs, responses):
+        for (persona_value, _), response in zip(persona_configs, responses):
             if not response:
                 continue
 
@@ -299,14 +300,13 @@ class ADRGenerationService:
                 perspective_data = self._parse_persona_response(response)
                 if perspective_data:
                     synthesis_input = PersonaSynthesisInput(
-                        persona=persona.value,
-                        **perspective_data
+                        persona=persona_value, **perspective_data
                     )
                     synthesis_inputs.append(synthesis_input)
             except Exception as e:
                 logger.warning(
                     "Failed to parse perspective response",
-                    persona=persona.value,
+                    persona=persona_value,
                     error=str(e),
                 )
 
