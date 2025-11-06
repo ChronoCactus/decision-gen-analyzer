@@ -335,4 +335,4 @@ See [docs/LIGHTRAG_DOCKER_COMPOSE.md](docs/LIGHTRAG_DOCKER_COMPOSE.md) for compl
 
 ## License
 
-[Add your license here]
+Apache 2.0 License. See [LICENSE](LICENSE) for details.
