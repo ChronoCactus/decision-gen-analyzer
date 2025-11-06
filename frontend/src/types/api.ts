@@ -97,3 +97,89 @@ export interface TaskStatus {
   result?: any;
   error?: string;
 }
+
+// Export/Import types
+export enum ExportFormat {
+  VERSIONED_JSON = "versioned_json",
+  MARKDOWN = "markdown",
+  JSON = "json",
+  YAML = "yaml"
+}
+
+export interface ExportRequest {
+  format?: string;
+  adr_ids?: string[];
+  exported_by?: string;
+}
+
+export interface ExportResponse {
+  message: string;
+  count: number;
+  format: string;
+  download_ready?: boolean;
+}
+
+export interface ImportRequest {
+  data: any;
+  overwrite_existing?: boolean;
+}
+
+export interface ImportResponse {
+  message: string;
+  imported_count: number;
+  skipped_count?: number;
+  errors?: string[];
+}
+
+export interface ExportSchemaMetadata {
+  schema_version: string;
+  exported_at: string;
+  exported_by?: string;
+  total_records: number;
+}
+
+export interface ADRExportV1 {
+  id: string;
+  title: string;
+  status: string;
+  created_at: string;
+  updated_at: string;
+  author?: string;
+  tags: string[];
+  related_adrs: string[];
+  custom_fields?: Record<string, any>;
+  context_and_problem: string;
+  decision_drivers?: string[];
+  considered_options: string[];
+  decision_outcome: string;
+  consequences: string;
+  confirmation?: string;
+  pros_and_cons?: Record<string, string[]>;
+  more_information?: string;
+  options_details?: Array<{
+    name: string;
+    description?: string;
+    pros: string[];
+    cons: string[];
+  }>;
+  consequences_structured?: {
+    positive: string[];
+    negative: string[];
+  };
+  referenced_adrs?: Array<{
+    id: string;
+    title: string;
+    summary: string;
+  }>;
+  persona_responses?: any[];
+}
+
+export interface SingleADRExport {
+  schema: ExportSchemaMetadata;
+  adr: ADRExportV1;
+}
+
+export interface BulkADRExport {
+  schema: ExportSchemaMetadata;
+  adrs: ADRExportV1[];
+}

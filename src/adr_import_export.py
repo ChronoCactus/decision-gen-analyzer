@@ -1,21 +1,334 @@
-"""Import/export utilities for ADRs."""
+"""Import/export utilities for ADRs with versioned schema support."""
 
 import json
 import os
 from pathlib import Path
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional, Literal
 from uuid import UUID
+from datetime import datetime
 
 import yaml
+from pydantic import BaseModel, Field
 
-from models import ADR, ADRMetadata, ADRContent, ADRStatus
-from logger import get_logger
+from src.models import (
+    ADR,
+    ADRMetadata,
+    ADRContent,
+    ADRStatus,
+    ConsequencesStructured,
+    OptionDetails,
+)
+from src.logger import get_logger
 
 logger = get_logger(__name__)
 
+# Schema version constants
+CURRENT_SCHEMA_VERSION = "1.0.0"
+SUPPORTED_SCHEMA_VERSIONS = ["1.0.0"]
+
+
+class ExportSchemaMetadata(BaseModel):
+    """Metadata for the export schema itself."""
+
+    schema_version: str = Field(
+        default=CURRENT_SCHEMA_VERSION, description="Version of the export schema"
+    )
+    exported_at: str = Field(
+        default_factory=lambda: datetime.now().isoformat(),
+        description="Export timestamp",
+    )
+    exported_by: Optional[str] = Field(
+        default=None, description="User or system that exported the data"
+    )
+    total_records: int = Field(
+        default=1, description="Total number of ADRs in this export"
+    )
+
+
+class ADRExportV1(BaseModel):
+    """Versioned export format for a single ADR (v1.0.0)."""
+
+    # Metadata
+    id: str = Field(..., description="ADR unique identifier (UUID)")
+    title: str = Field(..., description="ADR title")
+    status: str = Field(..., description="ADR status")
+    created_at: str = Field(..., description="Creation timestamp (ISO 8601)")
+    updated_at: str = Field(..., description="Last update timestamp (ISO 8601)")
+    author: Optional[str] = Field(default=None, description="Author name")
+    tags: List[str] = Field(default_factory=list, description="Tags for categorization")
+    related_adrs: List[str] = Field(
+        default_factory=list, description="Related ADR IDs (UUIDs)"
+    )
+    custom_fields: Dict[str, Any] = Field(
+        default_factory=dict, description="Custom metadata fields"
+    )
+
+    # Content
+    context_and_problem: str = Field(..., description="Context and problem statement")
+    decision_drivers: Optional[List[str]] = Field(
+        default=None, description="Decision drivers"
+    )
+    considered_options: List[str] = Field(
+        default_factory=list, description="Considered options (simple list)"
+    )
+    decision_outcome: str = Field(..., description="Decision outcome and justification")
+    consequences: str = Field(..., description="Consequences (plain text)")
+    confirmation: Optional[str] = Field(
+        default=None, description="How compliance is confirmed"
+    )
+    pros_and_cons: Optional[Dict[str, List[str]]] = Field(
+        default=None, description="Pros and cons (deprecated)"
+    )
+    more_information: Optional[str] = Field(
+        default=None, description="Additional information"
+    )
+
+    # Extended fields (newer features)
+    options_details: Optional[List[Dict[str, Any]]] = Field(
+        default=None, description="Detailed options with pros/cons"
+    )
+    consequences_structured: Optional[Dict[str, List[str]]] = Field(
+        default=None, description="Structured consequences"
+    )
+    referenced_adrs: Optional[List[Dict[str, str]]] = Field(
+        default=None, description="Referenced ADRs during generation"
+    )
+    persona_responses: Optional[List[Dict[str, Any]]] = Field(
+        default=None, description="Individual persona responses"
+    )
+
+
+class SingleADRExport(BaseModel):
+    """Container for a single ADR export with schema metadata."""
+
+    schema: ExportSchemaMetadata
+    adr: ADRExportV1
+
+
+class BulkADRExport(BaseModel):
+    """Container for bulk ADR export with schema metadata."""
+
+    schema: ExportSchemaMetadata
+    adrs: List[ADRExportV1]
+
 
 class ADRImportExport:
-    """Utilities for importing and exporting ADRs."""
+    """Utilities for importing and exporting ADRs with versioned schema support."""
+
+    # ==================== Versioned Export/Import (Primary Methods) ====================
+
+    @staticmethod
+    def export_single_versioned(
+        adr: ADR, exported_by: Optional[str] = None
+    ) -> SingleADRExport:
+        """Export a single ADR to versioned schema format.
+
+        Args:
+            adr: The ADR to export
+            exported_by: Optional identifier of who/what exported the data
+
+        Returns:
+            SingleADRExport object with schema metadata
+        """
+        schema = ExportSchemaMetadata(
+            schema_version=CURRENT_SCHEMA_VERSION,
+            exported_by=exported_by,
+            total_records=1,
+        )
+
+        adr_export = ADRImportExport._adr_to_export_v1(adr)
+
+        return SingleADRExport(schema=schema, adr=adr_export)
+
+    @staticmethod
+    def export_bulk_versioned(
+        adrs: List[ADR], exported_by: Optional[str] = None
+    ) -> BulkADRExport:
+        """Export multiple ADRs to versioned schema format.
+
+        Args:
+            adrs: List of ADRs to export
+            exported_by: Optional identifier of who/what exported the data
+
+        Returns:
+            BulkADRExport object with schema metadata
+        """
+        schema = ExportSchemaMetadata(
+            schema_version=CURRENT_SCHEMA_VERSION,
+            exported_by=exported_by,
+            total_records=len(adrs),
+        )
+
+        adr_exports = [ADRImportExport._adr_to_export_v1(adr) for adr in adrs]
+
+        return BulkADRExport(schema=schema, adrs=adr_exports)
+
+    @staticmethod
+    def import_single_versioned(data: Dict[str, Any]) -> ADR:
+        """Import a single ADR from versioned schema format.
+
+        Args:
+            data: Dictionary containing schema and adr fields
+
+        Returns:
+            ADR object
+
+        Raises:
+            ValueError: If schema version is not supported
+        """
+        schema_version = data.get("schema", {}).get("schema_version", "1.0.0")
+
+        if schema_version not in SUPPORTED_SCHEMA_VERSIONS:
+            raise ValueError(
+                f"Unsupported schema version: {schema_version}. Supported versions: {SUPPORTED_SCHEMA_VERSIONS}"
+            )
+
+        # Parse the export container
+        export_container = SingleADRExport(**data)
+
+        # Convert to ADR based on schema version
+        if schema_version == "1.0.0":
+            adr = ADRImportExport._export_v1_to_adr(export_container.adr)
+        else:
+            # Future versions will have migration logic here
+            raise ValueError(f"Schema version {schema_version} not yet implemented")
+
+        logger.info(
+            f"Imported ADR from versioned schema v{schema_version}",
+            adr_id=str(adr.metadata.id),
+            title=adr.metadata.title,
+        )
+        return adr
+
+    @staticmethod
+    def import_bulk_versioned(data: Dict[str, Any]) -> List[ADR]:
+        """Import multiple ADRs from versioned schema format.
+
+        Args:
+            data: Dictionary containing schema and adrs fields
+
+        Returns:
+            List of ADR objects
+
+        Raises:
+            ValueError: If schema version is not supported
+        """
+        schema_version = data.get("schema", {}).get("schema_version", "1.0.0")
+
+        if schema_version not in SUPPORTED_SCHEMA_VERSIONS:
+            raise ValueError(
+                f"Unsupported schema version: {schema_version}. Supported versions: {SUPPORTED_SCHEMA_VERSIONS}"
+            )
+
+        # Parse the export container
+        export_container = BulkADRExport(**data)
+
+        # Convert to ADRs based on schema version
+        adrs = []
+        if schema_version == "1.0.0":
+            for adr_export in export_container.adrs:
+                adr = ADRImportExport._export_v1_to_adr(adr_export)
+                adrs.append(adr)
+        else:
+            # Future versions will have migration logic here
+            raise ValueError(f"Schema version {schema_version} not yet implemented")
+
+        logger.info(
+            f"Imported {len(adrs)} ADRs from versioned schema v{schema_version}"
+        )
+        return adrs
+
+    @staticmethod
+    def _adr_to_export_v1(adr: ADR) -> ADRExportV1:
+        """Convert an ADR to v1.0.0 export format."""
+        # Convert options_details to dict if present
+        options_details_dict = None
+        if adr.content.options_details:
+            options_details_dict = [
+                opt.model_dump() for opt in adr.content.options_details
+            ]
+
+        # Convert consequences_structured to dict if present
+        consequences_structured_dict = None
+        if adr.content.consequences_structured:
+            consequences_structured_dict = (
+                adr.content.consequences_structured.model_dump()
+            )
+
+        return ADRExportV1(
+            id=str(adr.metadata.id),
+            title=adr.metadata.title,
+            status=adr.metadata.status.value,
+            created_at=adr.metadata.created_at.isoformat(),
+            updated_at=adr.metadata.updated_at.isoformat(),
+            author=adr.metadata.author,
+            tags=adr.metadata.tags,
+            related_adrs=[str(adr_id) for adr_id in adr.metadata.related_adrs],
+            custom_fields=adr.metadata.custom_fields,
+            context_and_problem=adr.content.context_and_problem,
+            decision_drivers=adr.content.decision_drivers,
+            considered_options=adr.content.considered_options,
+            decision_outcome=adr.content.decision_outcome,
+            consequences=adr.content.consequences,
+            confirmation=adr.content.confirmation,
+            pros_and_cons=adr.content.pros_and_cons,
+            more_information=adr.content.more_information,
+            options_details=options_details_dict,
+            consequences_structured=consequences_structured_dict,
+            referenced_adrs=adr.content.referenced_adrs,
+            persona_responses=adr.persona_responses,
+        )
+
+    @staticmethod
+    def _export_v1_to_adr(export: ADRExportV1) -> ADR:
+        """Convert v1.0.0 export format to an ADR."""
+        # Parse metadata
+        metadata = ADRMetadata(
+            id=UUID(export.id),
+            title=export.title,
+            status=ADRStatus(export.status),
+            created_at=datetime.fromisoformat(export.created_at),
+            updated_at=datetime.fromisoformat(export.updated_at),
+            author=export.author,
+            tags=export.tags,
+            related_adrs=[UUID(adr_id) for adr_id in export.related_adrs],
+            custom_fields=export.custom_fields,
+        )
+
+        # Convert options_details from dict if present
+        options_details = None
+        if export.options_details:
+            options_details = [OptionDetails(**opt) for opt in export.options_details]
+
+        # Convert consequences_structured from dict if present
+        consequences_structured = None
+        if export.consequences_structured:
+            consequences_structured = ConsequencesStructured(
+                **export.consequences_structured
+            )
+
+        # Parse content
+        content = ADRContent(
+            context_and_problem=export.context_and_problem,
+            decision_drivers=export.decision_drivers,
+            considered_options=export.considered_options,
+            decision_outcome=export.decision_outcome,
+            consequences=export.consequences,
+            confirmation=export.confirmation,
+            pros_and_cons=export.pros_and_cons,
+            more_information=export.more_information,
+            options_details=options_details,
+            consequences_structured=consequences_structured,
+            referenced_adrs=export.referenced_adrs,
+        )
+
+        return ADR(
+            metadata=metadata,
+            content=content,
+            persona_responses=export.persona_responses,
+        )
+
+    # ==================== Legacy Export Methods (Backwards Compatibility) ====================
 
     @staticmethod
     def export_to_markdown(adr: ADR, output_path: str) -> None:
@@ -378,3 +691,79 @@ class ADRImportExport:
 
         logger.info("Batch import completed", count=len(adrs), directory=input_dir)
         return adrs
+
+    # ==================== File-based Versioned Export/Import ====================
+
+    @staticmethod
+    def export_single_versioned_to_file(
+        adr: ADR, output_path: str, exported_by: Optional[str] = None
+    ) -> None:
+        """Export a single ADR to a versioned JSON file.
+
+        Args:
+            adr: The ADR to export
+            output_path: Path to the output file
+            exported_by: Optional identifier of who/what exported the data
+        """
+        export_data = ADRImportExport.export_single_versioned(adr, exported_by)
+
+        with open(output_path, "w", encoding="utf-8") as f:
+            json.dump(
+                export_data.model_dump(mode="json"), f, indent=2, ensure_ascii=False
+            )
+
+        logger.info(
+            f"Exported ADR to versioned file",
+            path=output_path,
+            adr_id=str(adr.metadata.id),
+        )
+
+    @staticmethod
+    def export_bulk_versioned_to_file(
+        adrs: List[ADR], output_path: str, exported_by: Optional[str] = None
+    ) -> None:
+        """Export multiple ADRs to a versioned JSON file.
+
+        Args:
+            adrs: List of ADRs to export
+            output_path: Path to the output file
+            exported_by: Optional identifier of who/what exported the data
+        """
+        export_data = ADRImportExport.export_bulk_versioned(adrs, exported_by)
+
+        with open(output_path, "w", encoding="utf-8") as f:
+            json.dump(
+                export_data.model_dump(mode="json"), f, indent=2, ensure_ascii=False
+            )
+
+        logger.info(f"Exported {len(adrs)} ADRs to versioned file", path=output_path)
+
+    @staticmethod
+    def import_single_versioned_from_file(file_path: str) -> ADR:
+        """Import a single ADR from a versioned JSON file.
+
+        Args:
+            file_path: Path to the file to import
+
+        Returns:
+            ADR object
+        """
+        with open(file_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+
+        return ADRImportExport.import_single_versioned(data)
+
+    @staticmethod
+    def import_bulk_versioned_from_file(file_path: str) -> List[ADR]:
+        """Import multiple ADRs from a versioned JSON file.
+
+        Args:
+            file_path: Path to the file to import
+
+        Returns:
+            List of ADR objects
+        """
+        with open(file_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+
+        return ADRImportExport.import_bulk_versioned(data)

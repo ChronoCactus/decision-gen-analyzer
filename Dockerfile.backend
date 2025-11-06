@@ -26,7 +26,8 @@ RUN pip install --no-cache-dir \
     redis \
     celery \
     aiofiles \
-    lightrag-hku
+    lightrag-hku \
+    python-multipart
 
 # Copy source code
 COPY src/ ./src/

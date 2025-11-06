@@ -163,6 +163,82 @@ class ApiClient {
   async getGenerationTaskStatus(taskId: string): Promise<TaskStatus> {
     return this.request<TaskStatus>(`/api/v1/generation/task/${taskId}`);
   }
+
+  // Export/Import operations
+  async exportSingleADR(adrId: string, format: string = 'versioned_json'): Promise<Blob> {
+    await this.fetchConfig();
+    const url = `${this.apiBaseUrl}/api/v1/adrs/${adrId}/export?format=${format}`;
+    const response = await fetch(url);
+
+    if (!response.ok) {
+      throw new Error(`Export failed: ${response.status} ${response.statusText}`);
+    }
+
+    return response.blob();
+  }
+
+  async exportAllADRs(format: string = 'versioned_json', adrIds?: string[]): Promise<Blob> {
+    await this.fetchConfig();
+    const url = `${this.apiBaseUrl}/api/v1/adrs/export`;
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        format,
+        adr_ids: adrIds,
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Export failed: ${response.status} ${response.statusText}`);
+    }
+
+    return response.blob();
+  }
+
+  async importADRsFromFiles(files: File[], overwriteExisting: boolean = false): Promise<{
+    message: string;
+    imported_count: number;
+    skipped_count: number;
+    errors: string[];
+  }> {
+    const results = {
+      message: '',
+      imported_count: 0,
+      skipped_count: 0,
+      errors: [] as string[],
+    };
+
+    for (const file of files) {
+      try {
+        const formData = new FormData();
+        formData.append('file', file);
+
+        await this.fetchConfig();
+        const url = `${this.apiBaseUrl}/api/v1/adrs/import/file?overwrite_existing=${overwriteExisting}`;
+        const response = await fetch(url, {
+          method: 'POST',
+          body: formData,
+        });
+
+        if (!response.ok) {
+          throw new Error(`Import failed for ${file.name}: ${response.status} ${response.statusText}`);
+        }
+
+        const result = await response.json();
+        results.imported_count += result.imported_count;
+        results.skipped_count += result.skipped_count;
+        results.errors.push(...result.errors.map((e: string) => `${file.name}: ${e}`));
+      } catch (error) {
+        results.errors.push(`${file.name}: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      }
+    }
+
+    results.message = `Import completed: ${results.imported_count} imported, ${results.skipped_count} skipped`;
+    return results;
+  }
 }
 
 export const apiClient = new ApiClient();
