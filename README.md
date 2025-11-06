@@ -106,25 +106,22 @@ When running, visit `http://localhost:8000/docs` for interactive API documentati
 
 ## Architecture
 
-```
-┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
-│   React UI      │────│   FastAPI       │────│   Celery        │
-│   (Port 3003)   │    │   Backend       │    │   Workers       │
-└─────────────────┘    │   (Port 8000)   │    └─────────────────┘
-                       └─────────────────┘             │
-                              │                       │
-                              ▼                       ▼
-                       ┌─────────────────┐    ┌─────────────────┐
-                       │   Redis Queue   │    │   Llama.cpp     │
-                       │   (Port 6379)   │    │   Server         │
-                       └─────────────────┘    │   (Port 11434)   │
-                                              └─────────────────┘
-                                                       │
-                                                       ▼
-                                              ┌─────────────────┐
-                                              │   LightRAG      │
-                                              │   Vector DB     │
-                                              └─────────────────┘
+```mermaid
+graph TD
+    UI[React UI<br/>Port 3003]
+    API[FastAPI Backend<br/>Port 8000]
+    Celery[Celery Workers]
+    Redis[Redis Queue<br/>Port 6379]
+    Llama[Llama.cpp Server<br/>Port 11434<br/>External]
+    LightRAG[LightRAG Vector DB<br/>Port 9621<br/>Optional]
+    
+    UI -->|HTTP Requests| API
+    API -->|Queue Tasks| Redis
+    API -->|Direct Calls| LightRAG
+    Celery -->|Poll Tasks| Redis
+    Celery -->|LLM Generation| Llama
+    Celery -->|RAG Retrieval| LightRAG
+    LightRAG -->|Embeddings & LLM| Llama
 ```
 
 ## Usage
