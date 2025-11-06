@@ -10,9 +10,10 @@ interface ADRCardProps {
   onAnalyze: (adrId: string) => void;
   onDelete: (adrId: string) => Promise<void>;
   onPushToRAG: (adrId: string) => void;
+  onExport: (adrId: string) => void;
 }
 
-export function ADRCard({ adr, onAnalyze, onDelete, onPushToRAG }: ADRCardProps) {
+export function ADRCard({ adr, onAnalyze, onDelete, onPushToRAG, onExport }: ADRCardProps) {
   const [showModal, setShowModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
@@ -42,6 +43,10 @@ export function ADRCard({ adr, onAnalyze, onDelete, onPushToRAG }: ADRCardProps)
 
   const handlePushToRAG = () => {
     onPushToRAG(adr.metadata.id);
+  };
+
+  const handleExport = () => {
+    onExport(adr.metadata.id);
   };
 
   const getStatusColor = (status: string) => {
@@ -118,6 +123,12 @@ export function ADRCard({ adr, onAnalyze, onDelete, onPushToRAG }: ADRCardProps)
             className="flex-1 bg-purple-600 text-white px-4 py-2 rounded-md hover:bg-purple-700 transition-colors text-sm"
           >
             Push to RAG
+          </button>
+          <button
+            onClick={handleExport}
+            className="flex-1 bg-indigo-600 text-white px-4 py-2 rounded-md hover:bg-indigo-700 transition-colors text-sm"
+          >
+            Export
           </button>
           <button
             onClick={() => setShowDeleteModal(true)}

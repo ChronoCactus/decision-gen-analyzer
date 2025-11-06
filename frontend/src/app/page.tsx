@@ -5,12 +5,14 @@ import { ADR, AnalyzeADRRequest, GenerateADRRequest, TaskResponse } from '@/type
 import { apiClient } from '@/lib/api';
 import { ADRCard } from '@/components/ADRCard';
 import { GenerateADRModal } from '@/components/GenerateADRModal';
+import { ImportExportModal } from '@/components/ImportExportModal';
 
 export default function Home() {
   const [adrs, setAdrs] = useState<ADR[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showGenerateModal, setShowGenerateModal] = useState(false);
+  const [showImportExportModal, setShowImportExportModal] = useState(false);
   const [tasks, setTasks] = useState<Record<string, { status: string; message: string; startTime?: number }>>({});
   const [generationStartTime, setGenerationStartTime] = useState<number | undefined>(undefined);
   const [isGenerating, setIsGenerating] = useState(false);
@@ -76,6 +78,56 @@ export default function Home() {
     } catch (err) {
       console.error('Failed to push ADR to RAG:', err);
       alert('Failed to push ADR to RAG');
+    }
+  };
+
+  const handleExportSingle = async (adrId: string) => {
+    try {
+      const blob = await apiClient.exportSingleADR(adrId);
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `adr_${adrId}.json`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+    } catch (err) {
+      console.error('Failed to export ADR:', err);
+      alert('Failed to export ADR');
+    }
+  };
+
+  const handleExportAll = async () => {
+    try {
+      const blob = await apiClient.exportAllADRs();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `adrs_export_${adrs.length}_records.json`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+    } catch (err) {
+      console.error('Failed to export all ADRs:', err);
+      alert('Failed to export all ADRs');
+    }
+  };
+
+  const handleImport = async (files: File[], overwrite: boolean) => {
+    try {
+      const result = await apiClient.importADRsFromFiles(files, overwrite);
+
+      // Reload ADRs after successful import
+      if (result.imported_count > 0) {
+        await loadADRs();
+      }
+
+      return result;
+    } catch (err) {
+      console.error('Failed to import ADRs:', err);
+      throw err;
     }
   };
 
@@ -202,12 +254,20 @@ export default function Home() {
             <h1 className="text-3xl font-bold text-gray-900">Decision Analyzer</h1>
             <p className="text-gray-600 mt-2">AI-powered ADR analysis and generation</p>
           </div>
-          <button
-            onClick={() => setShowGenerateModal(true)}
-            className="bg-blue-600 text-white px-6 py-3 rounded-md hover:bg-blue-700 font-medium"
-          >
-            Generate New ADR
-          </button>
+          <div className="flex gap-3">
+            <button
+              onClick={() => setShowImportExportModal(true)}
+              className="bg-indigo-600 text-white px-6 py-3 rounded-md hover:bg-indigo-700 font-medium"
+            >
+              Import/Export
+            </button>
+            <button
+              onClick={() => setShowGenerateModal(true)}
+              className="bg-blue-600 text-white px-6 py-3 rounded-md hover:bg-blue-700 font-medium"
+            >
+              Generate New ADR
+            </button>
+          </div>
         </div>
 
         {/* Task Status Notifications */}
@@ -296,6 +356,7 @@ export default function Home() {
                 onAnalyze={handleAnalyzeADR}
                 onDelete={handleDeleteADR}
                 onPushToRAG={handlePushToRAG}
+                onExport={handleExportSingle}
               />
             ))}
           </div>
@@ -308,6 +369,15 @@ export default function Home() {
             onGenerate={handleGenerateADR}
             isGenerating={isGenerating}
             generationStartTime={generationStartTime}
+          />
+        )}
+
+        {/* Import/Export Modal */}
+        {showImportExportModal && (
+          <ImportExportModal
+            onClose={() => setShowImportExportModal(false)}
+            onImport={handleImport}
+            onExportAll={handleExportAll}
           />
         )}
       </div>

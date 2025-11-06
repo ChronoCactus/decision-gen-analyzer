@@ -65,10 +65,10 @@ Without `--profile lightrag`, all services except LightRAG will start.
 
 ## Quick Configuration Examples
 
-### Minimal Setup (Just Works™)
+### Minimal Setup
 ```bash
 # .env file
-LLAMA_CPP_URL=http://192.168.0.118:11434
+LLAMA_CPP_URL=http://localhost:11434
 ```
 
 That's it! LightRAG will automatically use your Ollama server.
@@ -181,7 +181,6 @@ LIGHTRAG_EMBEDDING_NUM_CTX=2048
 ## Next Steps
 
 - **Read the full docs**: [README.md](../README.md)
-- **LightRAG configuration**: [LIGHTRAG_DOCKER_COMPOSE.md](LIGHTRAG_DOCKER_COMPOSE.md)
 - **Multi-backend setup**: [PARALLEL_PROCESSING.md](PARALLEL_PROCESSING.md)
 - **LAN access**: [LAN_DISCOVERY.md](LAN_DISCOVERY.md)
 - **Testing guide**: [TESTING.md](TESTING.md)

@@ -1,8 +1,11 @@
 """API routes for Decision Analyzer."""
 
-from fastapi import APIRouter, HTTPException, BackgroundTasks
-from typing import List, Optional
+from fastapi import APIRouter, HTTPException, BackgroundTasks, File, UploadFile
+from fastapi.responses import JSONResponse, StreamingResponse
+from typing import List, Optional, Literal
 from pydantic import BaseModel
+import json
+import io
 
 from src.models import ADR
 from src.lightrag_client import LightRAGClient
@@ -48,6 +51,49 @@ class ConfigResponse(BaseModel):
 
     api_base_url: str
     lan_discovery_enabled: bool
+
+
+# Export/Import models
+class ExportFormat(str):
+    """Export format options."""
+
+    VERSIONED_JSON = "versioned_json"
+    MARKDOWN = "markdown"
+    JSON = "json"
+    YAML = "yaml"
+
+
+class ExportRequest(BaseModel):
+    """Request model for bulk export."""
+
+    format: str = "versioned_json"
+    adr_ids: Optional[List[str]] = None  # If None, export all
+    exported_by: Optional[str] = None
+
+
+class ExportResponse(BaseModel):
+    """Response model for export operations."""
+
+    message: str
+    count: int
+    format: str
+    download_ready: bool = True
+
+
+class ImportRequest(BaseModel):
+    """Request model for bulk import from JSON data."""
+
+    data: dict
+    overwrite_existing: bool = False
+
+
+class ImportResponse(BaseModel):
+    """Response model for import operations."""
+
+    message: str
+    imported_count: int
+    skipped_count: int = 0
+    errors: List[str] = []
 
 
 # Create routers
@@ -206,22 +252,23 @@ async def delete_adr(adr_id: str):
         raise HTTPException(status_code=500, detail=f"Failed to delete ADR: {str(e)}")
 
 
-@adr_router.post("/{adr_id}/push-to-rag")
-async def push_adr_to_rag(adr_id: str):
-    """Push an ADR to LightRAG for indexing."""
-    try:
-        from src.adr_file_storage import get_adr_storage
-        from src.lightrag_client import LightRAGClient
-        from src.config import settings
+async def _push_adr_to_rag_internal(adr: "ADR") -> dict:
+    """Internal helper to push an ADR to LightRAG for indexing.
 
-        storage = get_adr_storage()
-        adr = storage.get_adr(adr_id)
+    Args:
+        adr: The ADR object to push
 
-        if not adr:
-            raise HTTPException(status_code=404, detail=f"ADR {adr_id} not found")
+    Returns:
+        dict with result information
 
-        # Format ADR content for LightRAG
-        adr_content = f"""Title: {adr.metadata.title}
+    Raises:
+        Exception: If push to RAG fails
+    """
+    from src.lightrag_client import LightRAGClient
+    from src.config import settings
+
+    # Format ADR content for LightRAG
+    adr_content = f"""Title: {adr.metadata.title}
 Status: {adr.metadata.status}
 Author: {adr.metadata.author}
 Tags: {', '.join(adr.metadata.tags)}
@@ -242,23 +289,39 @@ Considered Options:
 {chr(10).join(f"- {opt}" for opt in adr.content.considered_options) if adr.content.considered_options else "None specified"}
 """
 
-        # Push to LightRAG
-        async with LightRAGClient(
-            base_url=settings.lightrag_url, demo_mode=False
-        ) as rag_client:
-            result = await rag_client.store_document(
-                doc_id=str(adr.metadata.id),
-                content=adr_content,
-                metadata={
-                    "type": "adr",
-                    "title": adr.metadata.title,
-                    "status": adr.metadata.status,
-                    "author": adr.metadata.author,
-                    "tags": adr.metadata.tags,
-                    "created_at": adr.metadata.created_at.isoformat(),
-                },
-            )
-            logger.info(f"Pushed ADR {adr_id} to LightRAG")
+    # Push to LightRAG
+    async with LightRAGClient(
+        base_url=settings.lightrag_url, demo_mode=False
+    ) as rag_client:
+        result = await rag_client.store_document(
+            doc_id=str(adr.metadata.id),
+            content=adr_content,
+            metadata={
+                "type": "adr",
+                "title": adr.metadata.title,
+                "status": adr.metadata.status,
+                "author": adr.metadata.author,
+                "tags": adr.metadata.tags,
+                "created_at": adr.metadata.created_at.isoformat(),
+            },
+        )
+        logger.info(f"Pushed ADR {adr.metadata.id} to LightRAG")
+        return result
+
+
+@adr_router.post("/{adr_id}/push-to-rag")
+async def push_adr_to_rag(adr_id: str):
+    """Push an ADR to LightRAG for indexing."""
+    try:
+        from src.adr_file_storage import get_adr_storage
+
+        storage = get_adr_storage()
+        adr = storage.get_adr(adr_id)
+
+        if not adr:
+            raise HTTPException(status_code=404, detail=f"ADR {adr_id} not found")
+
+        await _push_adr_to_rag_internal(adr)
 
         return {
             "message": f"ADR {adr_id} pushed to RAG successfully",
@@ -364,3 +427,291 @@ async def get_generation_task_status(task_id: str):
         return response
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to get task status: {str(e)}")
+
+
+# ==================== Export/Import Endpoints ====================
+
+
+@adr_router.post("/export", response_class=StreamingResponse)
+async def export_adrs_bulk(request: ExportRequest):
+    """Export ADRs in bulk (all or selected) with versioned schema support.
+
+    Returns a downloadable file in the requested format.
+    """
+    try:
+        from src.adr_file_storage import get_adr_storage
+        from src.adr_import_export import ADRImportExport
+
+        storage = get_adr_storage()
+
+        # Get ADRs to export
+        if request.adr_ids:
+            # Export specific ADRs
+            adrs = []
+            for adr_id in request.adr_ids:
+                adr = storage.get_adr(adr_id)
+                if adr:
+                    adrs.append(adr)
+                else:
+                    logger.warning(f"ADR {adr_id} not found, skipping")
+        else:
+            # Export all ADRs
+            adrs, _ = storage.list_adrs(limit=10000)  # Get all
+
+        if not adrs:
+            raise HTTPException(status_code=404, detail="No ADRs found to export")
+
+        # Generate export based on format
+        if request.format == "versioned_json":
+            export_data = ADRImportExport.export_bulk_versioned(
+                adrs, exported_by=request.exported_by
+            )
+            content = json.dumps(
+                export_data.model_dump(mode="json"), indent=2, ensure_ascii=False
+            )
+            filename = f"adrs_export_{len(adrs)}_records.json"
+            media_type = "application/json"
+        else:
+            raise HTTPException(
+                status_code=400, detail=f"Unsupported export format: {request.format}"
+            )
+
+        # Return as streaming response for download
+        return StreamingResponse(
+            io.BytesIO(content.encode("utf-8")),
+            media_type=media_type,
+            headers={"Content-Disposition": f"attachment; filename={filename}"},
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to export ADRs: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to export ADRs: {str(e)}")
+
+
+@adr_router.get("/{adr_id}/export", response_class=StreamingResponse)
+async def export_single_adr(
+    adr_id: str, format: str = "versioned_json", exported_by: Optional[str] = None
+):
+    """Export a single ADR with versioned schema support.
+
+    Returns a downloadable file in the requested format.
+    """
+    try:
+        from src.adr_file_storage import get_adr_storage
+        from src.adr_import_export import ADRImportExport
+
+        storage = get_adr_storage()
+        adr = storage.get_adr(adr_id)
+
+        if not adr:
+            raise HTTPException(status_code=404, detail=f"ADR {adr_id} not found")
+
+        # Generate export based on format
+        if format == "versioned_json":
+            export_data = ADRImportExport.export_single_versioned(
+                adr, exported_by=exported_by
+            )
+            content = json.dumps(
+                export_data.model_dump(mode="json"), indent=2, ensure_ascii=False
+            )
+            filename = f"adr_{adr_id}.json"
+            media_type = "application/json"
+        elif format == "markdown":
+            content = adr.to_markdown()
+            filename = f"adr_{adr_id}.md"
+            media_type = "text/markdown"
+        else:
+            raise HTTPException(
+                status_code=400, detail=f"Unsupported export format: {format}"
+            )
+
+        # Return as streaming response for download
+        return StreamingResponse(
+            io.BytesIO(content.encode("utf-8")),
+            media_type=media_type,
+            headers={"Content-Disposition": f"attachment; filename={filename}"},
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to export ADR {adr_id}: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to export ADR: {str(e)}")
+
+
+@adr_router.post("/import", response_model=ImportResponse)
+async def import_adrs_bulk(request: ImportRequest):
+    """Import ADRs in bulk from versioned schema format.
+
+    Accepts JSON data with versioned schema. Supports both single and bulk formats.
+    Automatically detects the format based on the presence of 'adr' or 'adrs' field.
+    """
+    try:
+        from src.adr_file_storage import get_adr_storage
+        from src.adr_import_export import ADRImportExport
+
+        storage = get_adr_storage()
+
+        # Detect whether this is a single or bulk export format
+        # Single exports have 'adr' field, bulk exports have 'adrs' field
+        is_single_export = "adr" in request.data and "adrs" not in request.data
+
+        # Import ADRs from versioned schema
+        try:
+            if is_single_export:
+                # Single ADR format - import as a list of one
+                adr = ADRImportExport.import_single_versioned(request.data)
+                adrs = [adr]
+            else:
+                # Bulk ADR format
+                adrs = ADRImportExport.import_bulk_versioned(request.data)
+        except ValueError as ve:
+            raise HTTPException(
+                status_code=400, detail=f"Invalid import data: {str(ve)}"
+            )
+
+        imported_count = 0
+        skipped_count = 0
+        errors = []
+
+        for adr in adrs:
+            adr_id = str(adr.metadata.id)
+
+            # Check if ADR already exists
+            existing_adr = storage.get_adr(adr_id)
+
+            if existing_adr and not request.overwrite_existing:
+                skipped_count += 1
+                errors.append(
+                    f"ADR {adr_id} already exists (use overwrite_existing=true to replace)"
+                )
+                continue
+
+            try:
+                # Save ADR
+                storage.save_adr(adr)
+                imported_count += 1
+                logger.info(f"Imported ADR {adr_id}: {adr.metadata.title}")
+
+                # Automatically push to RAG for indexing
+                try:
+                    await _push_adr_to_rag_internal(adr)
+                    logger.info(f"Auto-pushed imported ADR {adr_id} to RAG")
+                except Exception as rag_error:
+                    # Log the error but don't fail the import
+                    logger.warning(
+                        f"Failed to push ADR {adr_id} to RAG: {str(rag_error)}"
+                    )
+                    # Note: We continue with the import even if RAG push fails
+
+            except Exception as e:
+                errors.append(f"Failed to import ADR {adr_id}: {str(e)}")
+                logger.error(f"Failed to import ADR {adr_id}: {str(e)}")
+
+        return ImportResponse(
+            message=f"Import completed: {imported_count} imported, {skipped_count} skipped",
+            imported_count=imported_count,
+            skipped_count=skipped_count,
+            errors=errors,
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to import ADRs: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to import ADRs: {str(e)}")
+
+
+@adr_router.post("/import/file", response_model=ImportResponse)
+async def import_adrs_from_file(
+    file: UploadFile = File(...), overwrite_existing: bool = False
+):
+    """Import ADRs from an uploaded file (versioned JSON format).
+
+    Accepts a file upload containing versioned schema data.
+    """
+    try:
+        from src.adr_import_export import ADRImportExport
+
+        # Read file content
+        content = await file.read()
+
+        try:
+            data = json.loads(content)
+        except json.JSONDecodeError:
+            raise HTTPException(status_code=400, detail="Invalid JSON file")
+
+        # Use the bulk import endpoint logic
+        import_request = ImportRequest(data=data, overwrite_existing=overwrite_existing)
+        return await import_adrs_bulk(import_request)
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to import from file: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to import from file: {str(e)}"
+        )
+
+
+@adr_router.post("/import/single", response_model=ImportResponse)
+async def import_single_adr(request: ImportRequest):
+    """Import a single ADR from versioned schema format.
+
+    Accepts JSON data with versioned schema for a single ADR.
+    """
+    try:
+        from src.adr_file_storage import get_adr_storage
+        from src.adr_import_export import ADRImportExport
+
+        storage = get_adr_storage()
+
+        # Import single ADR from versioned schema
+        try:
+            adr = ADRImportExport.import_single_versioned(request.data)
+        except ValueError as ve:
+            raise HTTPException(
+                status_code=400, detail=f"Invalid import data: {str(ve)}"
+            )
+
+        adr_id = str(adr.metadata.id)
+
+        # Check if ADR already exists
+        existing_adr = storage.get_adr(adr_id)
+
+        if existing_adr and not request.overwrite_existing:
+            return ImportResponse(
+                message=f"ADR {adr_id} already exists",
+                imported_count=0,
+                skipped_count=1,
+                errors=[
+                    f"ADR {adr_id} already exists (use overwrite_existing=true to replace)"
+                ],
+            )
+
+        # Save ADR
+        storage.save_adr(adr)
+        logger.info(f"Imported ADR {adr_id}: {adr.metadata.title}")
+
+        # Automatically push to RAG for indexing
+        try:
+            await _push_adr_to_rag_internal(adr)
+            logger.info(f"Auto-pushed imported ADR {adr_id} to RAG")
+        except Exception as rag_error:
+            # Log the error but don't fail the import
+            logger.warning(f"Failed to push ADR {adr_id} to RAG: {str(rag_error)}")
+
+        return ImportResponse(
+            message=f"Successfully imported ADR: {adr.metadata.title}",
+            imported_count=1,
+            skipped_count=0,
+            errors=[],
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to import ADR: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to import ADR: {str(e)}")
