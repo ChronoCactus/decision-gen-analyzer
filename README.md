@@ -39,6 +39,8 @@ docker compose up --build
 
 4. Open your browser to `http://localhost:3003`
 
+For detailed configuration options and troubleshooting, see [docs/QUICKSTART.md](docs/QUICKSTART.md).
+
 The system includes:
 - **Frontend**: React/Next.js UI on port 3003
 - **Backend API**: FastAPI server on port 8000
@@ -80,14 +82,14 @@ npm install
 npm run dev
 ```
 
-3. Open `http://localhost:3000`
+3. Open `http://localhost:3003`
 
 ### Manual Configuration
 
 Copy and edit environment files:
 ```bash
 cp .env.example .env
-cp frontend/.env.local.example frontend/.env.local
+# Frontend .env.local can be created manually if needed for local overrides
 ```
 
 ## API Documentation
@@ -104,25 +106,22 @@ When running, visit `http://localhost:8000/docs` for interactive API documentati
 
 ## Architecture
 
-```
-┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
-│   React UI      │────│   FastAPI       │────│   Celery        │
-│   (Port 3000)   │    │   Backend       │    │   Workers       │
-└─────────────────┘    │   (Port 8000)   │    └─────────────────┘
-                       └─────────────────┘             │
-                              │                       │
-                              ▼                       ▼
-                       ┌─────────────────┐    ┌─────────────────┐
-                       │   Redis Queue   │    │   Llama.cpp     │
-                       │   (Port 6379)   │    │   Server         │
-                       └─────────────────┘    │   (Port 11434)   │
-                                              └─────────────────┘
-                                                       │
-                                                       ▼
-                                              ┌─────────────────┐
-                                              │   LightRAG      │
-                                              │   Vector DB     │
-                                              └─────────────────┘
+```mermaid
+graph TD
+    UI[React UI<br/>Port 3003]
+    API[FastAPI Backend<br/>Port 8000]
+    Celery[Celery Workers]
+    Redis[Redis Queue<br/>Port 6379]
+    Llama[Llama.cpp Server<br/>Port 11434<br/>External]
+    LightRAG[LightRAG Vector DB<br/>Port 9621<br/>Optional]
+    
+    UI -->|HTTP Requests| API
+    API -->|Queue Tasks| Redis
+    API -->|Direct Calls| LightRAG
+    Celery -->|Poll Tasks| Redis
+    Celery -->|LLM Generation| Llama
+    Celery -->|RAG Retrieval| LightRAG
+    LightRAG -->|Embeddings & LLM| Llama
 ```
 
 ## Usage
@@ -225,7 +224,7 @@ decision-analyzer/
 ├── src/
 │   ├── __init__.py
 │   ├── config.py          # Configuration management
-│   ├── logging.py         # Logging setup
+│   ├── logger.py          # Logging setup
 │   ├── models.py          # Data models (ADR, AnalysisResult, etc.)
 │   ├── llama_client.py    # llama-cpp server client
 │   └── lightrag_client.py # LightRAG server client
@@ -318,8 +317,6 @@ LIGHTRAG_API_KEY=your-api-key
 docker compose up --build
 ```
 
-See [docs/LIGHTRAG_DOCKER_COMPOSE.md](docs/LIGHTRAG_DOCKER_COMPOSE.md) for complete configuration reference and troubleshooting.
-
 ### Other Configuration
 - `LOG_LEVEL`: Logging level (default: INFO)
 - `LOG_FORMAT`: Log format, either 'json' or 'text' (default: json)
@@ -335,4 +332,4 @@ See [docs/LIGHTRAG_DOCKER_COMPOSE.md](docs/LIGHTRAG_DOCKER_COMPOSE.md) for compl
 
 ## License
 
-[Add your license here]
+Apache 2.0 License. See [LICENSE](LICENSE) for details.
