@@ -563,6 +563,6 @@ Planned improvements for export/import:
 
 ## Related Documentation
 
-- [ADR Storage](./TESTING.md) - How ADRs are stored internally
-- [API Reference](./QUICKSTART.md) - Complete API documentation
+- [API Documentation](http://localhost:8000/docs) - Interactive API reference when running the backend
+- [Quick Start Guide](./QUICKSTART.md) - Getting started with Decision Analyzer
 - [Testing Guide](./TESTING.md) - Testing export/import functionality
