@@ -1,9 +1,11 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { ADR } from '@/types/api';
 import { ADRModal } from './ADRModal';
 import { DeleteConfirmationModal } from './DeleteConfirmationModal';
+import { Toast } from './Toast';
+import { apiClient } from '@/lib/api';
 
 interface ADRCardProps {
   adr: ADR;
@@ -11,13 +13,47 @@ interface ADRCardProps {
   onDelete: (adrId: string) => Promise<void>;
   onPushToRAG: (adrId: string) => void;
   onExport: (adrId: string) => void;
+  cacheRebuilding: boolean;
 }
 
-export function ADRCard({ adr, onAnalyze, onDelete, onPushToRAG, onExport }: ADRCardProps) {
+export function ADRCard({ adr, onAnalyze, onDelete, onPushToRAG, onExport, cacheRebuilding }: ADRCardProps) {
   const [showModal, setShowModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [existsInRAG, setExistsInRAG] = useState<boolean | null>(null);
+  const [checkingRAGStatus, setCheckingRAGStatus] = useState(true);
+  const [showToast, setShowToast] = useState(false);
+  const [toastMessage, setToastMessage] = useState('');
+  const [toastType, setToastType] = useState<'info' | 'success' | 'warning' | 'error'>('info');
+
+  // Check if ADR exists in RAG on mount
+  useEffect(() => {
+    let mounted = true;
+
+    const checkRAGStatus = async () => {
+      try {
+        const response = await apiClient.getADRRAGStatus(adr.metadata.id);
+        if (mounted) {
+          setExistsInRAG(response.exists_in_rag);
+          setCheckingRAGStatus(false);
+        }
+      } catch (error) {
+        console.error('Failed to check RAG status:', error);
+        if (mounted) {
+          // If we can't check, assume it might not exist (show button)
+          setExistsInRAG(false);
+          setCheckingRAGStatus(false);
+        }
+      }
+    };
+
+    checkRAGStatus();
+
+    return () => {
+      mounted = false;
+    };
+  }, [adr.metadata.id]);
 
   const handleAnalyze = async () => {
     setIsAnalyzing(true);
@@ -42,7 +78,17 @@ export function ADRCard({ adr, onAnalyze, onDelete, onPushToRAG, onExport }: ADR
   };
 
   const handlePushToRAG = () => {
+    // Check if cache is rebuilding
+    if (cacheRebuilding) {
+      setToastMessage('Cache is currently rebuilding. Please try again in a moment.');
+      setToastType('warning');
+      setShowToast(true);
+      return;
+    }
+
     onPushToRAG(adr.metadata.id);
+    // After pushing, mark as existing in RAG (optimistic update)
+    setExistsInRAG(true);
   };
 
   const handleExport = () => {
@@ -118,12 +164,17 @@ export function ADRCard({ adr, onAnalyze, onDelete, onPushToRAG, onExport }: ADR
         </div>
 
         <div className="flex gap-2 mt-2">
-          <button
-            onClick={handlePushToRAG}
-            className="flex-1 bg-purple-600 text-white px-4 py-2 rounded-md hover:bg-purple-700 transition-colors text-sm"
-          >
-            Push to RAG
-          </button>
+          {/* Only show Push to RAG button if it doesn't exist in RAG */}
+          {!checkingRAGStatus && !existsInRAG && (
+            <button
+              onClick={handlePushToRAG}
+              disabled={cacheRebuilding}
+              className="flex-1 bg-purple-600 text-white px-4 py-2 rounded-md hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-sm"
+              title={cacheRebuilding ? 'Cache is rebuilding...' : 'Push to RAG'}
+            >
+              {cacheRebuilding ? 'Cache Rebuilding...' : 'Push to RAG'}
+            </button>
+          )}
           <button
             onClick={handleExport}
             className="flex-1 bg-indigo-600 text-white px-4 py-2 rounded-md hover:bg-indigo-700 transition-colors text-sm"
@@ -154,6 +205,14 @@ export function ADRCard({ adr, onAnalyze, onDelete, onPushToRAG, onExport }: ADR
           onConfirm={handleDelete}
           onCancel={() => setShowDeleteModal(false)}
           isDeleting={isDeleting}
+        />
+      )}
+
+      {showToast && (
+        <Toast
+          message={toastMessage}
+          type={toastType}
+          onClose={() => setShowToast(false)}
         />
       )}
     </>

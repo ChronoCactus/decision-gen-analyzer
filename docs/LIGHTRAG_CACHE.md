@@ -213,6 +213,21 @@ Key test cases:
 - Verify background sync is running (check logs for "LightRAG cache sync completed")
 - Manually trigger sync after inserting: `await sync_single_document(adr_id)`
 
+### Stale cache entries (buttons not appearing after deleting documents)
+**Problem**: After deleting documents from LightRAG directly, the cache still shows them as existing.
+
+**Cause**: The cache has 24-hour TTL and isn't automatically invalidated when you delete documents.
+
+**Solution**: 
+1. Wait for the next scheduled sync (every 5 minutes) - the sync now clears stale entries
+2. OR manually trigger a cache rebuild:
+   ```bash
+   curl -X POST http://localhost:8000/api/v1/adrs/cache/rebuild
+   ```
+3. OR restart the backend (triggers a sync on startup)
+
+**Note**: As of the latest update, the cache rebuild process automatically clears all existing entries before rebuilding, ensuring the cache always reflects the current state of LightRAG.
+
 ### Cache growing too large
 - Reduce TTL in `LightRAGDocumentCache.CACHE_TTL`
 - Run periodic cache cleanup: `await cache.clear_all()`

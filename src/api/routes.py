@@ -344,6 +344,20 @@ async def push_adr_to_rag(adr_id: str):
     """Push an ADR to LightRAG for indexing."""
     try:
         from src.adr_file_storage import get_adr_storage
+        from src.lightrag_doc_cache import LightRAGDocumentCache
+
+        # Check if cache is currently rebuilding
+        try:
+            async with LightRAGDocumentCache() as cache:
+                is_rebuilding = await cache.is_rebuilding()
+                if is_rebuilding:
+                    raise HTTPException(
+                        status_code=503,
+                        detail="Cache is currently rebuilding. Please try again in a moment.",
+                    )
+        except Exception as cache_error:
+            logger.warning(f"Failed to check cache rebuild status: {cache_error}")
+            # Continue anyway if we can't check cache status
 
         storage = get_adr_storage()
         adr = storage.get_adr(adr_id)
@@ -364,6 +378,108 @@ async def push_adr_to_rag(adr_id: str):
         logger.error(f"Failed to push ADR to RAG: {str(e)}")
         raise HTTPException(
             status_code=500, detail=f"Failed to push ADR to RAG: {str(e)}"
+        )
+
+
+@adr_router.get("/{adr_id}/rag-status")
+async def get_adr_rag_status(adr_id: str):
+    """Check if an ADR exists in LightRAG."""
+    try:
+        from src.lightrag_doc_cache import LightRAGDocumentCache
+
+        # Try to get the doc ID from cache
+        async with LightRAGDocumentCache() as cache:
+            doc_id = await cache.get_doc_id(adr_id)
+            exists_in_rag = doc_id is not None
+
+        return {
+            "adr_id": adr_id,
+            "exists_in_rag": exists_in_rag,
+            "lightrag_doc_id": doc_id,
+        }
+    except Exception as e:
+        logger.error(f"Failed to check RAG status for {adr_id}: {str(e)}")
+        # Return unknown status if we can't check
+        return {"adr_id": adr_id, "exists_in_rag": None, "error": str(e)}
+
+
+@adr_router.get("/cache/status")
+async def get_cache_status():
+    """Get the LightRAG cache status including rebuild state and last sync time."""
+    try:
+        from src.lightrag_doc_cache import LightRAGDocumentCache
+
+        async with LightRAGDocumentCache() as cache:
+            is_rebuilding = await cache.is_rebuilding()
+            last_sync_time = await cache.get_last_sync_time()
+
+        return {
+            "is_rebuilding": is_rebuilding,
+            "last_sync_time": last_sync_time
+        }
+    except Exception as e:
+        logger.error(f"Failed to check cache status: {str(e)}")
+        return {
+            "is_rebuilding": False,
+            "last_sync_time": None,
+            "error": str(e)
+        }
+
+
+@adr_router.get("/cache/rebuild-status")
+async def get_cache_rebuild_status():
+    """Check if the LightRAG cache is currently being rebuilt.
+    
+    DEPRECATED: Use /cache/status instead for more complete information.
+    """
+    try:
+        from src.lightrag_doc_cache import LightRAGDocumentCache
+
+        async with LightRAGDocumentCache() as cache:
+            is_rebuilding = await cache.is_rebuilding()
+
+        return {"is_rebuilding": is_rebuilding}
+    except Exception as e:
+        logger.error(f"Failed to check cache rebuild status: {str(e)}")
+        return {"is_rebuilding": False, "error": str(e)}
+
+
+@adr_router.post("/cache/rebuild")
+async def trigger_cache_rebuild(background_tasks: BackgroundTasks):
+    """Manually trigger a cache rebuild.
+
+    This is useful when you've made changes to LightRAG directly (e.g., deleted documents)
+    and need to sync the cache immediately rather than waiting for the scheduled sync.
+    """
+    try:
+        from src.lightrag_doc_cache import LightRAGDocumentCache
+
+        # Check if already rebuilding
+        async with LightRAGDocumentCache() as cache:
+            is_rebuilding = await cache.is_rebuilding()
+            if is_rebuilding:
+                return {
+                    "message": "Cache rebuild is already in progress",
+                    "status": "already_running",
+                }
+
+        # Trigger rebuild in background
+        from src.lightrag_sync import _sync_lightrag_cache
+
+        async def run_rebuild():
+            try:
+                count = await _sync_lightrag_cache()
+                logger.info(f"Manual cache rebuild completed: {count} documents synced")
+            except Exception as e:
+                logger.error(f"Manual cache rebuild failed: {str(e)}")
+
+        background_tasks.add_task(lambda: asyncio.create_task(run_rebuild()))
+
+        return {"message": "Cache rebuild triggered successfully", "status": "started"}
+    except Exception as e:
+        logger.error(f"Failed to trigger cache rebuild: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to trigger cache rebuild: {str(e)}"
         )
 
 

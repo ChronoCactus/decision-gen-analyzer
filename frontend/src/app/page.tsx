@@ -17,6 +17,8 @@ export default function Home() {
   const [generationStartTime, setGenerationStartTime] = useState<number | undefined>(undefined);
   const [isGenerating, setIsGenerating] = useState(false);
   const [currentTime, setCurrentTime] = useState(Date.now());
+  const [cacheRebuilding, setCacheRebuilding] = useState(false);
+  const [lastSyncTime, setLastSyncTime] = useState<number | null>(null);
 
   useEffect(() => {
     loadADRs();
@@ -28,6 +30,42 @@ export default function Home() {
       setCurrentTime(Date.now());
     }, 1000);
     return () => clearInterval(interval);
+  }, []);
+
+  // Poll cache status at page level (not per card)
+  useEffect(() => {
+    let mounted = true;
+    let intervalId: NodeJS.Timeout;
+
+    const checkCacheStatus = async () => {
+      try {
+        const response = await apiClient.getCacheStatus();
+        if (mounted) {
+          setCacheRebuilding(response.is_rebuilding);
+          if (response.last_sync_time) {
+            setLastSyncTime(response.last_sync_time * 1000); // Convert to milliseconds
+          }
+        }
+      } catch (error) {
+        console.error('Failed to check cache status:', error);
+        if (mounted) {
+          setCacheRebuilding(false);
+        }
+      }
+    };
+
+    // Check immediately
+    checkCacheStatus();
+
+    // Then check every 5 seconds
+    intervalId = setInterval(checkCacheStatus, 5000);
+
+    return () => {
+      mounted = false;
+      if (intervalId) {
+        clearInterval(intervalId);
+      }
+    };
   }, []);
 
   const loadADRs = async () => {
@@ -77,7 +115,15 @@ export default function Home() {
       alert(`Success: ${result.message}`);
     } catch (err) {
       console.error('Failed to push ADR to RAG:', err);
-      alert('Failed to push ADR to RAG');
+
+      // Check if it's a 503 error (cache rebuilding)
+      if ((err as any).status === 503) {
+        alert('Cache is currently rebuilding. Please try again in a moment.');
+      } else if (err instanceof Error) {
+        alert(`Failed to push ADR to RAG: ${err.message}`);
+      } else {
+        alert('Failed to push ADR to RAG');
+      }
     }
   };
 
@@ -219,6 +265,25 @@ export default function Home() {
     poll();
   };
 
+  const formatTimeAgo = (timestamp: number | null): string => {
+    if (!timestamp) return 'Never';
+    
+    const secondsAgo = Math.floor((currentTime - timestamp) / 1000);
+    
+    if (secondsAgo < 60) return `~${secondsAgo}s ago`;
+    const minutesAgo = Math.floor(secondsAgo / 60);
+    if (minutesAgo < 60) return `~${minutesAgo}min ago`;
+    const hoursAgo = Math.floor(minutesAgo / 60);
+    if (hoursAgo < 24) return `~${hoursAgo}h ago`;
+    const daysAgo = Math.floor(hoursAgo / 24);
+    return `~${daysAgo}d ago`;
+  };
+
+  const formatTimestamp = (timestamp: number | null): string => {
+    if (!timestamp) return 'Never';
+    return new Date(timestamp).toLocaleString();
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
@@ -249,7 +314,7 @@ export default function Home() {
   return (
     <div className="min-h-screen bg-gray-50">
       <div className="max-w-7xl mx-auto px-4 py-8">
-        <div className="flex justify-between items-center mb-8">
+        <div className="flex justify-between items-center mb-4">
           <div>
             <h1 className="text-3xl font-bold text-gray-900">Decision Analyzer</h1>
             <p className="text-gray-600 mt-2">AI-powered ADR analysis and generation</p>
@@ -267,6 +332,25 @@ export default function Home() {
             >
               Generate New ADR
             </button>
+          </div>
+        </div>
+
+        {/* RAG Cache Status */}
+        <div className="mb-4 flex justify-end">
+          <div className="text-sm text-gray-600 bg-white px-4 py-2 rounded-md border border-gray-200 shadow-sm">
+            <span className="font-medium">RAG Last Cached: </span>
+            {cacheRebuilding ? (
+              <span className="text-blue-600 font-semibold">Rebuilding...</span>
+            ) : (
+              <>
+                <span className="text-gray-800" title={formatTimestamp(lastSyncTime)}>
+                  {formatTimestamp(lastSyncTime)}
+                </span>
+                <span className="text-gray-500 ml-2">
+                  ({formatTimeAgo(lastSyncTime)})
+                </span>
+              </>
+            )}
           </div>
         </div>
 
@@ -357,6 +441,7 @@ export default function Home() {
                 onDelete={handleDeleteADR}
                 onPushToRAG={handlePushToRAG}
                 onExport={handleExportSingle}
+                cacheRebuilding={cacheRebuilding}
               />
             ))}
           </div>
