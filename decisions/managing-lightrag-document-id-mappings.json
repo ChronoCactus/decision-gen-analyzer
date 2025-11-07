@@ -1,0 +1,224 @@
+{
+  "schema": {
+    "schema_version": "1.0.0",
+    "exported_at": "2025-11-07T20:05:18.511183",
+    "exported_by": null,
+    "total_records": 1
+  },
+  "adr": {
+    "id": "94af6a66-22d7-4fd4-9396-6cfea751670d",
+    "title": "Managing LightRAG Document ID Mappings in Decision Analyzer",
+    "status": "proposed",
+    "created_at": "2025-11-07T20:03:44.951295+00:00",
+    "updated_at": "2025-11-07T20:03:44.951305+00:00",
+    "author": "AI Assistant",
+    "tags": [],
+    "related_adrs": [],
+    "custom_fields": {},
+    "context_and_problem": "The Decision Analyzer application stores ADR files on disk and pushes them to LightRAG for vector storage and semantic search. LightRAG exposes only a paginated `/documents/paginated` endpoint that returns all documents with internal IDs (`doc-{hash}`), but it does not provide a lookup by filename. Consequently, the application cannot delete a document in LightRAG without first discovering its internal ID. Fetching the entire document list for every delete is prohibitively expensive as the ADR base grows. We need a fast, reliable, and maintainable mechanism to map file paths to LightRAG document IDs, with graceful degradation when the mapping layer is unavailable.",
+    "decision_drivers": [
+      "Fast lookup performance for delete and analysis operations",
+      "Durability and resilience of the mapping data",
+      "Scalability to handle thousands of ADRs without memory pressure",
+      "Operational simplicity and cost",
+      "Risk mitigation against data loss and stale mappings"
+    ],
+    "considered_options": [
+      "Redis Cache with Periodic Sync",
+      "Hybrid Persistent Store + Redis Cache"
+    ],
+    "decision_outcome": "The Decision Analyzer team will adopt the Redis Cache with Periodic Sync approach. An in-memory Redis cache will store `file_path -> doc_id` mappings with a 24-hour TTL. A background sync job will run every 5 minutes, fetching all documents from LightRAG via the paginated endpoint and refreshing the cache. Individual insertions will trigger a single-document sync that updates the cache immediately. On cache miss, the system will fall back to a paginated lookup. This design leverages existing infrastructure (Redis is already deployed), provides sub-millisecond lookups for most operations, and keeps operational complexity minimal while ensuring graceful degradation when the cache is unavailable.",
+    "consequences": "- Positive:\n- Zero additional infrastructure – Redis is already part of the stack.\n- Sub-millisecond lookups for hot ADRs, eliminating expensive paginated calls.\n- Simple implementation – one module, one background task.\n- TTL prevents stale data from lingering indefinitely.\n- Graceful degradation: fallback to paginated lookup if Redis is down.\n- Low operational overhead compared to managing multiple storage systems.\n- Negative:\n- Cache staleness: documents inserted just before a sync may not be cached until the next cycle.\n- Potential race conditions between sync and manual cache updates.\n- Memory pressure if the ADR base grows to hundreds of thousands of entries.\n- Reliance on Redis availability – outages temporarily disable fast deletes.\n- No durable source of truth; a Redis restart or TTL expiry would lose mappings requiring re-sync.",
+    "confirmation": null,
+    "pros_and_cons": null,
+    "more_information": null,
+    "options_details": [
+      {
+        "name": "Redis Cache with Periodic Sync",
+        "description": "Maintain an in‑memory Redis cache that stores `file_path -> doc_id` mappings. A background task runs every 5 minutes to fetch all documents via the paginated endpoint and refresh the cache. Individual insertions trigger a single‑document sync. Cache entries have a 24‑hour TTL. On cache miss, the system falls back to a paginated lookup.",
+        "pros": [
+          "Zero additional infrastructure – Redis is already part of the stack.",
+          "Sub‑millisecond lookups for hot ADRs, eliminating expensive paginated calls.",
+          "Simple implementation – one module, one background task.",
+          "TTL prevents stale data from lingering indefinitely.",
+          "Graceful degradation: fallback to paginated lookup if Redis is down."
+        ],
+        "cons": [
+          "Cache staleness: documents inserted just before a sync may not be cached until the next cycle.",
+          "Potential race conditions between sync and manual cache updates.",
+          "Memory pressure if the ADR base grows to hundreds of thousands of entries.",
+          "Reliance on a single point of failure – Redis outage disables fast deletes.",
+          "No durable source of truth; a Redis restart or TTL expiry would lose mappings."
+        ]
+      },
+      {
+        "name": "Hybrid Persistent Store + Redis Cache",
+        "description": "Persist `file_path -> doc_id` mappings in a durable relational database (e.g., PostgreSQL). A Redis cache is used as a hot‑read layer with a very long TTL or no TTL. A periodic sync job updates both layers: it fetches all documents via the paginated endpoint, writes the mapping to the database, and refreshes the Redis cache. Individual insertions trigger a single‑document sync that writes to both layers immediately. On cache miss, the system queries the database before falling back to a paginated lookup.",
+        "pros": [
+          "Durable source of truth: mappings survive Redis restarts or TTL expirations.",
+          "Resilience: database can be replicated and backed up, reducing risk of data loss.",
+          "Cache can be tuned (TTL, eviction policy) without affecting correctness.",
+          "Scalable: database can handle millions of rows; Redis remains a fast read layer.",
+          "Clear separation of concerns – cache for speed, DB for durability.",
+          "Better auditability: database logs provide a history of mapping changes."
+        ],
+        "cons": [
+          "Increased operational complexity – two storage systems to maintain.",
+          "Higher cost: requires a database instance and associated maintenance.",
+          "Potential race conditions between sync job and manual updates if not carefully coordinated.",
+          "Additional latency for cache misses that hit the database.",
+          "Requires schema migration and backup strategy."
+        ]
+      }
+    ],
+    "consequences_structured": {
+      "positive": [
+        "Zero additional infrastructure – Redis is already part of the stack.",
+        "Sub-millisecond lookups for hot ADRs, eliminating expensive paginated calls.",
+        "Simple implementation – one module, one background task.",
+        "TTL prevents stale data from lingering indefinitely.",
+        "Graceful degradation: fallback to paginated lookup if Redis is down.",
+        "Low operational overhead compared to managing multiple storage systems."
+      ],
+      "negative": [
+        "Cache staleness: documents inserted just before a sync may not be cached until the next cycle.",
+        "Potential race conditions between sync and manual cache updates.",
+        "Memory pressure if the ADR base grows to hundreds of thousands of entries.",
+        "Reliance on Redis availability – outages temporarily disable fast deletes.",
+        "No durable source of truth; a Redis restart or TTL expiry would lose mappings requiring re-sync."
+      ]
+    },
+    "referenced_adrs": [],
+    "persona_responses": [
+      {
+        "persona": "architect",
+        "perspective": "The Redis‑based cache is a pragmatic solution to the missing filename lookup in LightRAG, but it should be treated as an in‑memory layer on top of a durable mapping store.  This hybrid approach satisfies the immediate need for fast ID resolution while guarding against cache churn and stale entries as the dataset grows.",
+        "recommended_option": "Use a persistent mapping table (e.g., PostgreSQL) to store file_path → doc_id pairs, keep a Redis cache for hot reads with no TTL (or a very long TTL), and run a periodic sync that updates both layers.  Fallback to paginated fetch only when the cache misses.",
+        "reasoning": "1) A persistent store guarantees that deletions will succeed even if Redis restarts or the TTL expires. 2) Redis provides sub‑millisecond lookups for the hot ADRs that are most frequently accessed or deleted. 3) The sync job can be tuned (batch size, interval) to avoid overwhelming LightRAG as the number of documents scales. 4) By decoupling the cache from the source of truth, the system remains resilient to Redis outages and reduces coupling to LightRAG’s internal ID churn.",
+        "concerns": [
+          "Potential race conditions between the sync job and immediate deletions if the mapping is updated concurrently.",
+          "Increased operational complexity with two storage layers (DB + Redis).",
+          "Cache staleness if TTL is too long and the underlying mapping changes (e.g., LightRAG re‑indexes).",
+          "Additional maintenance overhead for ensuring the sync job handles errors and retries gracefully."
+        ],
+        "requirements": [
+          "A durable source of truth for file_path → doc_id mappings (e.g., relational DB).",
+          "A Redis cache that is refreshed by the sync job and used for read‑heavy operations.",
+          "Graceful degradation: if Redis is unavailable, the system should still be able to delete using a paginated lookup.",
+          "Configurable sync interval and batch size to balance freshness against load on LightRAG.",
+          "Logging and metrics for cache hits/misses, sync duration, and error rates."
+        ]
+      },
+      {
+        "persona": "business_analyst",
+        "perspective": "Using a Redis cache with a background sync to LightRAG provides a practical balance between speed and data consistency. It eliminates the need to paginate on every delete while still keeping the mapping up‑to‑date through periodic refreshes.",
+        "recommended_option": "Implement the Redis‑based cache with a 5‑minute sync interval, 24‑hour TTL for individual entries, and a fallback to filename‑based deletion when the cache misses.",
+        "reasoning": "The cache dramatically reduces lookup latency from seconds (paginated fetch) to microseconds, which is critical for a responsive UI and bulk delete operations. The periodic sync ensures new documents are cached soon after insertion, and the TTL prevents stale entries from lingering indefinitely. Fallback logic guarantees that a single deletion will still succeed even if Redis is temporarily unavailable, preserving system reliability.",
+        "concerns": [
+          "Sync lag: documents inserted right before a sync may not be cached until the next cycle, causing occasional cache misses.",
+          "Cache consistency: ensuring that deletions and updates in LightRAG are reflected in Redis in a timely manner.",
+          "Redis availability: a Redis outage could lead to degraded performance or failed deletions if fallback logic is not robust.",
+          "Memory usage: with a large ADR base, the cache could grow substantially; monitoring and eviction policies are essential.",
+          "TTL misconfiguration: too short TTL could cause unnecessary re‑syncs, too long could keep stale mappings."
+        ],
+        "requirements": [
+          "Fast lookup of document IDs (≤ 5 ms per request).",
+          "Automatic cache population for newly inserted documents.",
+          "Graceful degradation when Redis is unavailable.",
+          "Configurable sync interval and TTL to balance freshness and load.",
+          "Monitoring hooks for cache hit/miss ratios and sync duration.",
+          "Secure storage of mappings (e.g., Redis ACLs) to prevent unauthorized tampering."
+        ]
+      },
+      {
+        "persona": "devops_engineer",
+        "perspective": "Using a Redis cache for mapping ADR file paths to LightRAG document IDs is a pragmatic choice that keeps the stack simple while providing fast, low‑latency lookups. The background sync job ensures eventual consistency, and TTLs keep stale entries from accumulating. However, the approach introduces a new operational surface that must be monitored and tuned as the document volume grows.",
+        "recommended_option": "Redis Cache with Background Sync (as described in the LightRAGDocumentCache + sync service)",
+        "reasoning": "Redis is already part of the Decision Analyzer stack, so adding a small cache layer avoids additional infrastructure. The cache gives O(1) lookups for deletes and insert confirmations, eliminating the need to hit LightRAG’s paginated endpoint for every operation. A periodic sync (default 5 min) keeps the cache up‑to‑date, while a single‑document sync on insert guarantees immediate consistency for new ADRs. TTLs prevent memory bloat, and the cache can be monitored via Redis metrics and application logs.",
+        "concerns": [
+          "Sync latency for large document sets (full sync could take minutes)",
+          "Cache miss rate before the first full sync or after TTL expiry",
+          "Potential race conditions between cache writes and deletions",
+          "Redis memory usage if the number of ADRs grows to hundreds of thousands",
+          "Reliability of the background sync job – failures must be retried and logged",
+          "Operational overhead of monitoring Redis health, eviction rates, and sync job status"
+        ],
+        "requirements": [
+          "High read/write throughput for cache operations (≥10k ops/sec)",
+          "Low latency (<5 ms) for cache lookups",
+          "Eventual consistency between Decision Analyzer and LightRAG (≤5 min drift)",
+          "Automatic cache eviction or TTL to limit memory footprint",
+          "Robust monitoring (Redis metrics, sync job health, cache hit/miss ratio)",
+          "Scalable Redis deployment (cluster or standalone with sufficient RAM)",
+          "Automated background sync task with retry/backoff logic",
+          "Graceful fallback to filename-based deletion if cache miss occurs"
+        ]
+      },
+      {
+        "persona": "risk_manager",
+        "perspective": "Using a Redis cache for file‑to‑document ID mapping is a pragmatic solution that balances performance with LightRAG’s limited API surface. It removes the need for expensive full‑page fetches on every delete while keeping the system simple and highly available.",
+        "recommended_option": "Implement the Redis‑based cache with a 24‑hour TTL, background sync every 5 minutes, and a graceful fallback to filename‑based deletion. Consider adding a webhook or incremental sync if LightRAG eventually exposes such a feature.",
+        "reasoning": "The cache gives O(1) lookup for most operations, drastically reducing latency and load on LightRAG. A 24‑hour TTL keeps the mapping fresh without overwhelming Redis memory. Background syncing guarantees eventual consistency, while the fallback path ensures deletions can still proceed if the cache is temporarily unavailable. Monitoring and retry logic mitigate transient failures and protect against data loss.",
+        "concerns": [
+          "Cache staleness if LightRAG deletes or renames documents outside the sync window.",
+          "Memory pressure on Redis as the number of ADRs grows.",
+          "Potential security exposure of document IDs in Redis if not properly secured.",
+          "Operational overhead of running and maintaining a background sync task.",
+          "Reliability of the fallback filename‑based delete (may fail silently)."
+        ],
+        "requirements": [
+          "Redis must be configured with authentication and TLS to protect cached IDs.",
+          "Cache entries must expire (24 h) to avoid stale mappings.",
+          "Background sync should be idempotent, handle pagination limits, and log failures.",
+          "Fallback logic must log warnings and attempt deletion via filename when cache misses.",
+          "Monitoring of cache hit/miss rates, memory usage, and sync success must be in place.",
+          "Compliance with data‑privacy regulations (e.g., GDPR) – ensure document IDs are not considered personal data or are handled accordingly.",
+          "Operational resilience: the system should continue to function (with degraded performance) if Redis or LightRAG is temporarily unreachable."
+        ]
+      },
+      {
+        "persona": "security_expert",
+        "perspective": "Using a Redis cache to map file paths to LightRAG document IDs is a pragmatic solution that mitigates the lack of a direct lookup endpoint while keeping latency low for insert and delete operations. However, it introduces a new single point of failure and requires careful handling of cache consistency and TTL management.",
+        "recommended_option": "Implement the Redis cache with a background sync task that runs every 5 minutes, combined with a per‑document sync trigger on insert, and enforce a TTL of 24 hours for cache entries. Additionally, add a fallback mechanism that queries the paginated endpoint only when the cache miss rate exceeds a configurable threshold.",
+        "reasoning": "The cache drastically reduces the need to paginate over potentially thousands of documents for each deletion, ensuring near‑constant time operations. The 24‑hour TTL balances memory usage against the risk of stale mappings, while the background sync guarantees eventual consistency. The fallback query protects against cache misses during the initial warm‑up period or Redis outages, maintaining functional correctness. Monitoring cache hit/miss ratios will allow dynamic adjustment of sync frequency and TTL to optimize performance.",
+        "concerns": [
+          "Cache consistency: ensuring that the mapping stays accurate after document updates or deletions in LightRAG.",
+          "Redis availability: a Redis outage could temporarily break delete operations or cause fallback queries that are expensive.",
+          "TTL management: too short a TTL may lead to frequent syncs; too long may serve stale IDs.",
+          "Pagination overhead during full sync: large document sets may still cause performance bottlenecks during sync intervals.",
+          "Security: exposing LightRAG document IDs through cache requires proper access controls and encryption in transit."
+        ],
+        "requirements": [
+          "Redis must be highly available and monitored for latency and errors.",
+          "Cache entries must expire after 24 hours or be invalidated on document deletion.",
+          "Background sync task must run at least every 5 minutes and support exponential backoff on failures.",
+          "Fallback to paginated query should be rate‑limited and logged.",
+          "All cache operations should be authenticated and encrypted (TLS) to protect document IDs.",
+          "Metrics (cache hit rate, sync duration, error counts) should be exposed for observability."
+        ]
+      },
+      {
+        "persona": "technical_lead",
+        "perspective": "Using a Redis cache with a periodic sync task is a practical, low‑complexity solution that leverages the existing Redis infrastructure and keeps the mapping lightweight. It gives us near‑real‑time access to LightRAG IDs while avoiding the need for a new database or a custom LightRAG extension.",
+        "recommended_option": "Implement the Redis‑based cache with a background sync that runs every 5 minutes and a short TTL (24 h) for individual entries, while keeping a graceful fallback to a paginated query if a cache miss occurs.",
+        "reasoning": "The approach matches the team’s current skill set (async Python, Redis, FastAPI) and introduces minimal new dependencies. Cache lookups are O(1) and the TTL ensures stale data is refreshed quickly. The background sync is inexpensive (fetches 50–100 documents per run) and can be tuned if the document set grows. It also keeps technical debt low by avoiding a new persistent store or a complex event system. This design scales as long as the paginated endpoint remains efficient, and it can be extended with webhook support if LightRAG adds such a feature later.",
+        "concerns": [
+          "Pagination cost can grow linearly with the number of documents, potentially making full synces slow if the repository expands to thousands of ADRs.",
+          "Cache miss during a recent insertion could lead to a deletion attempt with a filename that LightRAG cannot resolve, causing silent failures.",
+          "TTL of 24 h may still leave a window where a stale mapping is used before the next sync, especially after a document is moved or renamed.",
+          "Redis unavailability would disable deletions that rely on the ID, forcing the system to fall back to a less reliable method.",
+          "The background sync adds a small but non‑zero operational overhead and introduces a potential race condition between sync and manual cache updates."
+        ],
+        "requirements": [
+          "Reliable mapping between file paths and LightRAG document IDs for both insert and delete operations.",
+          "Cache operations must be fast (sub‑millisecond) to avoid impacting API latency.",
+          "Background sync must run at a frequency that balances freshness with resource usage (default 5 minutes).",
+          "Graceful degradation: if Redis or sync fails, the system should log a warning and attempt a fallback query without crashing.",
+          "Maintainability: the sync logic should be encapsulated in a single module with clear unit tests and documentation.",
+          "Scalability: the solution should handle thousands of documents without a significant increase in latency or memory consumption.",
+          "Security: the cache should not expose sensitive data; all keys must be scoped and TTL‑controlled."
+        ]
+      }
+    ]
+  }
+}

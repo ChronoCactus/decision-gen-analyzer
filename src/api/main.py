@@ -17,6 +17,7 @@ from src.celery_app import celery_app
 from src.api.routes import adr_router, analysis_router, generation_router, config_router
 from src.logger import get_logger
 from src.config import get_settings
+from src.lightrag_sync import sync_lightrag_cache_task
 
 logger = get_logger(__name__)
 
@@ -40,8 +41,21 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     else:
         logger.info("🔒 LAN Discovery DISABLED - Backend only accessible via localhost")
 
+    # Start LightRAG cache sync background task
+    sync_task = asyncio.create_task(sync_lightrag_cache_task(interval_seconds=300))
+    logger.info("Started LightRAG cache sync background task")
+
     yield
+
+    # Cleanup on shutdown
     logger.info("Shutting down Decision Analyzer API")
+    sync_task.cancel()
+    try:
+        await sync_task
+    except asyncio.CancelledError:
+        logger.info("LightRAG cache sync task cancelled")
+    except Exception as e:
+        logger.error("Error stopping cache sync task", error=str(e))
 
 
 def create_application() -> FastAPI:

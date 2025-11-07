@@ -53,14 +53,102 @@ class TestLightRAGClient:
             assert len(results) >= 0  # Demo mode returns mock results
 
     @pytest.mark.asyncio
+    async def test_get_paginated_documents(self):
+        """Test fetching paginated documents."""
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.raise_for_status = MagicMock()
+        mock_response.json.return_value = {
+            "documents": [
+                {"id": "doc-abc123", "file_path": "test-1.txt", "status": "processed"},
+                {"id": "doc-def456", "file_path": "test-2.txt", "status": "processed"},
+            ],
+            "total": 2,
+            "page": 1,
+            "page_size": 10,
+        }
+
+        async with LightRAGClient(demo_mode=False) as client:
+            client._client.post = AsyncMock(return_value=mock_response)
+
+            result = await client.get_paginated_documents(page=1, page_size=10)
+
+            assert "documents" in result
+            assert len(result["documents"]) == 2
+            client._client.post.assert_called_once()
+
+    @pytest.mark.asyncio
     async def test_delete_document(self):
-        """Test deleting a document (returns bool, not dict)."""
-        async with LightRAGClient() as client:
+        """Test deleting a document in demo mode."""
+        async with LightRAGClient(demo_mode=True) as client:
             result = await client.delete_document("test-123")
 
-            # delete_document returns bool, not dict (LightRAG limitation)
+            # delete_document returns bool
             assert isinstance(result, bool)
             assert result is True
+
+    @pytest.mark.asyncio
+    async def test_delete_document_success(self):
+        """Test deleting a document successfully with LightRAG doc ID."""
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.raise_for_status = MagicMock()
+        mock_response.json.return_value = {
+            "status": "success",
+            "deleted": ["doc-abc123"],
+        }
+
+        async with LightRAGClient(demo_mode=False) as client:
+            client._client.request = AsyncMock(return_value=mock_response)
+
+            result = await client.delete_document(
+                "test-123", lightrag_doc_id="doc-abc123"
+            )
+
+            assert result is True
+            # Verify the correct endpoint and payload were used with the doc ID
+            client._client.request.assert_called_once_with(
+                "DELETE",
+                "/documents/delete_document",
+                json={"doc_ids": ["doc-abc123"], "delete_file": True},
+            )
+
+    @pytest.mark.asyncio
+    async def test_delete_document_without_doc_id(self):
+        """Test deleting a document without LightRAG doc ID (fallback to filename)."""
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.raise_for_status = MagicMock()
+        mock_response.json.return_value = {
+            "status": "success",
+            "deleted": ["test-123.txt"],
+        }
+
+        async with LightRAGClient(demo_mode=False) as client:
+            client._client.request = AsyncMock(return_value=mock_response)
+
+            result = await client.delete_document("test-123")
+
+            assert result is True
+            # Verify it falls back to using filename
+            client._client.request.assert_called_once_with(
+                "DELETE",
+                "/documents/delete_document",
+                json={"doc_ids": ["test-123.txt"], "delete_file": True},
+            )
+
+    @pytest.mark.asyncio
+    async def test_delete_document_not_found(self):
+        """Test deleting a document that doesn't exist."""
+        mock_response = MagicMock()
+        mock_response.status_code = 404
+
+        async with LightRAGClient(demo_mode=False) as client:
+            client._client.request = AsyncMock(return_value=mock_response)
+
+            result = await client.delete_document("test-123")
+
+            assert result is False
 
     @pytest.mark.asyncio
     async def test_get_document(self):
