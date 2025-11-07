@@ -1,5 +1,6 @@
 """API routes for Decision Analyzer."""
 
+import asyncio
 from fastapi import APIRouter, HTTPException, BackgroundTasks, File, UploadFile
 from fastapi.responses import JSONResponse, StreamingResponse
 from typing import List, Optional, Literal
@@ -223,6 +224,7 @@ async def delete_adr(adr_id: str):
     try:
         from src.adr_file_storage import get_adr_storage
         from src.lightrag_client import LightRAGClient
+        from src.lightrag_doc_cache import LightRAGDocumentCache
         from src.config import settings
 
         storage = get_adr_storage()
@@ -235,12 +237,30 @@ async def delete_adr(adr_id: str):
 
         # Try to delete from LightRAG (if it exists there)
         try:
+            # First, try to get the LightRAG document ID from cache
+            lightrag_doc_id = None
+            try:
+                async with LightRAGDocumentCache() as cache:
+                    lightrag_doc_id = await cache.get_doc_id(adr_id)
+                    if lightrag_doc_id:
+                        logger.info(
+                            f"Found LightRAG doc ID in cache for {adr_id}: {lightrag_doc_id}"
+                        )
+                        # Remove from cache after getting the ID
+                        await cache.delete_doc_id(adr_id)
+            except Exception as cache_error:
+                logger.warning(f"Failed to get doc ID from cache: {cache_error}")
+
+            # Delete from LightRAG using the cached doc ID if available
             async with LightRAGClient(
                 base_url=settings.lightrag_url,
                 demo_mode=False
             ) as rag_client:
-                await rag_client.delete_document(adr_id)
-                logger.info(f"Deleted ADR {adr_id} from LightRAG")
+                deleted = await rag_client.delete_document(adr_id, lightrag_doc_id)
+                if deleted:
+                    logger.info(f"Deleted ADR {adr_id} from LightRAG")
+                else:
+                    logger.warning(f"ADR {adr_id} not found in LightRAG")
         except Exception as rag_error:
             # Log but don't fail if RAG deletion fails
             logger.warning(f"Failed to delete from LightRAG: {rag_error}")
@@ -306,6 +326,16 @@ Considered Options:
             },
         )
         logger.info(f"Pushed ADR {adr.metadata.id} to LightRAG")
+
+        # Trigger background sync to update cache with the new document's ID
+        # This runs asynchronously and doesn't block the response
+        try:
+            from src.lightrag_sync import sync_single_document
+
+            asyncio.create_task(sync_single_document(str(adr.metadata.id)))
+        except Exception as sync_error:
+            logger.warning(f"Failed to trigger cache sync: {sync_error}")
+
         return result
 
 

@@ -416,30 +416,178 @@ class LightRAGClient:
             )
             raise
 
-    async def delete_document(self, doc_id: str) -> bool:
-        """Delete a document from LightRAG.
-
-        Note: LightRAG API does not support deleting individual documents.
-        The only delete endpoint is DELETE /documents which clears ALL documents.
-        This method returns True to indicate it was called, but no actual deletion occurs.
+    async def get_paginated_documents(
+        self,
+        page: int = 1,
+        page_size: int = 100,
+        status_filter: Optional[str] = None,
+        sort_field: str = "updated_at",
+        sort_direction: str = "desc",
+    ) -> Dict[str, Any]:
+        """Get paginated list of documents from LightRAG.
 
         Args:
-            doc_id: Document ID (not used due to API limitation)
+            page: Page number (1-indexed)
+            page_size: Number of documents per page
+            status_filter: Filter by status (e.g., "processed")
+            sort_field: Field to sort by
+            sort_direction: Sort direction ("asc" or "desc")
 
         Returns:
-            bool: Always returns True to indicate the call was processed
+            Dictionary with 'documents' list and pagination info
         """
+        # Demo mode: return empty list
+        if self.demo_mode:
+            logger.info("Demo mode: Simulating paginated documents fetch")
+            await asyncio.sleep(0.2)
+            return {"documents": [], "total": 0, "page": page, "page_size": page_size}
+
         if not self._client:
             raise RuntimeError("Client not initialized. Use as async context manager.")
 
-        logger.warning(
-            "LightRAG does not support individual document deletion",
-            doc_id=doc_id,
-            note="Document remains in LightRAG index",
-        )
+        payload = {
+            "status_filter": status_filter,
+            "page": page,
+            "page_size": page_size,
+            "sort_field": sort_field,
+            "sort_direction": sort_direction,
+        }
 
-        # Return True to indicate the call was processed (even though no deletion occurred)
-        return True
+        try:
+            logger.debug(
+                "Fetching paginated documents from LightRAG",
+                page=page,
+                page_size=page_size,
+            )
+            response = await self._client.post("/documents/paginated", json=payload)
+            response.raise_for_status()
+
+            result = response.json()
+            doc_count = len(result.get("documents", []))
+            logger.debug("Fetched paginated documents", page=page, count=doc_count)
+            return result
+
+        except httpx.HTTPError as e:
+            error_details = {
+                "error_type": type(e).__name__,
+                "error_message": str(e),
+                "page": page,
+            }
+            if hasattr(e, "response") and e.response is not None:
+                error_details["status_code"] = e.response.status_code
+                error_details["response_text"] = e.response.text[:500]
+            logger.error("HTTP error fetching paginated documents", **error_details)
+            raise
+        except Exception as e:
+            logger.error(
+                "Unexpected error fetching paginated documents",
+                error_type=type(e).__name__,
+                error_message=str(e),
+                error_repr=repr(e),
+                page=page,
+            )
+            raise
+
+    async def delete_document(
+        self, doc_id: str, lightrag_doc_id: Optional[str] = None
+    ) -> bool:
+        """Delete a document from LightRAG.
+
+        Args:
+            doc_id: Our internal document ID (ADR ID)
+            lightrag_doc_id: The LightRAG internal document ID (doc-xxx format).
+                           If not provided, deletion will be attempted using file_path.
+
+        Returns:
+            bool: True if deleted successfully, False if not found
+        """
+        # Demo mode: simulate successful deletion
+        if self.demo_mode:
+            logger.info("Demo mode: Simulating document deletion", doc_id=doc_id)
+            await asyncio.sleep(0.3)  # Simulate processing time
+            return True
+
+        if not self._client:
+            raise RuntimeError("Client not initialized. Use as async context manager.")
+
+        try:
+            # LightRAG delete endpoint expects the internal doc-xxx ID
+            # If we have it, use it directly; otherwise log a warning
+            if lightrag_doc_id:
+                doc_ids_to_delete = [lightrag_doc_id]
+                logger.info(
+                    "Deleting document from LightRAG using doc ID",
+                    doc_id=doc_id,
+                    lightrag_doc_id=lightrag_doc_id,
+                )
+            else:
+                # Fallback: try using file_path (may not work with current LightRAG API)
+                filename = f"{doc_id}.txt"
+                doc_ids_to_delete = [filename]
+                logger.warning(
+                    "Deleting document without LightRAG doc ID - may fail",
+                    doc_id=doc_id,
+                    filename=filename,
+                    note="Consider using cache to get proper doc ID",
+                )
+
+            payload = {
+                "doc_ids": doc_ids_to_delete,
+                "delete_file": True,
+            }
+
+            # Use DELETE /documents/delete_document endpoint with JSON payload
+            # Note: httpx's delete() doesn't support json parameter, so we use request()
+            response = await self._client.request(
+                "DELETE", "/documents/delete_document", json=payload
+            )
+
+            if response.status_code == 404:
+                logger.warning("Document not found in LightRAG", doc_id=doc_id)
+                return False
+
+            response.raise_for_status()
+
+            # Parse response to check if deletion was successful
+            result = response.json()
+            logger.info(
+                "Document deleted successfully from LightRAG",
+                doc_id=doc_id,
+                result=result,
+            )
+            return True
+
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 404:
+                logger.warning("Document not found in LightRAG", doc_id=doc_id)
+                return False
+
+            error_details = {
+                "error_type": type(e).__name__,
+                "error_message": str(e),
+                "doc_id": doc_id,
+                "status_code": e.response.status_code,
+                "response_text": e.response.text[:500],
+            }
+            logger.error("HTTP error deleting document", **error_details)
+            raise
+        except httpx.HTTPError as e:
+            error_details = {
+                "error_type": type(e).__name__,
+                "error_message": str(e),
+                "doc_id": doc_id,
+            }
+            logger.error("HTTP error deleting document", **error_details)
+            raise
+        except Exception as e:
+            logger.error(
+                "Unexpected error deleting document",
+                error_type=type(e).__name__,
+                error_message=str(e),
+                error_repr=repr(e),
+                doc_id=doc_id,
+            )
+            raise
 
     async def health_check(self) -> bool:
         """Check if the LightRAG server is healthy."""
