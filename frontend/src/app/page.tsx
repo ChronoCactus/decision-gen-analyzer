@@ -316,19 +316,19 @@ export default function Home() {
       <div className="max-w-7xl mx-auto px-4 py-8">
         <div className="flex justify-between items-center mb-4">
           <div>
-            <h1 className="text-3xl font-bold text-gray-900">Decision Analyzer</h1>
-            <p className="text-gray-600 mt-2">AI-powered ADR analysis and generation</p>
+            <h1 className="text-3xl font-bold text-gray-900">Decision Generator & Analyzer</h1>
+            <p className="text-gray-600 mt-2">AI-powered ADR generation and analysis</p>
           </div>
           <div className="flex gap-3">
             <button
               onClick={() => setShowImportExportModal(true)}
-              className="bg-indigo-600 text-white px-6 py-3 rounded-md hover:bg-indigo-700 font-medium"
+              className="bg-indigo-600 text-white px-4 py-2 rounded-md hover:bg-indigo-700 font-medium text-sm"
             >
               Import/Export
             </button>
             <button
               onClick={() => setShowGenerateModal(true)}
-              className="bg-blue-600 text-white px-6 py-3 rounded-md hover:bg-blue-700 font-medium"
+              className="bg-blue-600 text-white px-6 py-3 rounded-md hover:bg-blue-700 font-semibold animate-pulse-border"
             >
               Generate New ADR
             </button>
