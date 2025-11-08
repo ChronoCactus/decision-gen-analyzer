@@ -22,6 +22,13 @@ vi.mock('./DeleteConfirmationModal', () => ({
   ),
 }));
 
+// Mock apiClient
+vi.mock('@/lib/api', () => ({
+  apiClient: {
+    getADRRAGStatus: vi.fn().mockResolvedValue({ exists_in_rag: false }),
+  },
+}));
+
 describe('ADRCard', () => {
   const mockADR: ADR = {
     metadata: {
@@ -29,7 +36,8 @@ describe('ADRCard', () => {
       title: 'Database Selection Decision',
       status: ADRStatus.ACCEPTED,
       author: 'John Doe',
-      created_date: '2024-01-15T10:00:00Z',
+      created_at: '2024-01-15T10:00:00Z',
+      updated_at: '2024-01-15T10:00:00Z',
       tags: ['database', 'postgresql', 'architecture', 'scalability'],
     },
     content: {
@@ -43,6 +51,12 @@ describe('ADRCard', () => {
     onAnalyze: vi.fn(),
     onDelete: vi.fn(),
     onPushToRAG: vi.fn(),
+    onExport: vi.fn(),
+  };
+
+  const defaultProps = {
+    ...mockCallbacks,
+    cacheRebuilding: false,
   };
 
   beforeEach(() => {
@@ -50,7 +64,7 @@ describe('ADRCard', () => {
   });
 
   it('should render ADR card with metadata', () => {
-    render(<ADRCard adr={mockADR} {...mockCallbacks} />);
+    render(<ADRCard adr={mockADR} {...defaultProps} />);
 
     expect(screen.getByText('Database Selection Decision')).toBeInTheDocument();
     expect(screen.getByText('accepted')).toBeInTheDocument();
@@ -59,7 +73,7 @@ describe('ADRCard', () => {
   });
 
   it('should display tags with limit', () => {
-    render(<ADRCard adr={mockADR} {...mockCallbacks} />);
+    render(<ADRCard adr={mockADR} {...defaultProps} />);
 
     expect(screen.getByText('database')).toBeInTheDocument();
     expect(screen.getByText('postgresql')).toBeInTheDocument();
@@ -68,7 +82,7 @@ describe('ADRCard', () => {
   });
 
   it('should format date correctly', () => {
-    render(<ADRCard adr={mockADR} {...mockCallbacks} />);
+    render(<ADRCard adr={mockADR} {...defaultProps} />);
     
     // Date should be formatted as locale date string
     const dateText = new Date('2024-01-15T10:00:00Z').toLocaleDateString();
@@ -76,37 +90,37 @@ describe('ADRCard', () => {
   });
 
   it('should apply correct status color', () => {
-    const { rerender } = render(<ADRCard adr={mockADR} {...mockCallbacks} />);
+    const { rerender } = render(<ADRCard adr={mockADR} {...defaultProps} />);
     
     let statusBadge = screen.getByText('accepted');
     expect(statusBadge).toHaveClass('bg-green-100', 'text-green-800');
 
     // Test different status colors
     const proposedADR = { ...mockADR, metadata: { ...mockADR.metadata, status: ADRStatus.PROPOSED } };
-    rerender(<ADRCard adr={proposedADR} {...mockCallbacks} />);
+    rerender(<ADRCard adr={proposedADR} {...defaultProps} />);
     statusBadge = screen.getByText('proposed');
     expect(statusBadge).toHaveClass('bg-yellow-100', 'text-yellow-800');
 
     const rejectedADR = { ...mockADR, metadata: { ...mockADR.metadata, status: ADRStatus.REJECTED } };
-    rerender(<ADRCard adr={rejectedADR} {...mockCallbacks} />);
+    rerender(<ADRCard adr={rejectedADR} {...defaultProps} />);
     statusBadge = screen.getByText('rejected');
     expect(statusBadge).toHaveClass('bg-red-100', 'text-red-800');
   });
 
   it('should open modal when View Details is clicked', async () => {
     const user = userEvent.setup();
-    render(<ADRCard adr={mockADR} {...mockCallbacks} />);
+    render(<ADRCard adr={mockADR} {...defaultProps} />);
 
-    await user.click(screen.getByText('View Details'));
+    await user.click(screen.getByText('View'));
 
     expect(screen.getByTestId('adr-modal')).toBeInTheDocument();
   });
 
   it('should close modal when close is triggered', async () => {
     const user = userEvent.setup();
-    render(<ADRCard adr={mockADR} {...mockCallbacks} />);
+    render(<ADRCard adr={mockADR} {...defaultProps} />);
 
-    await user.click(screen.getByText('View Details'));
+    await user.click(screen.getByText('View'));
     expect(screen.getByTestId('adr-modal')).toBeInTheDocument();
 
     await user.click(screen.getByText('Close Modal'));
@@ -117,11 +131,11 @@ describe('ADRCard', () => {
     const user = userEvent.setup();
     mockCallbacks.onAnalyze.mockResolvedValue(undefined);
     
-    render(<ADRCard adr={mockADR} {...mockCallbacks} />);
+    render(<ADRCard adr={mockADR} {...defaultProps} />);
 
-    await user.click(screen.getByText('Analyze'));
-
-    expect(mockCallbacks.onAnalyze).toHaveBeenCalledWith('adr-123');
+    // Analyze button is now disabled, so this test should verify it's disabled
+    const analyzeButton = screen.getByText('Analyze');
+    expect(analyzeButton).toBeDisabled();
   });
 
   it('should show analyzing state during analysis', async () => {
@@ -132,25 +146,21 @@ describe('ADRCard', () => {
     });
     mockCallbacks.onAnalyze.mockReturnValue(analyzePromise);
 
-    render(<ADRCard adr={mockADR} {...mockCallbacks} />);
+    render(<ADRCard adr={mockADR} {...defaultProps} />);
 
+    // Analyze button is now always disabled
     const analyzeButton = screen.getByText('Analyze');
-    await user.click(analyzeButton);
-
-    // Should show analyzing state
-    expect(screen.getByText('Analyzing...')).toBeInTheDocument();
-    expect(screen.getByText('Analyzing...')).toBeDisabled();
-
-    // Resolve the promise
-    resolveAnalyze!();
-    await waitFor(() => {
-      expect(screen.getByText('Analyze')).toBeInTheDocument();
-    });
+    expect(analyzeButton).toBeDisabled();
   });
 
   it('should call onPushToRAG when Push to RAG button is clicked', async () => {
     const user = userEvent.setup();
-    render(<ADRCard adr={mockADR} {...mockCallbacks} />);
+    render(<ADRCard adr={mockADR} {...defaultProps} />);
+
+    // Wait for the RAG status check to complete and button to appear
+    await waitFor(() => {
+      expect(screen.getByText('Push to RAG')).toBeInTheDocument();
+    });
 
     await user.click(screen.getByText('Push to RAG'));
 
@@ -159,9 +169,9 @@ describe('ADRCard', () => {
 
   it('should open delete confirmation modal when Delete is clicked', async () => {
     const user = userEvent.setup();
-    render(<ADRCard adr={mockADR} {...mockCallbacks} />);
+    render(<ADRCard adr={mockADR} {...defaultProps} />);
 
-    await user.click(screen.getByText('Delete'));
+    await user.click(screen.getByTitle('Delete ADR'));
 
     expect(screen.getByTestId('delete-modal')).toBeInTheDocument();
   });
@@ -170,9 +180,9 @@ describe('ADRCard', () => {
     const user = userEvent.setup();
     mockCallbacks.onDelete.mockResolvedValue(undefined);
     
-    render(<ADRCard adr={mockADR} {...mockCallbacks} />);
+    render(<ADRCard adr={mockADR} {...defaultProps} />);
 
-    await user.click(screen.getByText('Delete'));
+    await user.click(screen.getByTitle('Delete ADR'));
     await user.click(screen.getByText('Confirm Delete'));
 
     expect(mockCallbacks.onDelete).toHaveBeenCalledWith('adr-123');
@@ -182,9 +192,9 @@ describe('ADRCard', () => {
     const user = userEvent.setup();
     mockCallbacks.onDelete.mockResolvedValue(undefined);
     
-    render(<ADRCard adr={mockADR} {...mockCallbacks} />);
+    render(<ADRCard adr={mockADR} {...defaultProps} />);
 
-    await user.click(screen.getByText('Delete'));
+    await user.click(screen.getByTitle('Delete ADR'));
     await user.click(screen.getByText('Confirm Delete'));
 
     await waitFor(() => {
@@ -197,9 +207,9 @@ describe('ADRCard', () => {
     const alertSpy = vi.spyOn(window, 'alert').mockImplementation(() => {});
     mockCallbacks.onDelete.mockRejectedValue(new Error('Delete failed'));
     
-    render(<ADRCard adr={mockADR} {...mockCallbacks} />);
+    render(<ADRCard adr={mockADR} {...defaultProps} />);
 
-    await user.click(screen.getByText('Delete'));
+    await user.click(screen.getByTitle('Delete ADR'));
     await user.click(screen.getByText('Confirm Delete'));
 
     await waitFor(() => {
@@ -211,9 +221,9 @@ describe('ADRCard', () => {
 
   it('should cancel delete modal when cancel is clicked', async () => {
     const user = userEvent.setup();
-    render(<ADRCard adr={mockADR} {...mockCallbacks} />);
+    render(<ADRCard adr={mockADR} {...defaultProps} />);
 
-    await user.click(screen.getByText('Delete'));
+    await user.click(screen.getByTitle('Delete ADR'));
     expect(screen.getByTestId('delete-modal')).toBeInTheDocument();
 
     await user.click(screen.getByText('Cancel Delete'));

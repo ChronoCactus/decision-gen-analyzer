@@ -17,6 +17,8 @@ export default function Home() {
   const [generationStartTime, setGenerationStartTime] = useState<number | undefined>(undefined);
   const [isGenerating, setIsGenerating] = useState(false);
   const [currentTime, setCurrentTime] = useState(Date.now());
+  const [cacheRebuilding, setCacheRebuilding] = useState(false);
+  const [lastSyncTime, setLastSyncTime] = useState<number | null>(null);
 
   useEffect(() => {
     loadADRs();
@@ -28,6 +30,42 @@ export default function Home() {
       setCurrentTime(Date.now());
     }, 1000);
     return () => clearInterval(interval);
+  }, []);
+
+  // Poll cache status at page level (not per card)
+  useEffect(() => {
+    let mounted = true;
+    let intervalId: NodeJS.Timeout;
+
+    const checkCacheStatus = async () => {
+      try {
+        const response = await apiClient.getCacheStatus();
+        if (mounted) {
+          setCacheRebuilding(response.is_rebuilding);
+          if (response.last_sync_time) {
+            setLastSyncTime(response.last_sync_time * 1000); // Convert to milliseconds
+          }
+        }
+      } catch (error) {
+        console.error('Failed to check cache status:', error);
+        if (mounted) {
+          setCacheRebuilding(false);
+        }
+      }
+    };
+
+    // Check immediately
+    checkCacheStatus();
+
+    // Then check every 5 seconds
+    intervalId = setInterval(checkCacheStatus, 5000);
+
+    return () => {
+      mounted = false;
+      if (intervalId) {
+        clearInterval(intervalId);
+      }
+    };
   }, []);
 
   const loadADRs = async () => {
@@ -77,7 +115,15 @@ export default function Home() {
       alert(`Success: ${result.message}`);
     } catch (err) {
       console.error('Failed to push ADR to RAG:', err);
-      alert('Failed to push ADR to RAG');
+
+      // Check if it's a 503 error (cache rebuilding)
+      if ((err as any).status === 503) {
+        alert('Cache is currently rebuilding. Please try again in a moment.');
+      } else if (err instanceof Error) {
+        alert(`Failed to push ADR to RAG: ${err.message}`);
+      } else {
+        alert('Failed to push ADR to RAG');
+      }
     }
   };
 
@@ -219,6 +265,25 @@ export default function Home() {
     poll();
   };
 
+  const formatTimeAgo = (timestamp: number | null): string => {
+    if (!timestamp) return 'Never';
+    
+    const secondsAgo = Math.floor((currentTime - timestamp) / 1000);
+    
+    if (secondsAgo < 60) return `~${secondsAgo}s ago`;
+    const minutesAgo = Math.floor(secondsAgo / 60);
+    if (minutesAgo < 60) return `~${minutesAgo}min ago`;
+    const hoursAgo = Math.floor(minutesAgo / 60);
+    if (hoursAgo < 24) return `~${hoursAgo}h ago`;
+    const daysAgo = Math.floor(hoursAgo / 24);
+    return `~${daysAgo}d ago`;
+  };
+
+  const formatTimestamp = (timestamp: number | null): string => {
+    if (!timestamp) return 'Never';
+    return new Date(timestamp).toLocaleString();
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
@@ -247,26 +312,45 @@ export default function Home() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
       <div className="max-w-7xl mx-auto px-4 py-8">
-        <div className="flex justify-between items-center mb-8">
+        <div className="flex justify-between items-center mb-4">
           <div>
-            <h1 className="text-3xl font-bold text-gray-900">Decision Analyzer</h1>
-            <p className="text-gray-600 mt-2">AI-powered ADR analysis and generation</p>
+            <h1 className="text-3xl font-bold text-gray-900 dark:text-gray-100">Decision Generator & Analyzer</h1>
+            <p className="text-gray-600 dark:text-gray-400 mt-2">AI-powered ADR generation and analysis</p>
           </div>
           <div className="flex gap-3">
             <button
               onClick={() => setShowImportExportModal(true)}
-              className="bg-indigo-600 text-white px-6 py-3 rounded-md hover:bg-indigo-700 font-medium"
+              className="bg-indigo-600 text-white px-4 py-2 rounded-md hover:bg-indigo-700 font-medium text-sm"
             >
               Import/Export
             </button>
             <button
               onClick={() => setShowGenerateModal(true)}
-              className="bg-blue-600 text-white px-6 py-3 rounded-md hover:bg-blue-700 font-medium"
+              className="bg-blue-600 text-white px-6 py-3 rounded-md hover:bg-blue-700 font-semibold animate-pulse-border"
             >
               Generate New ADR
             </button>
+          </div>
+        </div>
+
+        {/* RAG Cache Status */}
+        <div className="mb-4 flex justify-end">
+          <div className="text-sm text-gray-600 dark:text-gray-400 bg-white dark:bg-gray-800 px-4 py-2 rounded-md border border-gray-200 dark:border-gray-700 shadow-sm">
+            <span className="font-medium">RAG Last Cached: </span>
+            {cacheRebuilding ? (
+              <span className="text-blue-600 dark:text-blue-400 font-semibold">Rebuilding...</span>
+            ) : (
+              <>
+                  <span className="text-gray-800 dark:text-gray-200" title={formatTimestamp(lastSyncTime)}>
+                  {formatTimestamp(lastSyncTime)}
+                </span>
+                  <span className="text-gray-500 dark:text-gray-500 ml-2">
+                  ({formatTimeAgo(lastSyncTime)})
+                </span>
+              </>
+            )}
           </div>
         </div>
 
@@ -296,15 +380,15 @@ export default function Home() {
                   key={taskId}
                   className={`p-4 rounded-md ${
                     task.status === 'completed'
-                      ? 'bg-green-50 border border-green-200'
+                    ? 'bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800'
                       : task.status === 'failed'
-                      ? 'bg-red-50 border border-red-200'
-                      : 'bg-blue-50 border border-blue-200'
+                      ? 'bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800'
+                      : 'bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800'
                   }`}
                 >
                   <div className="flex items-center justify-between gap-4">
                     <div className="flex items-center gap-3 flex-1">
-                      <span className="text-sm font-medium">
+                      <span className="text-sm font-medium text-gray-900 dark:text-gray-100">
                         {task.status === 'completed' && '✅ '}
                         {task.status === 'failed' && '❌ '}
                         {task.status === 'queued' && '⏳ '}
@@ -312,7 +396,7 @@ export default function Home() {
                         {task.message}
                       </span>
                       {showTimer && (
-                        <span className="text-sm font-semibold text-blue-700 bg-blue-100 px-2.5 py-1 rounded-md whitespace-nowrap">
+                        <span className="text-sm font-semibold text-blue-700 dark:text-blue-300 bg-blue-100 dark:bg-blue-900/40 px-2.5 py-1 rounded-md whitespace-nowrap">
                           {elapsedSeconds}s
                         </span>
                       )}
@@ -324,7 +408,7 @@ export default function Home() {
                           delete newTasks[taskId];
                           return newTasks;
                         })}
-                        className="text-gray-400 hover:text-gray-600 text-sm flex-shrink-0"
+                        className="text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 text-sm flex-shrink-0"
                       >
                         ✕
                       </button>
@@ -339,7 +423,7 @@ export default function Home() {
         {/* ADR Grid */}
         {adrs.length === 0 ? (
           <div className="text-center py-12">
-            <p className="text-gray-500 text-lg mb-4">No ADRs found</p>
+            <p className="text-gray-500 dark:text-gray-400 text-lg mb-4">No ADRs found</p>
             <button
               onClick={() => setShowGenerateModal(true)}
               className="bg-blue-600 text-white px-6 py-3 rounded-md hover:bg-blue-700 font-medium"
@@ -357,6 +441,7 @@ export default function Home() {
                 onDelete={handleDeleteADR}
                 onPushToRAG={handlePushToRAG}
                 onExport={handleExportSingle}
+                cacheRebuilding={cacheRebuilding}
               />
             ))}
           </div>

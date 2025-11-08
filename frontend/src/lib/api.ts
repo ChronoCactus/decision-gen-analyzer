@@ -109,7 +109,25 @@ class ApiClient {
     });
 
     if (!response.ok) {
-      throw new Error(`API request failed: ${response.status} ${response.statusText}`);
+      const errorText = await response.text();
+      let errorMessage = `API request failed: ${response.status} ${response.statusText}`;
+
+      try {
+        const errorJson = JSON.parse(errorText);
+        if (errorJson.detail) {
+          errorMessage = errorJson.detail;
+        }
+      } catch {
+        // If not JSON, use the text as-is
+        if (errorText) {
+          errorMessage = errorText;
+        }
+      }
+
+      const error = new Error(errorMessage);
+      // Add status code to error for better handling
+      (error as any).status = response.status;
+      throw error;
     }
 
     return response.json();
@@ -134,6 +152,18 @@ class ApiClient {
     return this.request<{ message: string; adr_id: string; title: string }>(`/api/v1/adrs/${adrId}/push-to-rag`, {
       method: 'POST',
     });
+  }
+
+  async getADRRAGStatus(adrId: string): Promise<{ adr_id: string; exists_in_rag: boolean; lightrag_doc_id?: string; error?: string }> {
+    return this.request<{ adr_id: string; exists_in_rag: boolean; lightrag_doc_id?: string; error?: string }>(`/api/v1/adrs/${adrId}/rag-status`);
+  }
+
+  async getCacheStatus(): Promise<{ is_rebuilding: boolean; last_sync_time?: number; error?: string }> {
+    return this.request<{ is_rebuilding: boolean; last_sync_time?: number; error?: string }>('/api/v1/adrs/cache/status');
+  }
+
+  async getCacheRebuildStatus(): Promise<{ is_rebuilding: boolean; error?: string }> {
+    return this.request<{ is_rebuilding: boolean; error?: string }>('/api/v1/adrs/cache/rebuild-status');
   }
 
   async getPersonas(): Promise<{ personas: Persona[] }> {

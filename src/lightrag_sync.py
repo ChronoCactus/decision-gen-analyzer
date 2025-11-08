@@ -55,13 +55,21 @@ async def _sync_lightrag_cache(page_size: int = 100) -> int:
     """
     settings = get_settings()
     total_synced = 0
-    
+
     try:
         async with LightRAGClient(
             base_url=settings.lightrag_url,
             demo_mode=False
         ) as rag_client:
             async with LightRAGDocumentCache() as cache:
+                # Mark cache as rebuilding
+                await cache.set_rebuilding_status(True)
+
+                # Clear all existing cache entries before rebuilding
+                # This ensures stale entries are removed if documents were deleted from LightRAG
+                logger.info("Clearing existing cache before rebuild")
+                await cache.clear_all()
+
                 page = 1
                 while True:
                     # Fetch a page of documents
@@ -70,33 +78,43 @@ async def _sync_lightrag_cache(page_size: int = 100) -> int:
                         page_size=page_size,
                         status_filter="processed"  # Only sync processed documents
                     )
-                    
+
                     documents = result.get("documents", [])
                     if not documents:
                         break
-                    
+
                     # Update cache with this batch
                     synced = await cache.update_from_documents(documents)
                     total_synced += synced
-                    
+
                     logger.debug(
                         "Synced batch of documents to cache",
                         page=page,
                         batch_size=len(documents),
                         synced=synced
                     )
-                    
+
                     # Check if there are more pages
                     # If we got fewer documents than page_size, we're done
                     if len(documents) < page_size:
                         break
-                    
+
                     page += 1
-                
+
+                # Mark cache as done rebuilding
+                await cache.set_rebuilding_status(False)
+
                 logger.info("LightRAG cache sync completed", total_documents=total_synced)
                 return total_synced
-                
+
     except Exception as e:
+        # Make sure to clear rebuilding status on error
+        try:
+            async with LightRAGDocumentCache() as cache:
+                await cache.set_rebuilding_status(False)
+        except Exception:
+            pass  # Ignore errors when clearing status
+
         logger.error(
             "Failed to sync LightRAG cache",
             error_type=type(e).__name__,

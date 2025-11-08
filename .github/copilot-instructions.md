@@ -187,6 +187,59 @@ All API types in `src/types/api.ts` must match backend Pydantic models. When bac
 ### Styling
 Tailwind CSS with custom classes. Status colors defined inline (e.g., `getStatusColor()` in ADRModal).
 
+### Dark Mode Support (CRITICAL)
+**All new components and UI changes MUST support both light and dark modes.** The app uses Tailwind's `dark:` variant with system preference detection.
+
+**Required Pattern for All Components**:
+```tsx
+// ✅ CORRECT - Always include dark: variants
+<div className="bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100">
+
+// ❌ WRONG - Missing dark mode support
+<div className="bg-white text-gray-900">
+```
+
+**Dark Mode Checklist for Every Component**:
+- [ ] Backgrounds: `bg-white` → `dark:bg-gray-800` (modals/cards) or `bg-gray-50` → `dark:bg-gray-900` (pages)
+- [ ] Text: `text-gray-900` → `dark:text-gray-100` (headings), `text-gray-700` → `dark:text-gray-300` (body)
+- [ ] Borders: `border-gray-200` → `dark:border-gray-700`
+- [ ] Input fields: `bg-white dark:bg-gray-700 placeholder-gray-500 dark:placeholder-gray-400`
+- [ ] Hover states: Include `dark:hover:` variants for all interactive elements
+- [ ] Semi-transparent overlays: `bg-opacity-50 dark:bg-opacity-70`
+
+**Color Patterns**:
+- **Status badges**: Use semi-transparent backgrounds (e.g., `bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-300`)
+- **Colored backgrounds**: Use `/{opacity}` syntax for dark mode (e.g., `dark:bg-blue-900/20`)
+- **Gray scale**: Light mode uses 50-900, dark mode inverts (100→900, 900→100)
+
+**Common Component Patterns**:
+```tsx
+// Modal backdrop
+<div className="fixed inset-0 bg-black bg-opacity-50 dark:bg-opacity-70">
+
+// Modal/Card container
+<div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700">
+
+// Headings
+<h2 className="text-gray-900 dark:text-gray-100">
+
+// Body text
+<p className="text-gray-700 dark:text-gray-300">
+
+// Muted text
+<span className="text-gray-500 dark:text-gray-400">
+
+// Input fields
+<input className="bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400" />
+
+// Buttons (neutral)
+<button className="bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600">
+```
+
+**Testing Dark Mode**: Toggle system dark mode and verify all UI elements are readable and properly styled in both modes.
+
+**Reference Implementation**: See `GenerateADRModal.tsx`, `ADRModal.tsx`, `ADRCard.tsx` for complete dark mode patterns.
+
 ## LLM Prompt Engineering Patterns
 
 ### Structured JSON Responses

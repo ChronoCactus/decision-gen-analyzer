@@ -2,6 +2,7 @@
 
 import asyncio
 import os
+import time
 from typing import Optional, Dict, List
 from datetime import timedelta
 
@@ -18,6 +19,7 @@ class LightRAGDocumentCache:
     CACHE_KEY_PREFIX = "lightrag:doc:"
     CACHE_ALL_DOCS_KEY = "lightrag:all_docs"
     CACHE_LAST_SYNC_KEY = "lightrag:last_sync"
+    CACHE_REBUILD_STATUS_KEY = "lightrag:rebuild_status"
     CACHE_TTL = timedelta(hours=24)  # Cache entries expire after 24 hours
 
     def __init__(self, redis_url: Optional[str] = None):
@@ -61,12 +63,12 @@ class LightRAGDocumentCache:
 
         cache_key = f"{self.CACHE_KEY_PREFIX}{file_path}"
         doc_id = await self._redis.get(cache_key)
-        
+
         if doc_id:
             logger.debug("Cache hit for file_path", file_path=file_path, doc_id=doc_id)
         else:
             logger.debug("Cache miss for file_path", file_path=file_path)
-        
+
         return doc_id
 
     async def set_doc_id(self, file_path: str, doc_id: str) -> None:
@@ -122,21 +124,21 @@ class LightRAGDocumentCache:
 
         count = 0
         pipeline = self._redis.pipeline()
-        
+
         for doc in documents:
             doc_id = doc.get("id")
             file_path = doc.get("file_path")
-            
+
             if doc_id and file_path:
                 cache_key = f"{self.CACHE_KEY_PREFIX}{file_path}"
                 pipeline.setex(cache_key, self.CACHE_TTL, doc_id)
                 count += 1
 
         await pipeline.execute()
-        
-        # Update last sync timestamp
-        await self._redis.set(self.CACHE_LAST_SYNC_KEY, str(asyncio.get_event_loop().time()))
-        
+
+        # Update last sync timestamp (Unix timestamp in seconds)
+        await self._redis.set(self.CACHE_LAST_SYNC_KEY, str(time.time()))
+
         logger.info("Updated document ID cache", count=count)
         return count
 
@@ -148,7 +150,7 @@ class LightRAGDocumentCache:
         # Find all keys matching our prefix
         cursor = 0
         keys_to_delete = []
-        
+
         while True:
             cursor, keys = await self._redis.scan(
                 cursor=cursor,
@@ -156,10 +158,58 @@ class LightRAGDocumentCache:
                 count=100
             )
             keys_to_delete.extend(keys)
-            
+
             if cursor == 0:
                 break
 
         if keys_to_delete:
             await self._redis.delete(*keys_to_delete)
             logger.info("Cleared document ID cache", count=len(keys_to_delete))
+
+    async def is_rebuilding(self) -> bool:
+        """Check if the cache is currently being rebuilt.
+
+        Returns:
+            True if cache rebuild is in progress, False otherwise
+        """
+        if not self._redis:
+            raise RuntimeError("Cache not initialized. Use as async context manager.")
+
+        status = await self._redis.get(self.CACHE_REBUILD_STATUS_KEY)
+        return status == "rebuilding"
+
+    async def set_rebuilding_status(self, is_rebuilding: bool) -> None:
+        """Set the cache rebuild status.
+
+        Args:
+            is_rebuilding: True to mark as rebuilding, False to mark as complete
+        """
+        if not self._redis:
+            raise RuntimeError("Cache not initialized. Use as async context manager.")
+
+        if is_rebuilding:
+            await self._redis.set(self.CACHE_REBUILD_STATUS_KEY, "rebuilding")
+            logger.info("Cache rebuild started")
+        else:
+            await self._redis.delete(self.CACHE_REBUILD_STATUS_KEY)
+            # Update last sync timestamp when rebuild completes (Unix timestamp in seconds)
+            await self._redis.set(self.CACHE_LAST_SYNC_KEY, str(time.time()))
+            logger.info("Cache rebuild completed")
+
+    async def get_last_sync_time(self) -> Optional[float]:
+        """Get the timestamp of the last cache sync.
+        
+        Returns:
+            Unix timestamp of last sync, or None if never synced
+        """
+        if not self._redis:
+            raise RuntimeError("Cache not initialized. Use as async context manager.")
+
+        timestamp_str = await self._redis.get(self.CACHE_LAST_SYNC_KEY)
+        if timestamp_str:
+            try:
+                return float(timestamp_str)
+            except ValueError:
+                return None
+        return None
+

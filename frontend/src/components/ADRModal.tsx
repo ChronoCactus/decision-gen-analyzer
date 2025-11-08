@@ -34,17 +34,17 @@ export function ADRModal({ adr, onClose, onAnalyze, isAnalyzing }: ADRModalProps
   };
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-      <div className="bg-white rounded-lg max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+    <div className="fixed inset-0 bg-black bg-opacity-50 dark:bg-opacity-70 flex items-center justify-center p-4 z-50">
+      <div className="bg-white dark:bg-gray-800 rounded-lg max-w-4xl w-full max-h-[90vh] overflow-y-auto">
         <div className="p-6">
           <div className="flex justify-between items-start mb-6">
             <div className="flex-1">
-              <h2 className="text-2xl font-bold text-gray-900 mb-2">
+              <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100 mb-2">
                 {adr.metadata.title}
               </h2>
-              <div className="flex items-center gap-4 text-sm text-gray-600">
+              <div className="flex items-center gap-4 text-sm text-gray-600 dark:text-gray-400">
                 <span>By {adr.metadata.author}</span>
-                <span>{new Date(adr.metadata.created_date).toLocaleDateString()}</span>
+                <span>{new Date(adr.metadata.created_at).toLocaleDateString()}</span>
                 <span className={`px-3 py-1 rounded-full border ${getStatusColor(adr.metadata.status)}`}>
                   {adr.metadata.status}
                 </span>
@@ -52,7 +52,7 @@ export function ADRModal({ adr, onClose, onAnalyze, isAnalyzing }: ADRModalProps
             </div>
             <button
               onClick={onClose}
-              className="text-gray-400 hover:text-gray-600 text-2xl"
+              className="text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 text-2xl"
             >
               ×
             </button>
@@ -61,25 +61,25 @@ export function ADRModal({ adr, onClose, onAnalyze, isAnalyzing }: ADRModalProps
           <div className="space-y-6">
             {/* Context & Problem */}
             <div>
-              <h3 className="text-lg font-semibold text-gray-900 mb-2">Context & Problem</h3>
-              <p className="text-gray-700 leading-relaxed whitespace-pre-wrap">{adr.content.context_and_problem}</p>
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2">Context & Problem</h3>
+              <p className="text-gray-700 dark:text-gray-300 leading-relaxed whitespace-pre-wrap">{adr.content.context_and_problem}</p>
             </div>
 
             {/* Decision Outcome */}
             <div>
-              <h3 className="text-lg font-semibold text-gray-900 mb-2">Decision Outcome</h3>
-              <div className="text-gray-700 leading-relaxed whitespace-pre-wrap">{adr.content.decision_outcome}</div>
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2">Decision Outcome</h3>
+              <div className="text-gray-700 dark:text-gray-300 leading-relaxed whitespace-pre-wrap">{adr.content.decision_outcome}</div>
             </div>
 
             {/* Consequences - Structured or plain text */}
             <div>
-              <h3 className="text-lg font-semibold text-gray-900 mb-3">Consequences</h3>
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-3">Consequences</h3>
               {adr.content.consequences_structured ? (
                 <div className="space-y-3">
                   {adr.content.consequences_structured.positive.length > 0 && (
                     <div>
-                      <h4 className="text-md font-medium text-green-800 mb-2">✓ Positive</h4>
-                      <ul className="list-disc list-inside text-gray-700 space-y-1 ml-2">
+                      <h4 className="text-md font-medium text-green-800 dark:text-green-400 mb-2">✓ Positive</h4>
+                      <ul className="list-disc list-inside text-gray-700 dark:text-gray-300 space-y-1 ml-2">
                         {adr.content.consequences_structured.positive.map((item, index) => (
                           <li key={index}>{item}</li>
                         ))}
@@ -88,8 +88,8 @@ export function ADRModal({ adr, onClose, onAnalyze, isAnalyzing }: ADRModalProps
                   )}
                   {adr.content.consequences_structured.negative.length > 0 && (
                     <div>
-                      <h4 className="text-md font-medium text-red-800 mb-2">✗ Negative</h4>
-                      <ul className="list-disc list-inside text-gray-700 space-y-1 ml-2">
+                      <h4 className="text-md font-medium text-red-800 dark:text-red-400 mb-2">✗ Negative</h4>
+                      <ul className="list-disc list-inside text-gray-700 dark:text-gray-300 space-y-1 ml-2">
                         {adr.content.consequences_structured.negative.map((item, index) => (
                           <li key={index}>{item}</li>
                         ))}
@@ -98,17 +98,17 @@ export function ADRModal({ adr, onClose, onAnalyze, isAnalyzing }: ADRModalProps
                   )}
                 </div>
               ) : (
-                  <div className="text-gray-700 leading-relaxed">
+                  <div className="text-gray-700 dark:text-gray-300 leading-relaxed">
                     {adr.content.consequences.split('\n').map((line, index) => {
                       const trimmed = line.trim();
                       if (!trimmed) return null;
 
                       // Check if line starts with "✓ Positive" or "✗ Negative"
                       if (trimmed.startsWith('✓ Positive')) {
-                        return <h4 key={index} className="text-md font-medium text-green-800 mt-3 mb-2">{trimmed}</h4>;
+                        return <h4 key={index} className="text-md font-medium text-green-800 dark:text-green-400 mt-3 mb-2">{trimmed}</h4>;
                       }
                       if (trimmed.startsWith('✗ Negative')) {
-                        return <h4 key={index} className="text-md font-medium text-red-800 mt-3 mb-2">{trimmed}</h4>;
+                        return <h4 key={index} className="text-md font-medium text-red-800 dark:text-red-400 mt-3 mb-2">{trimmed}</h4>;
                       }
 
                       // Check if line starts with a bullet (- or •)
@@ -116,7 +116,7 @@ export function ADRModal({ adr, onClose, onAnalyze, isAnalyzing }: ADRModalProps
                         const content = trimmed.substring(2).trim();
                         return (
                           <div key={index} className="flex items-start mb-1 ml-2">
-                            <span className="text-gray-400 mr-2">•</span>
+                            <span className="text-gray-400 dark:text-gray-500 mr-2">•</span>
                             <span>{content}</span>
                           </div>
                         );
@@ -132,8 +132,8 @@ export function ADRModal({ adr, onClose, onAnalyze, isAnalyzing }: ADRModalProps
             {/* Considered Options */}
             {adr.content.considered_options && adr.content.considered_options.length > 0 && (
               <div>
-                <h3 className="text-lg font-semibold text-gray-900 mb-2">Considered Options</h3>
-                <ul className="list-disc list-inside text-gray-700 space-y-1">
+                <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2">Considered Options</h3>
+                <ul className="list-disc list-inside text-gray-700 dark:text-gray-300 space-y-1">
                   {adr.content.considered_options.map((option, index) => (
                     <li key={index}>{option}</li>
                   ))}
@@ -144,22 +144,22 @@ export function ADRModal({ adr, onClose, onAnalyze, isAnalyzing }: ADRModalProps
             {/* Options Details with Pros and Cons */}
             {adr.content.options_details && adr.content.options_details.length > 0 && (
               <div>
-                <h3 className="text-lg font-semibold text-gray-900 mb-3">Pros & Cons of Options</h3>
+                <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-3">Pros & Cons of Options</h3>
                 <div className="space-y-4">
                   {adr.content.options_details.map((option, index) => (
-                    <div key={index} className="border border-gray-200 rounded-lg p-4 bg-gray-50">
-                      <h4 className="font-semibold text-gray-900 mb-1">{option.name}</h4>
+                    <div key={index} className="border border-gray-200 dark:border-gray-700 rounded-lg p-4 bg-gray-50 dark:bg-gray-700/50">
+                      <h4 className="font-semibold text-gray-900 dark:text-gray-100 mb-1">{option.name}</h4>
                       {option.description && (
-                        <p className="text-sm text-gray-600 mb-3">{option.description}</p>
+                        <p className="text-sm text-gray-600 dark:text-gray-400 mb-3">{option.description}</p>
                       )}
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                         {option.pros.length > 0 && (
                           <div>
-                            <div className="text-sm font-medium text-green-700 mb-1">Pros</div>
-                            <ul className="text-sm text-gray-700 space-y-1">
+                            <div className="text-sm font-medium text-green-700 dark:text-green-400 mb-1">Pros</div>
+                            <ul className="text-sm text-gray-700 dark:text-gray-300 space-y-1">
                               {option.pros.map((pro, idx) => (
                                 <li key={idx} className="flex items-start">
-                                  <span className="text-green-600 mr-2">✓</span>
+                                  <span className="text-green-600 dark:text-green-400 mr-2">✓</span>
                                   <span>{pro}</span>
                                 </li>
                               ))}
@@ -168,11 +168,11 @@ export function ADRModal({ adr, onClose, onAnalyze, isAnalyzing }: ADRModalProps
                         )}
                         {option.cons.length > 0 && (
                           <div>
-                            <div className="text-sm font-medium text-red-700 mb-1">Cons</div>
-                            <ul className="text-sm text-gray-700 space-y-1">
+                            <div className="text-sm font-medium text-red-700 dark:text-red-400 mb-1">Cons</div>
+                            <ul className="text-sm text-gray-700 dark:text-gray-300 space-y-1">
                               {option.cons.map((con, idx) => (
                                 <li key={idx} className="flex items-start">
-                                  <span className="text-red-600 mr-2">✗</span>
+                                  <span className="text-red-600 dark:text-red-400 mr-2">✗</span>
                                   <span>{con}</span>
                                 </li>
                               ))}
@@ -189,8 +189,8 @@ export function ADRModal({ adr, onClose, onAnalyze, isAnalyzing }: ADRModalProps
             {/* Decision Drivers */}
             {adr.content.decision_drivers && adr.content.decision_drivers.length > 0 && (
               <div>
-                <h3 className="text-lg font-semibold text-gray-900 mb-2">Decision Drivers</h3>
-                <ul className="list-disc list-inside text-gray-700 space-y-1">
+                <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2">Decision Drivers</h3>
+                <ul className="list-disc list-inside text-gray-700 dark:text-gray-300 space-y-1">
                   {adr.content.decision_drivers.map((driver, index) => (
                     <li key={index}>{driver}</li>
                   ))}
@@ -201,25 +201,25 @@ export function ADRModal({ adr, onClose, onAnalyze, isAnalyzing }: ADRModalProps
             {/* More Information */}
             {adr.content.more_information && (
               <div>
-                <h3 className="text-lg font-semibold text-gray-900 mb-2">More Information</h3>
-                <p className="text-gray-700 leading-relaxed whitespace-pre-wrap">{adr.content.more_information}</p>
+                <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2">More Information</h3>
+                <p className="text-gray-700 dark:text-gray-300 leading-relaxed whitespace-pre-wrap">{adr.content.more_information}</p>
               </div>
             )}
 
             {/* Referenced ADRs */}
             {adr.content.referenced_adrs && adr.content.referenced_adrs.length > 0 && (
               <div>
-                <h3 className="text-lg font-semibold text-gray-900 mb-2">Referenced ADRs</h3>
-                <p className="text-sm text-gray-600 mb-2">This ADR was generated with context from the following ADRs:</p>
+                <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2">Referenced ADRs</h3>
+                <p className="text-sm text-gray-600 dark:text-gray-400 mb-2">This ADR was generated with context from the following ADRs:</p>
                 <ul className="space-y-2">
                   {adr.content.referenced_adrs.map((ref, index) => (
-                    <li key={index} className="border-l-2 border-blue-300 pl-3 py-1">
+                    <li key={index} className="border-l-2 border-blue-300 dark:border-blue-700 pl-3 py-1">
                       {/* <div className="font-mono text-sm text-blue-700 font-semibold">{ref.id}</div>
                       {ref.title && ref.title !== ref.id && (
                         <div className="text-xs text-gray-600 mt-0.5">{ref.title}</div>
                       )} */}
                       {ref.summary && (
-                        <div className="text-xs text-gray-500 mt-1 italic">{ref.summary}</div>
+                        <div className="text-xs text-gray-500 dark:text-gray-400 mt-1 italic">{ref.summary}</div>
                       )}
                     </li>
                   ))}
@@ -229,12 +229,12 @@ export function ADRModal({ adr, onClose, onAnalyze, isAnalyzing }: ADRModalProps
 
             {/* Tags */}
             <div>
-              <h3 className="text-lg font-semibold text-gray-900 mb-2">Tags</h3>
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2">Tags</h3>
               <div className="flex flex-wrap gap-2">
                 {adr.metadata.tags.map((tag) => (
                   <span
                     key={tag}
-                    className="px-3 py-1 bg-blue-50 text-blue-700 text-sm rounded-md"
+                    className="px-3 py-1 bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 text-sm rounded-md"
                   >
                     {tag}
                   </span>
@@ -243,7 +243,7 @@ export function ADRModal({ adr, onClose, onAnalyze, isAnalyzing }: ADRModalProps
             </div>
           </div>
 
-          <div className="flex gap-4 mt-8 pt-6 border-t">
+          <div className="flex gap-4 mt-8 pt-6 border-t border-gray-200 dark:border-gray-700">
             {adr.persona_responses && adr.persona_responses.length > 0 && (
               <button
                 onClick={() => setShowPersonas(true)}
@@ -261,7 +261,7 @@ export function ADRModal({ adr, onClose, onAnalyze, isAnalyzing }: ADRModalProps
             </button>
             <button
               onClick={onClose}
-              className="px-6 py-3 border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50 transition-colors font-medium"
+              className="px-6 py-3 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 rounded-md hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors font-medium"
             >
               Close
             </button>

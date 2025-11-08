@@ -182,6 +182,7 @@ describe('ApiClient', () => {
         ok: false,
         status: 404,
         statusText: 'Not Found',
+        text: async () => '',
       });
 
       await expect(apiClient.getADR('nonexistent')).rejects.toThrow(
