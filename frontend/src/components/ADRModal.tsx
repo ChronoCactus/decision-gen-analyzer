@@ -44,7 +44,7 @@ export function ADRModal({ adr, onClose, onAnalyze, isAnalyzing }: ADRModalProps
               </h2>
               <div className="flex items-center gap-4 text-sm text-gray-600">
                 <span>By {adr.metadata.author}</span>
-                <span>{new Date(adr.metadata.created_date).toLocaleDateString()}</span>
+                <span>{new Date(adr.metadata.created_at).toLocaleDateString()}</span>
                 <span className={`px-3 py-1 rounded-full border ${getStatusColor(adr.metadata.status)}`}>
                   {adr.metadata.status}
                 </span>

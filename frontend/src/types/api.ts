@@ -19,8 +19,11 @@ export interface ADRMetadata {
   title: string;
   status: ADRStatus;
   author: string;
-  created_date: string;
+  created_at: string;
+  updated_at: string;
   tags: string[];
+  related_adrs?: string[];
+  custom_fields?: Record<string, any>;
 }
 
 export interface OptionDetails {

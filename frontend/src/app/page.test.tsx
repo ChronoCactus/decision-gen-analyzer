@@ -35,6 +35,9 @@ vi.mock('@/lib/api', () => ({
     generateADR: vi.fn(),
     getAnalysisTaskStatus: vi.fn(),
     getGenerationTaskStatus: vi.fn(),
+    getCacheStatus: vi.fn(),
+    getADRRAGStatus: vi.fn(),
+    exportADR: vi.fn(),
   },
 }));
 
@@ -49,7 +52,8 @@ describe('Home Page', () => {
           title: 'Database Selection',
           status: ADRStatus.ACCEPTED,
           author: 'John Doe',
-          created_date: '2024-01-15',
+          created_at: '2024-01-15',
+          updated_at: '2024-01-15',
           tags: ['database'],
         },
         content: {
@@ -64,7 +68,8 @@ describe('Home Page', () => {
           title: 'API Gateway',
           status: ADRStatus.PROPOSED,
           author: 'Jane Doe',
-          created_date: '2024-01-16',
+          created_at: '2024-01-16',
+          updated_at: '2024-01-16',
           tags: ['api'],
         },
         content: {
@@ -82,6 +87,8 @@ describe('Home Page', () => {
     (apiClient.getADRs as any).mockResolvedValue(mockADRs);
     (apiClient.getAnalysisTaskStatus as any).mockResolvedValue({ status: 'completed' });
     (apiClient.getGenerationTaskStatus as any).mockResolvedValue({ status: 'completed' });
+    (apiClient.getCacheStatus as any).mockResolvedValue({ is_rebuilding: false });
+    (apiClient.getADRRAGStatus as any).mockResolvedValue({ exists_in_rag: false });
   });
 
   it('should load and display ADRs on mount', async () => {
