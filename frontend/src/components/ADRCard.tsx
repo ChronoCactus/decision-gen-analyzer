@@ -98,23 +98,23 @@ export function ADRCard({ adr, onAnalyze, onDelete, onPushToRAG, onExport, cache
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'accepted':
-        return 'bg-green-100 text-green-800';
+        return 'bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-300';
       case 'proposed':
-        return 'bg-yellow-100 text-yellow-800';
+        return 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-800 dark:text-yellow-300';
       case 'rejected':
-        return 'bg-red-100 text-red-800';
+        return 'bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-300';
       case 'deprecated':
-        return 'bg-gray-100 text-gray-800';
+        return 'bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-300';
       default:
-        return 'bg-blue-100 text-blue-800';
+        return 'bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-300';
     }
   };
 
   return (
     <>
-      <div className="bg-white rounded-lg shadow-md p-6 hover:shadow-lg transition-shadow">
+      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6 hover:shadow-lg transition-shadow border border-transparent dark:border-gray-700">
         <div className="flex justify-between items-start mb-4">
-          <h3 className="text-lg font-semibold text-gray-900 line-clamp-2">
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 line-clamp-2">
             {adr.metadata.title}
           </h3>
           <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(adr.metadata.status)}`}>
@@ -122,7 +122,7 @@ export function ADRCard({ adr, onAnalyze, onDelete, onPushToRAG, onExport, cache
           </span>
         </div>
 
-        <p className="text-gray-600 text-sm mb-4 line-clamp-3">
+        <p className="text-gray-600 dark:text-gray-400 text-sm mb-4 line-clamp-3">
           {adr.content.context_and_problem}
         </p>
 
@@ -130,19 +130,19 @@ export function ADRCard({ adr, onAnalyze, onDelete, onPushToRAG, onExport, cache
           {adr.metadata.tags.slice(0, 3).map((tag) => (
             <span
               key={tag}
-              className="px-2 py-1 bg-blue-50 text-blue-700 text-xs rounded-md"
+              className="px-2 py-1 bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 text-xs rounded-md"
             >
               {tag}
             </span>
           ))}
           {adr.metadata.tags.length > 3 && (
-            <span className="px-2 py-1 bg-gray-50 text-gray-600 text-xs rounded-md">
+            <span className="px-2 py-1 bg-gray-50 dark:bg-gray-700 text-gray-600 dark:text-gray-400 text-xs rounded-md">
               +{adr.metadata.tags.length - 3} more
             </span>
           )}
         </div>
 
-        <div className="flex justify-between items-center text-sm text-gray-500 mb-4">
+        <div className="flex justify-between items-center text-sm text-gray-500 dark:text-gray-400 mb-4">
           <span>By {adr.metadata.author}</span>
           <span>{new Date(adr.metadata.created_at).toLocaleDateString()}</span>
         </div>
@@ -186,7 +186,7 @@ export function ADRCard({ adr, onAnalyze, onDelete, onPushToRAG, onExport, cache
           </button>
           <button
             onClick={() => setShowDeleteModal(true)}
-            className="flex-1 text-red-600 hover:text-red-700 px-4 py-2 rounded-md hover:bg-red-50 transition-colors text-sm flex items-center justify-center"
+            className="flex-1 text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300 px-4 py-2 rounded-md hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors text-sm flex items-center justify-center"
             title="Delete ADR"
           >
             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5">

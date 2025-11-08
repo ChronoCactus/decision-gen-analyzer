@@ -105,14 +105,14 @@ export function GenerateADRModal({ onClose, onGenerate, isGenerating, generation
   };
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-      <div className="bg-white rounded-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+    <div className="fixed inset-0 bg-black bg-opacity-50 dark:bg-opacity-70 flex items-center justify-center p-4 z-50">
+      <div className="bg-white dark:bg-gray-800 rounded-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto">
         <div className="p-6">
           <div className="flex justify-between items-center mb-6">
-            <h2 className="text-2xl font-bold text-gray-900">Generate New ADR</h2>
+            <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Generate New ADR</h2>
             <button
               onClick={onClose}
-              className="text-gray-400 hover:text-gray-600 text-2xl"
+              className="text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300 text-2xl"
             >
               ×
             </button>
@@ -120,7 +120,7 @@ export function GenerateADRModal({ onClose, onGenerate, isGenerating, generation
 
           <form onSubmit={handleSubmit} className="space-y-6">
             <div>
-              <label htmlFor="prompt" className="block text-sm font-medium text-gray-700 mb-2">
+              <label htmlFor="prompt" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                 Prompt *
               </label>
               <textarea
@@ -128,17 +128,17 @@ export function GenerateADRModal({ onClose, onGenerate, isGenerating, generation
                 value={prompt}
                 onChange={(e) => setPrompt(e.target.value)}
                 placeholder="Describe the decision you want to document..."
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-vertical"
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-vertical"
                 rows={4}
                 required
               />
-              <p className="text-sm text-gray-500 mt-1">
+              <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
                 Describe the architectural decision you want to generate an ADR for.
               </p>
             </div>
 
             <div>
-              <label htmlFor="context" className="block text-sm font-medium text-gray-700 mb-2">
+              <label htmlFor="context" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                 Additional Context
               </label>
               <textarea
@@ -146,16 +146,16 @@ export function GenerateADRModal({ onClose, onGenerate, isGenerating, generation
                 value={context}
                 onChange={(e) => setContext(e.target.value)}
                 placeholder="Any additional context, constraints, or requirements..."
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-vertical"
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-vertical"
                 rows={3}
               />
-              <p className="text-sm text-gray-500 mt-1">
+              <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
                 Optional: Provide additional context to help generate a more accurate ADR.
               </p>
             </div>
 
             <div>
-              <label htmlFor="tags" className="block text-sm font-medium text-gray-700 mb-2">
+              <label htmlFor="tags" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                 Tags
               </label>
               <input
@@ -164,22 +164,22 @@ export function GenerateADRModal({ onClose, onGenerate, isGenerating, generation
                 value={tags}
                 onChange={(e) => setTags(e.target.value)}
                 placeholder="architecture, database, security (comma-separated)"
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               />
-              <p className="text-sm text-gray-500 mt-1">
+              <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
                 Optional: Comma-separated tags to categorize the ADR.
               </p>
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                 Analysis Personas
               </label>
-              <p className="text-sm text-gray-500 mb-3">
+              <p className="text-sm text-gray-500 dark:text-gray-400 mb-3">
                 Select the personas that will contribute to the ADR generation. Each persona provides a different perspective.
               </p>
               {loadingPersonas ? (
-                <div className="text-sm text-gray-500">Loading personas...</div>
+                <div className="text-sm text-gray-500 dark:text-gray-400">Loading personas...</div>
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                   {personas.map((persona) => (
@@ -187,21 +187,21 @@ export function GenerateADRModal({ onClose, onGenerate, isGenerating, generation
                       key={persona.value}
                       className={`flex items-start p-3 border rounded-md cursor-pointer transition-colors ${
                         selectedPersonas.includes(persona.value)
-                          ? 'border-blue-500 bg-blue-50'
-                          : 'border-gray-300 hover:border-gray-400'
+                        ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/30 dark:border-blue-400'
+                        : 'border-gray-300 dark:border-gray-600 hover:border-gray-400 dark:hover:border-gray-500 bg-white dark:bg-gray-700/50'
                       }`}
                     >
                       <input
                         type="checkbox"
                         checked={selectedPersonas.includes(persona.value)}
                         onChange={() => togglePersona(persona.value)}
-                        className="mt-1 mr-3 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                        className="mt-1 mr-3 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 dark:border-gray-600 rounded"
                       />
                       <div className="flex-1">
-                        <div className="font-medium text-sm text-gray-900">
+                        <div className="font-medium text-sm text-gray-900 dark:text-gray-100">
                           {persona.label}
                         </div>
-                        <div className="text-xs text-gray-500 mt-1">
+                        <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
                           {persona.description}
                         </div>
                       </div>
@@ -210,7 +210,7 @@ export function GenerateADRModal({ onClose, onGenerate, isGenerating, generation
                 </div>
               )}
               {!loadingPersonas && selectedPersonas.length === 0 && (
-                <p className="text-sm text-amber-600 mt-2">
+                <p className="text-sm text-amber-600 dark:text-amber-400 mt-2">
                   ⚠️ No personas selected. Default personas will be used.
                 </p>
               )}
@@ -257,7 +257,7 @@ export function GenerateADRModal({ onClose, onGenerate, isGenerating, generation
                 type="button"
                 onClick={onClose}
                 disabled={isGenerating}
-                className="px-6 py-3 border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors font-medium"
+                className="px-6 py-3 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 rounded-md hover:bg-gray-50 dark:hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors font-medium"
               >
                 Cancel
               </button>
