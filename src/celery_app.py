@@ -196,53 +196,80 @@ def generate_adr_task(self, prompt: str, context: str = None, tags: list = None,
                     for opt in result.considered_options
                 ]
 
-            # Parse consequences for structured format
+            # Convert consequences_structured if available
             consequences_structured = None
-            try:
-                # Try to extract positive/negative from consequences string
-                cons_text = result.consequences
-                positive_items = []
-                negative_items = []
+            if result.consequences_structured:
+                # Use the structured consequences directly from the generation result
+                positive_items = result.consequences_structured.get("positive", [])
+                negative_items = result.consequences_structured.get("negative", [])
 
-                if "Positive:" in cons_text and "Negative:" in cons_text:
-                    parts = cons_text.split("Negative:")
-                    positive_text = parts[0].replace("Positive:", "").strip()
-                    negative_text = parts[1].strip() if len(parts) > 1 else ""
+                # Capitalize first letter if needed
+                positive_items = [
+                    item[0].upper() + item[1:] if item and item[0].islower() else item
+                    for item in positive_items
+                ]
+                negative_items = [
+                    item[0].upper() + item[1:] if item and item[0].islower() else item
+                    for item in negative_items
+                ]
 
-                    # Parse bullet points from positive section
-                    for line in positive_text.split("\n"):
-                        line = line.strip()
-                        # Remove bullet point markers (-, *, •)
-                        if line.startswith("- "):
-                            line = line[2:].strip()
-                        elif line.startswith("* "):
-                            line = line[2:].strip()
-                        elif line.startswith("• "):
-                            line = line[2:].strip()
+                consequences_structured = ConsequencesStructured(
+                    positive=positive_items, negative=negative_items
+                )
+            else:
+                # Fallback: parse from consequences text (for backwards compatibility)
+                try:
+                    cons_text = result.consequences
+                    positive_items = []
+                    negative_items = []
 
-                        if line:
-                            positive_items.append(line)
+                    if "Positive:" in cons_text and "Negative:" in cons_text:
+                        parts = cons_text.split("Negative:")
+                        positive_text = parts[0].replace("Positive:", "").strip()
+                        negative_text = parts[1].strip() if len(parts) > 1 else ""
 
-                    # Parse bullet points from negative section
-                    for line in negative_text.split("\n"):
-                        line = line.strip()
-                        # Remove bullet point markers (-, *, •)
-                        if line.startswith("- "):
-                            line = line[2:].strip()
-                        elif line.startswith("* "):
-                            line = line[2:].strip()
-                        elif line.startswith("• "):
-                            line = line[2:].strip()
+                        # Parse bullet points from positive section
+                        for line in positive_text.split("\n"):
+                            line = line.strip()
+                            # Remove bullet point markers (-, *, •)
+                            if line.startswith("- "):
+                                line = line[2:].strip()
+                            elif line.startswith("* "):
+                                line = line[2:].strip()
+                            elif line.startswith("• "):
+                                line = line[2:].strip()
 
-                        if line:
-                            negative_items.append(line)
+                            # Only add if not empty and not just punctuation/whitespace
+                            if line and line not in ["-", "•", "*"]:
+                                # Capitalize first letter if not already
+                                if line and line[0].islower():
+                                    line = line[0].upper() + line[1:]
+                                positive_items.append(line)
 
-                    consequences_structured = ConsequencesStructured(
-                        positive=positive_items, negative=negative_items
-                    )
-            except Exception as e:
-                # If parsing fails, just leave consequences_structured as None
-                pass
+                        # Parse bullet points from negative section
+                        for line in negative_text.split("\n"):
+                            line = line.strip()
+                            # Remove bullet point markers (-, *, •)
+                            if line.startswith("- "):
+                                line = line[2:].strip()
+                            elif line.startswith("* "):
+                                line = line[2:].strip()
+                            elif line.startswith("• "):
+                                line = line[2:].strip()
+
+                            # Only add if not empty and not just punctuation/whitespace
+                            if line and line not in ["-", "•", "*"]:
+                                # Capitalize first letter if not already
+                                if line and line[0].islower():
+                                    line = line[0].upper() + line[1:]
+                                negative_items.append(line)
+
+                        consequences_structured = ConsequencesStructured(
+                            positive=positive_items, negative=negative_items
+                        )
+                except Exception as e:
+                    # If parsing fails, just leave consequences_structured as None
+                    pass
 
             # Create ADR object for storage
             adr = ADR(

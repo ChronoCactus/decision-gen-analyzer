@@ -440,79 +440,119 @@ Ensure your response is practical, considers the constraints, and reflects your 
                 if title.upper().startswith("ADR:"):
                     title = title[4:].strip()
 
-                # Polish the formatting of each section
-                if progress_callback:
-                    progress_callback("Polishing formatting (3 sections)...")
+                # Validate and cleanup the synthesis data
+                synthesis_data, sections_to_polish = (
+                    self._validate_and_cleanup_synthesis_data(synthesis_data)
+                )
 
-                # Polish all sections in parallel if pool is available
-                if self.use_pool:
-                    # Track completion count for progress updates
-                    completed_sections = {"count": 0}
-                    total_sections = 3
+                # Extract text fields
+                context_and_problem = synthesis_data.get("context_and_problem", "")
+                decision_outcome = synthesis_data.get("decision_outcome", "")
+                consequences = synthesis_data.get("consequences", "")
 
-                    # Create polishing tasks with section names for progress tracking
-                    async def polish_with_name(
-                        section_name: str, text: str, idx: int
-                    ) -> tuple[int, str]:
-                        """Polish text and return with index for ordering."""
-                        result = await self._polish_formatting(text)
-                        completed_sections["count"] += 1
-                        if progress_callback:
-                            in_progress = total_sections - completed_sections["count"]
-                            if in_progress > 0:
-                                progress_callback(
-                                    f"✓ {section_name} completed ({completed_sections['count']}/{total_sections}), "
-                                    f"{in_progress} in progress"
-                                )
-                            else:
-                                progress_callback(
-                                    f"✓ All {total_sections} sections polished"
-                                )
-                        return (idx, result)
+                # Only polish sections that need it
+                sections_needing_polish = [
+                    field
+                    for field, needs_polish in sections_to_polish.items()
+                    if needs_polish
+                ]
 
-                    sections = [
-                        (
+                if sections_needing_polish:
+                    logger.info(
+                        "Formatting issues detected, running polishing step",
+                        sections=sections_needing_polish,
+                    )
+
+                    # Build list of sections to polish with their display names
+                    section_map = {
+                        "context_and_problem": (
                             "Context & Problem",
-                            synthesis_data.get("context_and_problem", ""),
-                            0,
+                            context_and_problem,
                         ),
-                        (
-                            "Decision Outcome",
-                            synthesis_data.get("decision_outcome", ""),
-                            1,
-                        ),
-                        ("Consequences", synthesis_data.get("consequences", ""), 2),
+                        "decision_outcome": ("Decision Outcome", decision_outcome),
+                        "consequences": ("Consequences", consequences),
+                    }
+
+                    sections_to_process = [
+                        (section_map[field][0], section_map[field][1], field)
+                        for field in sections_needing_polish
                     ]
 
-                    tasks = [
-                        polish_with_name(name, text, idx)
-                        for name, text, idx in sections
-                    ]
+                    total_sections = len(sections_to_process)
 
-                    results = await asyncio.gather(*tasks)
-                    # Sort by index to maintain order
-                    results.sort(key=lambda x: x[0])
-                    context_and_problem, decision_outcome, consequences = [
-                        r[1] for r in results
-                    ]
+                    if progress_callback:
+                        progress_callback(
+                            f"Polishing formatting ({total_sections} section{'s' if total_sections > 1 else ''})..."
+                        )
+
+                    # Polish sections in parallel if pool is available
+                    if self.use_pool and total_sections > 1:
+                        # Track completion count for progress updates
+                        completed_sections = {"count": 0}
+
+                        # Create polishing tasks with section names for progress tracking
+                        async def polish_with_name(
+                            section_name: str, text: str, field_name: str
+                        ) -> tuple[str, str]:
+                            """Polish text and return with field name for mapping."""
+                            result = await self._polish_formatting(text)
+                            completed_sections["count"] += 1
+                            if progress_callback:
+                                in_progress = (
+                                    total_sections - completed_sections["count"]
+                                )
+                                if in_progress > 0:
+                                    progress_callback(
+                                        f"✓ {section_name} completed ({completed_sections['count']}/{total_sections}), "
+                                        f"{in_progress} in progress"
+                                    )
+                                else:
+                                    progress_callback(
+                                        f"✓ All {total_sections} sections polished"
+                                    )
+                            return (field_name, result)
+
+                        tasks = [
+                            polish_with_name(name, text, field)
+                            for name, text, field in sections_to_process
+                        ]
+
+                        results = await asyncio.gather(*tasks)
+
+                        # Update the fields that were polished
+                        for field_name, polished_text in results:
+                            if field_name == "context_and_problem":
+                                context_and_problem = polished_text
+                            elif field_name == "decision_outcome":
+                                decision_outcome = polished_text
+                            elif field_name == "consequences":
+                                consequences = polished_text
+                    else:
+                        # Sequential polishing
+                        for idx, (section_name, text, field_name) in enumerate(
+                            sections_to_process, 1
+                        ):
+                            if progress_callback:
+                                progress_callback(
+                                    f"Polishing {section_name} ({idx}/{total_sections})..."
+                                )
+
+                            polished_text = await self._polish_formatting(text)
+
+                            if field_name == "context_and_problem":
+                                context_and_problem = polished_text
+                            elif field_name == "decision_outcome":
+                                decision_outcome = polished_text
+                            elif field_name == "consequences":
+                                consequences = polished_text
                 else:
-                    if progress_callback:
-                        progress_callback("Polishing Context & Problem (1/3)...")
-                    context_and_problem = await self._polish_formatting(
-                        synthesis_data.get("context_and_problem", "")
+                    logger.info(
+                        "Synthesis data is well-formatted, skipping polishing step"
                     )
-
                     if progress_callback:
-                        progress_callback("Polishing Decision Outcome (2/3)...")
-                    decision_outcome = await self._polish_formatting(
-                        synthesis_data.get("decision_outcome", "")
-                    )
-
-                    if progress_callback:
-                        progress_callback("Polishing Consequences (3/3)...")
-                    consequences = await self._polish_formatting(
-                        synthesis_data.get("consequences", "")
-                    )
+                        progress_callback(
+                            "✓ Synthesis data is well-formatted, skipping polishing"
+                        )
 
                 # Create ADR generation result
                 result = ADRGenerationResult(
@@ -522,6 +562,9 @@ Ensure your response is practical, considers the constraints, and reflects your 
                     considered_options=synthesis_data.get("considered_options", []),
                     decision_outcome=decision_outcome,
                     consequences=consequences,
+                    consequences_structured=synthesis_data.get(
+                        "consequences_structured"
+                    ),
                     decision_drivers=synthesis_data.get("decision_drivers", []),
                     confidence_score=synthesis_data.get("confidence_score"),
                     related_context=related_context,
@@ -595,23 +638,141 @@ Based on these perspectives, create a complete ADR. You must respond with a JSON
     {{
       "option_name": "Name of option 1",
       "description": "Description of option 1",
-      "pros": ["pro1", "pro2"],
-      "cons": ["con1", "con2"]
+      "pros": ["One brief succinct sentence describing pro 1", "One brief succinct sentence describing pro 2"],
+      "cons": ["One brief succinct sentence describing con 1", "One brief succinct sentence describing con 2"]
     }},
     {{
       "option_name": "Name of option 2",
       "description": "Description of option 2",
-      "pros": ["pro1", "pro2"],
-      "cons": ["con1", "con2"]
+      "pros": ["One brief succinct sentence describing pro 1", "One brief succinct sentence describing pro 2"],
+      "cons": ["One brief succinct sentence describing con 1", "One brief succinct sentence describing con 2"]
     }}
   ],
   "decision_outcome": "The chosen option and detailed justification",
-  "consequences": "Positive and negative consequences of the decision",
+  "consequences": {{
+    "positive": ["One brief succinct sentence describing positive point 1", "One brief succinct sentence describing positive point 2"],
+    "negative": ["One brief succinct sentence describing negative point 1", "One brief succinct sentence describing negative point 2"]
+  }},
   "decision_drivers": ["driver1", "driver2", "driver3"],
   "confidence_score": 0.85
 }}
 
+**CRITICAL FORMATTING RULES**:
+1. Each item in "pros", "cons", "positive" and "negative" arrays MUST be a single, brief and to the point complete sentence
+2. Do NOT use bullet points (-, •, *) inside array items
+3. Do NOT concatenate multiple items into one string
+4. Each item should be a separate string in the array
+5. The "consequences" field MUST be an object with "positive" and "negative" arrays
+
 Ensure the ADR is well-structured, balanced, and considers all perspectives."""
+
+    def _clean_list_items(self, items: List[str]) -> List[str]:
+        """Clean up list items that may have concatenated bullet points.
+
+        Args:
+            items: List of strings that may contain concatenated items
+
+        Returns:
+            Cleaned list with split items
+        """
+        import re
+
+        cleaned = []
+        for item in items:
+            # Check if item contains bullet markers (-, •, *) that indicate concatenation
+            if re.search(r"[-•*]\s+\w+.*[-•*]\s+\w+", item):
+                # Split on bullet markers
+                parts = re.split(r"\s*[-•*]\s+", item)
+                # Filter out empty parts and add non-empty ones
+                for part in parts:
+                    part = part.strip()
+                    if part:
+                        cleaned.append(part)
+            else:
+                # Just clean up the single item
+                item = item.strip()
+                # Remove leading bullet markers if present
+                item = re.sub(r"^[-•*]\s+", "", item)
+                # Also remove trailing bullet markers and extra whitespace
+                item = item.strip()
+                # Skip if empty or only contains bullet markers
+                if item and not re.match(r"^[-•*\s]+$", item):
+                    cleaned.append(item)
+
+        return cleaned
+
+    def _validate_and_cleanup_synthesis_data(
+        self, data: Dict[str, Any]
+    ) -> tuple[Dict[str, Any], Dict[str, bool]]:
+        """Validate synthesis data and clean up common formatting issues.
+
+        Args:
+            data: Parsed synthesis data
+
+        Returns:
+            Tuple of (cleaned data, dict of section names to polish)
+            The dict keys are: 'context_and_problem', 'decision_outcome', 'consequences'
+        """
+        sections_to_polish = {
+            "context_and_problem": False,
+            "decision_outcome": False,
+            "consequences": False,
+        }
+
+        # Clean up options pros/cons
+        if "considered_options" in data:
+            for opt in data["considered_options"]:
+                if isinstance(opt, ADRGenerationOptions):
+                    # Check if pros/cons have concatenated items
+                    original_pros_count = len(opt.pros)
+                    original_cons_count = len(opt.cons)
+
+                    opt.pros = self._clean_list_items(opt.pros)
+                    opt.cons = self._clean_list_items(opt.cons)
+
+                    # If we split items, log it
+                    if (
+                        len(opt.pros) != original_pros_count
+                        or len(opt.cons) != original_cons_count
+                    ):
+                        logger.info(
+                            "Cleaned up concatenated pros/cons",
+                            option=opt.option_name,
+                            original_pros=original_pros_count,
+                            cleaned_pros=len(opt.pros),
+                            original_cons=original_cons_count,
+                            cleaned_cons=len(opt.cons),
+                        )
+
+        # Check if text fields need polishing (have line breaks in weird places)
+        import re
+
+        # Only check text fields that aren't generated from structured data
+        # If consequences_structured exists, skip checking consequences text
+        fields_to_check = ["context_and_problem", "decision_outcome"]
+        if "consequences_structured" not in data:
+            fields_to_check.append("consequences")
+
+        for field in fields_to_check:
+            if field in data and isinstance(data[field], str):
+                text = data[field]
+                # Check for common formatting issues:
+                # 1. Words split across lines (not after punctuation or bullets)
+                # 2. Non-breaking hyphens
+                # 3. Multiple consecutive spaces
+                if (
+                    re.search(r"[a-zA-Z]\n[a-zA-Z]", text)  # Word split across lines
+                    or "  " in text  # Multiple spaces
+                ):
+                    sections_to_polish[field] = True
+                    logger.info(
+                        "Detected formatting issues in field",
+                        field=field,
+                        has_line_breaks=bool(re.search(r"[a-zA-Z]\n[a-zA-Z]", text)),
+                        has_multiple_spaces=("  " in text),
+                    )
+
+        return data, sections_to_polish
 
     def _parse_synthesis_response(self, response: str) -> Optional[Dict[str, Any]]:
         """Parse JSON response from ADR synthesis.
@@ -635,6 +796,12 @@ Ensure the ADR is well-structured, balanced, and considers all perspectives."""
                     options = []
                     for opt in data["considered_options"]:
                         if isinstance(opt, dict):
+                            # Clean up pros/cons before creating the object
+                            if "pros" in opt and isinstance(opt["pros"], list):
+                                opt["pros"] = self._clean_list_items(opt["pros"])
+                            if "cons" in opt and isinstance(opt["cons"], list):
+                                opt["cons"] = self._clean_list_items(opt["cons"])
+
                             options.append(ADRGenerationOptions(**opt))
                         else:
                             # Handle string options
@@ -652,20 +819,30 @@ Ensure the ADR is well-structured, balanced, and considers all perspectives."""
                     positive = cons_dict.get("positive", [])
                     negative = cons_dict.get("negative", [])
 
-                    # Format as string
+                    # Clean the positive/negative lists
+                    if isinstance(positive, list):
+                        positive = self._clean_list_items(positive)
+                    if isinstance(negative, list):
+                        negative = self._clean_list_items(negative)
+
+                    # Store the structured version for later use
+                    data["consequences_structured"] = {
+                        "positive": positive,
+                        "negative": negative,
+                    }
+
+                    # Also create a text version for backwards compatibility
                     consequences_parts = []
                     if positive:
-                        if isinstance(positive, list):
-                            consequences_parts.append("Positive: " + ", ".join(positive))
-                        else:
-                            consequences_parts.append("Positive: " + str(positive))
+                        consequences_parts.append("Positive: " + ", ".join(positive))
                     if negative:
-                        if isinstance(negative, list):
-                            consequences_parts.append("Negative: " + ", ".join(negative))
-                        else:
-                            consequences_parts.append("Negative: " + str(negative))
+                        consequences_parts.append("Negative: " + ", ".join(negative))
 
                     data["consequences"] = "\n".join(consequences_parts) if consequences_parts else "No consequences identified."
+                elif "consequences" in data and isinstance(data["consequences"], str):
+                    # If it's already a string, keep it as is (fallback for old format)
+                    # Don't create consequences_structured in this case
+                    pass
 
                 return data
         except (json.JSONDecodeError, ValueError, TypeError) as e:
