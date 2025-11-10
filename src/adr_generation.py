@@ -418,7 +418,6 @@ Ensure your response is practical, considers the constraints, and reflects your 
                 client = self.llama_client.get_generation_client(0)
                 response = await client.generate(
                     prompt=synthesis_prompt,
-                    json_mode=True,
                     temperature=0.3,  # Lower temperature for more consistent synthesis
                     num_predict=3000,
                 )
@@ -426,7 +425,6 @@ Ensure your response is practical, considers the constraints, and reflects your 
                 async with self.llama_client:
                     response = await self.llama_client.generate(
                         prompt=synthesis_prompt,
-                        json_mode=True,
                         temperature=0.3,  # Lower temperature for more consistent synthesis
                         num_predict=3000,
                     )
@@ -626,8 +624,9 @@ Problem: {prompt.problem_statement}
 **Expert Perspectives**:
 {perspectives_str}
 
-**Related Context**:
+>>>>>Related Context>>>>>
 {chr(10).join(related_context) if related_context else "None available"}
+<<<<<End Related Context<<<<<
 
 Based on these perspectives, create a complete ADR. You must respond with a JSON object containing:
 
@@ -638,20 +637,20 @@ Based on these perspectives, create a complete ADR. You must respond with a JSON
     {{
       "option_name": "Name of option 1",
       "description": "Description of option 1",
-      "pros": ["One brief succinct sentence describing pro 1", "One brief succinct sentence describing pro 2"],
-      "cons": ["One brief succinct sentence describing con 1", "One brief succinct sentence describing con 2"]
+      "pros": ["pro 1", "pro 2", "..."],
+      "cons": ["con 1", "con 2", "..."]
     }},
     {{
       "option_name": "Name of option 2",
       "description": "Description of option 2",
-      "pros": ["One brief succinct sentence describing pro 1", "One brief succinct sentence describing pro 2"],
-      "cons": ["One brief succinct sentence describing con 1", "One brief succinct sentence describing con 2"]
+      "pros": ["pro 1", "pro 2", "..."],
+      "cons": ["con 1", "con 2", "..."]
     }}
   ],
   "decision_outcome": "The chosen option and detailed justification",
   "consequences": {{
-    "positive": ["One brief succinct sentence describing positive point 1", "One brief succinct sentence describing positive point 2"],
-    "negative": ["One brief succinct sentence describing negative point 1", "One brief succinct sentence describing negative point 2"]
+    "positive": ["positive point", "positive point", "..."],
+    "negative": ["negative point", "negative point", "..."]
   }},
   "decision_drivers": ["driver1", "driver2", "driver3"],
   "confidence_score": 0.85
@@ -659,10 +658,11 @@ Based on these perspectives, create a complete ADR. You must respond with a JSON
 
 **CRITICAL FORMATTING RULES**:
 1. Each item in "pros", "cons", "positive" and "negative" arrays MUST be a single, brief and to the point complete sentence
-2. Do NOT use bullet points (-, •, *) inside array items
-3. Do NOT concatenate multiple items into one string
-4. Each item should be a separate string in the array
-5. The "consequences" field MUST be an object with "positive" and "negative" arrays
+2. Each array is not limited to only 2-3 items; include all relevant points - ensure only relevant points are included.
+3. Do NOT use bullet points (-, •, *) inside array items
+4. Do NOT concatenate multiple items into one string
+5. Each item should be a separate string in the array
+6. The "consequences" field MUST be an object with "positive" and "negative" arrays
 
 Ensure the ADR is well-structured, balanced, and considers all perspectives."""
 
