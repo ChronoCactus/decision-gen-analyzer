@@ -1,7 +1,7 @@
 """API routes for Decision Analyzer."""
 
 import asyncio
-from fastapi import APIRouter, HTTPException, BackgroundTasks, File, UploadFile
+from fastapi import APIRouter, HTTPException, BackgroundTasks, File, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse, StreamingResponse
 from typing import List, Optional, Literal
 from pydantic import BaseModel
@@ -102,6 +102,72 @@ adr_router = APIRouter()
 analysis_router = APIRouter()
 generation_router = APIRouter()
 config_router = APIRouter()
+
+
+@adr_router.websocket("/ws/cache-status")
+async def websocket_cache_status(websocket: WebSocket):
+    """WebSocket endpoint for real-time cache status updates.
+    
+    Clients connect to this endpoint to receive immediate notifications when:
+    - Cache rebuild starts (is_rebuilding: true)
+    - Cache rebuild completes (is_rebuilding: false, last_sync_time updated)
+    
+    Message format:
+    {
+        "type": "cache_status",
+        "is_rebuilding": bool,
+        "last_sync_time": float | null  // Unix timestamp in seconds
+    }
+    """
+    from src.websocket_manager import get_websocket_manager
+    from src.lightrag_doc_cache import LightRAGDocumentCache
+
+    logger.info(
+        "🔌 WebSocket connection attempt",
+        client=websocket.client,
+        headers=dict(websocket.headers),
+    )
+
+    websocket_manager = get_websocket_manager()
+    await websocket_manager.connect(websocket)
+
+    logger.info("✅ WebSocket accepted and registered")
+
+    logger.info("✅ WebSocket accepted and registered")
+
+    try:
+        # Send initial cache status on connection
+        async with LightRAGDocumentCache() as cache:
+            is_rebuilding = await cache.is_rebuilding()
+            last_sync_time = await cache.get_last_sync_time()
+
+        initial_message = {
+            "type": "cache_status",
+            "is_rebuilding": is_rebuilding,
+            "last_sync_time": last_sync_time,
+        }
+
+        logger.info("📤 Sending initial cache status", message=initial_message)
+        await websocket.send_json(initial_message)
+        logger.info("✅ Initial cache status sent successfully")
+
+        # Keep connection alive and wait for disconnect
+        logger.info("👂 Entering message receive loop (keeping connection alive)")
+        while True:
+            # Wait for any message from client (can be used for ping/pong)
+            msg = await websocket.receive_text()
+            logger.debug("📩 Received ping from client", message=msg)
+
+    except WebSocketDisconnect:
+        logger.info("🔌 WebSocket client disconnected normally")
+    except Exception as e:
+        logger.error(
+            "❌ WebSocket error", error_type=type(e).__name__, error_message=str(e)
+        )
+    finally:
+        logger.info("🧹 Cleaning up WebSocket connection")
+        websocket_manager.disconnect(websocket)
+        logger.info("✅ WebSocket cleanup complete")
 
 
 @config_router.get("/config", response_model=ConfigResponse)
@@ -327,14 +393,37 @@ Considered Options:
         )
         logger.info(f"Pushed ADR {adr.metadata.id} to LightRAG")
 
-        # Trigger background sync to update cache with the new document's ID
-        # This runs asynchronously and doesn't block the response
-        try:
-            from src.lightrag_sync import sync_single_document
+        # Check if we got a track_id for monitoring upload status
+        track_id = result.get("track_id")
 
-            asyncio.create_task(sync_single_document(str(adr.metadata.id)))
-        except Exception as sync_error:
-            logger.warning(f"Failed to trigger cache sync: {sync_error}")
+        if track_id:
+            # Store upload status and start monitoring task
+            from src.lightrag_doc_cache import LightRAGDocumentCache
+            from src.celery_app import monitor_upload_status_task
+
+            async with LightRAGDocumentCache() as cache:
+                await cache.set_upload_status(
+                    adr_id=str(adr.metadata.id),
+                    track_id=track_id,
+                    status="processing",
+                    message="Document uploaded to LightRAG, processing...",
+                )
+
+            logger.info(
+                f"ADR {adr.metadata.id} upload started with tracking",
+                extra={"track_id": track_id},
+            )
+
+            # Start background task to monitor upload status
+            monitor_upload_status_task.delay(str(adr.metadata.id), track_id)
+        else:
+            # No track_id, trigger background sync (old behavior)
+            try:
+                from src.lightrag_sync import sync_single_document
+
+                asyncio.create_task(sync_single_document(str(adr.metadata.id)))
+            except Exception as sync_error:
+                logger.warning(f"Failed to trigger cache sync: {sync_error}")
 
         return result
 
@@ -383,19 +472,23 @@ async def push_adr_to_rag(adr_id: str):
 
 @adr_router.get("/{adr_id}/rag-status")
 async def get_adr_rag_status(adr_id: str):
-    """Check if an ADR exists in LightRAG."""
+    """Check if an ADR exists in LightRAG and get upload status if processing."""
     try:
         from src.lightrag_doc_cache import LightRAGDocumentCache
 
-        # Try to get the doc ID from cache
         async with LightRAGDocumentCache() as cache:
+            # Check if document exists in cache
             doc_id = await cache.get_doc_id(adr_id)
             exists_in_rag = doc_id is not None
+
+            # Check if there's an active upload being tracked
+            upload_status = await cache.get_upload_status(adr_id)
 
         return {
             "adr_id": adr_id,
             "exists_in_rag": exists_in_rag,
             "lightrag_doc_id": doc_id,
+            "upload_status": upload_status,  # Will be None if not being tracked
         }
     except Exception as e:
         logger.error(f"Failed to check RAG status for {adr_id}: {str(e)}")

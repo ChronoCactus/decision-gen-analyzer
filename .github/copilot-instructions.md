@@ -12,6 +12,71 @@ This is a **multi-persona ADR (Architectural Decision Record) analysis and gener
 
 ## Critical Integration Points
 
+### WebSocket Real-Time Communication (Cross-Process Architecture)
+
+**Multi-Process Challenge**: FastAPI backend and Celery workers run in **separate processes** with separate memory spaces. Direct WebSocket communication from Celery workers is impossible.
+
+**Solution**: Redis Pub/Sub for cross-process messaging
+
+**Architecture**:
+```
+Celery Worker (process 1)
+  ↓
+  publish to Redis channel
+  ↓
+Redis Pub/Sub (websocket:broadcast)
+  ↓
+FastAPI listener (process 2)
+  ↓
+WebSocketManager.broadcast_*()
+  ↓
+Connected WebSocket clients
+  ↓
+Frontend React components
+```
+
+**Key Files**:
+- `src/websocket_broadcaster.py` - Redis pub/sub broadcaster
+  - `publish_upload_status()` - Celery workers call this to publish messages
+  - `publish_cache_status()` - Broadcast cache rebuild status
+  - `start_listening()` - FastAPI startup task to listen and forward messages
+- `src/websocket_manager.py` - WebSocket connection manager (FastAPI process only)
+  - Manages active WebSocket connections
+  - `broadcast_upload_status()` - Send to all connected clients
+  - `broadcast_cache_status()` - Send cache rebuild notifications
+- `src/api/routes.py` - WebSocket endpoint `/ws/cache-status`
+  - Clients connect here for real-time updates
+  - Sends initial status on connection
+  - Keeps connection alive with ping/pong
+- `src/api/main.py` - Startup/shutdown lifecycle
+  - Starts Redis listener on app startup
+  - Cleans up on shutdown
+
+**Pattern in Celery Tasks**:
+```python
+from src.websocket_broadcaster import get_broadcaster
+
+async def _celery_task():
+    broadcaster = get_broadcaster()
+    await broadcaster.publish_upload_status(
+        adr_id="...",
+        status="processing",  # or "completed", "failed"
+        message="..."
+    )
+```
+
+**Frontend WebSocket Hook** (`frontend/src/hooks/useCacheStatusWebSocket.ts`):
+- Connects to `ws://HOST:8000/api/v1/adrs/ws/cache-status`
+- Sends ping every 30 seconds to keep connection alive
+- Receives `cache_status` and `upload_status` messages
+- Auto-reconnects with exponential backoff
+
+**Message Types**:
+- `cache_status`: `{type: "cache_status", is_rebuilding: bool, last_sync_time: float}`
+- `upload_status`: `{type: "upload_status", adr_id: string, status: "processing"|"completed"|"failed", message?: string}`
+
+**CRITICAL**: Never call `get_websocket_manager()` from Celery tasks - it will have `active_connections=0` because connections are in the FastAPI process. Always use `get_broadcaster()` instead.
+
 ### External Services (Network Dependencies)
 - **Llama.cpp Servers** - LLM inference, supports multiple backends for parallel processing:
   - `LLAMA_CPP_URL` (required) - Primary server on port 11434

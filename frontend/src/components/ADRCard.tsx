@@ -6,6 +6,7 @@ import { ADRModal } from './ADRModal';
 import { DeleteConfirmationModal } from './DeleteConfirmationModal';
 import { Toast } from './Toast';
 import { apiClient } from '@/lib/api';
+import { useUploadStatus } from '@/hooks/useUploadStatus';
 
 interface ADRCardProps {
   adr: ADR;
@@ -27,7 +28,17 @@ export function ADRCard({ adr, onAnalyze, onDelete, onPushToRAG, onExport, cache
   const [toastMessage, setToastMessage] = useState('');
   const [toastType, setToastType] = useState<'info' | 'success' | 'warning' | 'error'>('info');
 
-  // Check if ADR exists in RAG on mount
+  // Track upload status via WebSocket
+  const { uploadStatus, uploadMessage } = useUploadStatus(adr.metadata.id);
+
+  // Update RAG status when upload completes
+  useEffect(() => {
+    if (uploadStatus === 'completed') {
+      setExistsInRAG(true);
+    }
+  }, [uploadStatus]);
+
+  // Check if ADR exists in RAG on mount and when cache rebuild completes
   useEffect(() => {
     let mounted = true;
 
@@ -53,7 +64,7 @@ export function ADRCard({ adr, onAnalyze, onDelete, onPushToRAG, onExport, cache
     return () => {
       mounted = false;
     };
-  }, [adr.metadata.id]);
+  }, [adr.metadata.id, cacheRebuilding]); // Re-check when cache rebuild status changes
 
   const handleAnalyze = async () => {
     setIsAnalyzing(true);
@@ -87,8 +98,8 @@ export function ADRCard({ adr, onAnalyze, onDelete, onPushToRAG, onExport, cache
     }
 
     onPushToRAG(adr.metadata.id);
-    // After pushing, mark as existing in RAG (optimistic update)
-    setExistsInRAG(true);
+    // Don't optimistically update - wait for WebSocket to confirm upload status
+    // The upload status hook will handle showing "Processing RAG..." state
   };
 
   const handleExport = () => {
@@ -164,8 +175,53 @@ export function ADRCard({ adr, onAnalyze, onDelete, onPushToRAG, onExport, cache
         </div>
 
         <div className="flex gap-2 mt-2">
-          {/* Only show Push to RAG button if it doesn't exist in RAG */}
-          {!checkingRAGStatus && !existsInRAG && (
+          {/* Show upload status button if upload is in progress or recently completed */}
+          {uploadStatus === 'processing' && (
+            <button
+              disabled
+              className="flex-1 bg-blue-600 text-white px-4 py-2 rounded-md opacity-75 cursor-wait transition-colors text-sm flex items-center justify-center gap-2"
+              title="Processing in LightRAG..."
+            >
+              <svg className="animate-spin h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+              </svg>
+              Processing RAG...
+            </button>
+          )}
+
+          {uploadStatus === 'completed' && (
+            <button
+              disabled
+              className="flex-1 bg-green-600 text-white px-4 py-2 rounded-md opacity-90 cursor-default transition-all text-sm flex items-center justify-center gap-2 animate-pulse"
+              title="Successfully uploaded to RAG"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              Successfully uploaded to RAG
+            </button>
+          )}
+
+          {uploadStatus === 'failed' && (
+            <button
+              onClick={handlePushToRAG}
+              className="flex-1 bg-red-600 text-white px-4 py-2 rounded-md hover:bg-red-700 transition-colors text-sm flex items-center justify-center gap-2"
+              title={uploadMessage || 'Upload failed - click to retry'}
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z" />
+              </svg>
+              Upload Failed - Retry
+            </button>
+          )}
+
+          {/* Only show Push to RAG button if:
+              1. Not checking status
+              2. No upload in progress
+              3. Doesn't exist in RAG
+          */}
+          {!checkingRAGStatus && !uploadStatus && !existsInRAG && (
             <button
               onClick={handlePushToRAG}
               disabled={cacheRebuilding}
@@ -175,6 +231,7 @@ export function ADRCard({ adr, onAnalyze, onDelete, onPushToRAG, onExport, cache
               {cacheRebuilding ? 'Cache Rebuilding...' : 'Push to RAG'}
             </button>
           )}
+
           <button
             onClick={handleExport}
             className="flex-1 bg-indigo-600 text-white px-4 py-2 rounded-md hover:bg-indigo-700 transition-colors text-sm flex items-center justify-center gap-2"

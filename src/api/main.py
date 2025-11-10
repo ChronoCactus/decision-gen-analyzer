@@ -41,6 +41,15 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     else:
         logger.info("🔒 LAN Discovery DISABLED - Backend only accessible via localhost")
 
+    # Start WebSocket broadcaster Redis listener
+    from src.websocket_broadcaster import get_broadcaster
+    from src.websocket_manager import get_websocket_manager
+
+    broadcaster = get_broadcaster()
+    ws_manager = get_websocket_manager()
+    listener_task = await broadcaster.start_listening(ws_manager)
+    logger.info("Started WebSocket broadcaster Redis listener")
+
     # Start LightRAG cache sync background task
     sync_task = asyncio.create_task(sync_lightrag_cache_task(interval_seconds=300))
     logger.info("Started LightRAG cache sync background task")
@@ -49,6 +58,18 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
     # Cleanup on shutdown
     logger.info("Shutting down Decision Analyzer API")
+
+    # Cancel broadcaster listener
+    if listener_task:
+        listener_task.cancel()
+        try:
+            await listener_task
+        except asyncio.CancelledError:
+            logger.info("WebSocket broadcaster listener cancelled")
+
+    await broadcaster.disconnect()
+
+    # Cancel sync task
     sync_task.cancel()
     try:
         await sync_task
