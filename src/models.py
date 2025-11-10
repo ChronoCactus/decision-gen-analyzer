@@ -403,6 +403,10 @@ class ADRGenerationResult(BaseModel):
     considered_options: List[ADRGenerationOptions] = Field(default_factory=list, description="Options that were considered")
     decision_outcome: str = Field(..., description="The chosen option and justification")
     consequences: str = Field(..., description="Positive and negative consequences")
+    consequences_structured: Optional[Dict[str, List[str]]] = Field(
+        default=None,
+        description="Structured consequences with positive and negative arrays",
+    )
     decision_drivers: List[str] = Field(default_factory=list, description="Forces driving the decision")
     confidence_score: Optional[float] = Field(default=None, ge=0.0, le=1.0, description="Confidence in the generated ADR")
     related_context: List[str] = Field(default_factory=list, description="Related context retrieved from vector DB")

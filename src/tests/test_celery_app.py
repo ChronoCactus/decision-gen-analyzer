@@ -129,3 +129,70 @@ Negative:
         assert len(negative_items) == 1
         assert "Item 1" in positive_items
         assert "Item 4" in negative_items
+
+    def test_consequences_filters_empty_bullets_and_capitalizes(self):
+        """Test that empty bullets are filtered and items are capitalized."""
+        cons_text = """Positive:
+- significant reduction in animal suffering
+-  -
+- potential health benefits
+
+Negative:
+- risk of nutrient deficiencies
+• """
+
+        positive_items = []
+        negative_items = []
+
+        if "Positive:" in cons_text and "Negative:" in cons_text:
+            parts = cons_text.split("Negative:")
+            positive_text = parts[0].replace("Positive:", "").strip()
+            negative_text = parts[1].strip() if len(parts) > 1 else ""
+
+            # Parse bullet points from positive section
+            for line in positive_text.split("\n"):
+                line = line.strip()
+                if line.startswith("- "):
+                    line = line[2:].strip()
+                elif line.startswith("* "):
+                    line = line[2:].strip()
+                elif line.startswith("• "):
+                    line = line[2:].strip()
+
+                # Only add if not empty and not just punctuation/whitespace
+                if line and line not in ["-", "•", "*"]:
+                    # Capitalize first letter if not already
+                    if line and line[0].islower():
+                        line = line[0].upper() + line[1:]
+                    positive_items.append(line)
+
+            # Parse bullet points from negative section
+            for line in negative_text.split("\n"):
+                line = line.strip()
+                if line.startswith("- "):
+                    line = line[2:].strip()
+                elif line.startswith("* "):
+                    line = line[2:].strip()
+                elif line.startswith("• "):
+                    line = line[2:].strip()
+
+                # Only add if not empty and not just punctuation/whitespace
+                if line and line not in ["-", "•", "*"]:
+                    # Capitalize first letter if not already
+                    if line and line[0].islower():
+                        line = line[0].upper() + line[1:]
+                    negative_items.append(line)
+
+        # Should only have 2 positive items (empty " - " filtered out)
+        assert len(positive_items) == 2
+        # Should only have 1 negative item (empty "• " filtered out)
+        assert len(negative_items) == 1
+
+        # All items should be capitalized
+        assert positive_items[0].startswith("S")  # "Significant reduction..."
+        assert positive_items[1].startswith("P")  # "Potential health benefits"
+        assert negative_items[0].startswith("R")  # "Risk of nutrient deficiencies"
+
+        # Should not contain empty bullets
+        assert "-" not in positive_items
+        assert "•" not in negative_items

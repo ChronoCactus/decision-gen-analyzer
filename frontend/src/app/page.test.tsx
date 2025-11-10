@@ -205,7 +205,6 @@ describe('Home Page', () => {
 
   it('should handle push to RAG', async () => {
     const user = userEvent.setup();
-    const alertSpy = vi.spyOn(window, 'alert').mockImplementation(() => {});
     (apiClient.pushADRToRAG as any).mockResolvedValue({
       message: 'Success',
       adr_id: 'adr-1',
@@ -223,10 +222,9 @@ describe('Home Page', () => {
 
     await waitFor(() => {
       expect(apiClient.pushADRToRAG).toHaveBeenCalledWith('adr-1');
-      expect(alertSpy).toHaveBeenCalledWith('Success: Success');
     });
-
-    alertSpy.mockRestore();
+    
+    // Note: Success feedback is provided via WebSocket, not alert
   });
 
   it('should handle ADR generation', async () => {
