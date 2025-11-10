@@ -1,3 +1,4 @@
+LICENSE
 README.md
 pyproject.toml
 src/api/main.py
@@ -14,11 +15,13 @@ src/tests/__init__.py
 src/tests/test_adr_contextual_analysis.py
 src/tests/test_adr_file_storage.py
 src/tests/test_adr_generation.py
+src/tests/test_adr_generation_cleanup.py
 src/tests/test_adr_import_export.py
 src/tests/test_adr_storage.py
 src/tests/test_adr_validation.py
 src/tests/test_celery_app.py
 src/tests/test_config.py
+src/tests/test_lightrag_cache_rebuild.py
 src/tests/test_lightrag_client.py
 src/tests/test_llama_client.py
 src/tests/test_models.py

@@ -109,7 +109,7 @@ def generate_adr_task(self, prompt: str, context: str = None, tags: list = None,
             settings = get_settings()
 
             # Use pool if secondary backend is configured, otherwise use single client
-            if settings.llama_cpp_url_1 or settings.llama_cpp_url_embedding:
+            if settings.llm_base_url_1 or settings.llm_embedding_base_url:
                 logger.info("Using LlamaCppClientPool for parallel generation")
                 llama_client = LlamaCppClientPool(demo_mode=False)
             else:

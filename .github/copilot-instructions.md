@@ -78,11 +78,34 @@ async def _celery_task():
 **CRITICAL**: Never call `get_websocket_manager()` from Celery tasks - it will have `active_connections=0` because connections are in the FastAPI process. Always use `get_broadcaster()` instead.
 
 ### External Services (Network Dependencies)
-- **Llama.cpp Servers** - LLM inference, supports multiple backends for parallel processing:
-  - `LLAMA_CPP_URL` (required) - Primary server on port 11434
-  - `LLAMA_CPP_URL_1` (optional) - Secondary server for parallel persona generation
-  - `LLAMA_CPP_URL_EMBEDDING` (optional) - Dedicated server for embeddings
-  - Used by `LlamaCppClient` (single) or `LlamaCppClientPool` (multiple backends)
+
+#### LLM Services (LangChain-Based)
+The system uses **LangChain's OpenAI-compatible ChatOpenAI** for maximum flexibility across providers:
+
+**Supported Providers**:
+- **Ollama** (local) - Default, runs on localhost:11434
+- **llama.cpp server** - OpenAI-compatible mode
+- **vLLM** - High-performance inference server
+- **OpenRouter** - Access to 200+ commercial and open-source models
+- **OpenAI** - GPT-4, GPT-3.5, etc.
+- Any **OpenAI-compatible** endpoint
+
+**Configuration** (LangChain-based):
+- `LLM_BASE_URL` (required) - Primary endpoint (e.g., `http://localhost:11434` for Ollama)
+- `LLM_MODEL` (required) - Model name (e.g., `gpt-oss:20b`)
+- `LLM_API_KEY` (optional) - API key for cloud providers
+- `LLM_BASE_URL_1` (optional) - Secondary endpoint for parallel processing
+- `LLM_EMBEDDING_BASE_URL` (optional) - Dedicated endpoint for embeddings
+- `LLM_PROVIDER` (optional) - Provider type: ollama, openai, openrouter, vllm, llama_cpp, custom
+
+**Client Classes**:
+- `LlamaCppClient` - Single LangChain ChatOllama/ChatOpenAI instance
+- `LlamaCppClientPool` - Multiple instances for parallel requests
+- Both use LangChain internally for provider-specific optimizations
+
+**Migration Guide**: See `docs/LLM_PROVIDER_MIGRATION.md` for complete details
+
+#### Other External Services
 - **LightRAG Server** (`LIGHTRAG_URL`) - Vector database on port 9621, used by `LightRAGClient`
 - **Redis** - Task queue and result backend on port 6379 (6380 externally in docker-compose)
 
@@ -126,7 +149,7 @@ The core feature: analyze ADRs through different "personas" (technical lead, bus
 docker compose up --build  # Starts redis, backend API, celery worker, frontend
 ```
 
-**Port Mapping**: External services use host network IPs (not localhost) in Docker environment. Check `docker-compose.yml` for `LLAMA_CPP_URL`, `LLAMA_CPP_URL_1`, `LLAMA_CPP_URL_EMBEDDING`, and `LIGHTRAG_URL` variables.
+**Port Mapping**: External services use host network IPs (not localhost) in Docker environment. Check `docker-compose.yml` for `LLM_BASE_URL`, `LLM_BASE_URL_1`, `LLM_EMBEDDING_BASE_URL`, and `LIGHTRAG_URL` variables.
 
 ### Running Backend Only
 ```bash
@@ -198,6 +221,20 @@ describe('Example', () => {
 ```
 
 **Mocking Strategy**: Mock everything - all external services (LLM, Vector DB, Redis, File I/O, HTTP requests).
+
+**LangChain-Specific Mocking**:
+```python
+from unittest.mock import AsyncMock
+from langchain_core.messages import AIMessage
+
+# Mock LangChain ChatOpenAI responses
+async with LlamaCppClient(demo_mode=False) as client:
+    mock_response = AIMessage(content="Generated response")
+    client._llm.ainvoke = AsyncMock(return_value=mock_response)
+    
+    result = await client.generate("Test prompt")
+    assert result == "Generated response"
+```
 
 See `docs/TESTING.md` for comprehensive testing guide.
 
@@ -348,8 +385,8 @@ settings = get_settings()  # Loads from env vars
 ### Environment Variables
 - Development: `.env` (root) and `frontend/.env.local`
 - Docker: `docker-compose.yml` environment section
-- Required: `LLAMA_CPP_URL`, `LIGHTRAG_URL`, `REDIS_URL`
-- Optional: `LLAMA_CPP_URL_1` (secondary backend), `LLAMA_CPP_URL_EMBEDDING` (embedding backend)
+- Required: `LLM_BASE_URL`, `LIGHTRAG_URL`, `REDIS_URL`
+- Optional: `LLM_BASE_URL_1` (secondary backend), `LLM_EMBEDDING_BASE_URL` (embedding backend)
 
 ## Storage and File Handling
 

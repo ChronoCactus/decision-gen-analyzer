@@ -10,26 +10,80 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     """Application settings loaded from environment variables."""
 
-    # LLM Configuration
-    llama_cpp_url: str = Field(
-        default="http://localhost:11434",
-        description="Primary Ollama server URL",
-        alias="LLAMA_CPP_URL",
+    # LLM Configuration - LangChain-based with OpenAI-compatible providers
+    # Primary LLM configuration
+    llm_provider: str = Field(
+        default="ollama",
+        description="LLM provider: ollama, openai, openrouter, vllm, llama_cpp, or custom",
+        alias="LLM_PROVIDER",
     )
-    llama_cpp_url_1: Optional[str] = Field(
+    llm_base_url: str = Field(
+        default="http://localhost:11434/v1",
+        description="Base URL for OpenAI-compatible API endpoint",
+        alias="LLM_BASE_URL",
+    )
+    llm_model: str = Field(
+        default="gpt-oss:20b",
+        description="Model name to use for generation",
+        alias="LLM_MODEL",
+    )
+    llm_api_key: Optional[str] = Field(
         default=None,
-        description="Secondary Ollama server URL for parallel processing",
-        alias="LLAMA_CPP_URL_1",
+        description="API key for LLM provider (optional for local providers)",
+        alias="LLM_API_KEY",
     )
-    llama_cpp_url_embedding: Optional[str] = Field(
-        default=None,
-        description="Dedicated Ollama server URL for embedding requests",
-        alias="LLAMA_CPP_URL_EMBEDDING",
+    llm_temperature: float = Field(
+        default=0.7,
+        description="Default temperature for LLM generation",
+        alias="LLM_TEMPERATURE",
     )
-    llama_cpp_timeout: int = Field(
+    llm_timeout: int = Field(
         default=300,
         description="Timeout for LLM requests in seconds",
-        alias="LLAMA_CPP_TIMEOUT",
+        alias="LLM_TIMEOUT",
+    )
+
+    # Ollama-specific parameters (only used when llm_provider is "ollama")
+    ollama_num_ctx: int = Field(
+        default=64000,
+        description="Context window size for Ollama models (num_ctx parameter)",
+        alias="OLLAMA_NUM_CTX",
+    )
+    ollama_num_predict: Optional[int] = Field(
+        default=None,
+        description="Maximum number of tokens to generate (num_predict parameter)",
+        alias="OLLAMA_NUM_PREDICT",
+    )
+
+    # Secondary LLM for parallel processing (optional)
+    llm_base_url_1: Optional[str] = Field(
+        default=None,
+        description="Secondary base URL for parallel processing",
+        alias="LLM_BASE_URL_1",
+    )
+
+    # Dedicated embedding LLM (optional)
+    llm_embedding_base_url: Optional[str] = Field(
+        default=None,
+        description="Dedicated base URL for embedding requests",
+        alias="LLM_EMBEDDING_BASE_URL",
+    )
+    llm_embedding_model: Optional[str] = Field(
+        default=None,
+        description="Model name for embeddings (if different from main model)",
+        alias="LLM_EMBEDDING_MODEL",
+    )
+
+    # Provider-specific settings
+    openrouter_api_key: Optional[str] = Field(
+        default=None,
+        description="OpenRouter API key (alternative to LLM_API_KEY)",
+        alias="OPENROUTER_API_KEY",
+    )
+    openai_api_key: Optional[str] = Field(
+        default=None,
+        description="OpenAI API key (alternative to LLM_API_KEY)",
+        alias="OPENAI_API_KEY",
     )
 
     # LightRAG Configuration
@@ -96,6 +150,82 @@ class Settings(BaseSettings):
             env_prefix="",  # No prefix, use exact env var names
             populate_by_name=True,  # Allow populating by field name or alias
         )
+
+    def model_post_init(self, __context) -> None:
+        """Handle post-initialization configuration."""
+        # Handle provider-specific API keys
+        if self.openrouter_api_key and not self.llm_api_key:
+            object.__setattr__(self, "llm_api_key", self.openrouter_api_key)
+        elif self.openai_api_key and not self.llm_api_key:
+            object.__setattr__(self, "llm_api_key", self.openai_api_key)
+
+    def get_llm_config(self) -> dict:
+        """Get LangChain LLM configuration dictionary."""
+        config = {
+            "provider": self.llm_provider,
+            "model": self.llm_model,
+            "base_url": self.llm_base_url,
+            "timeout": self.llm_timeout,
+            "temperature": self.llm_temperature,
+        }
+
+        if self.llm_api_key:
+            config["api_key"] = self.llm_api_key
+
+        # Add Ollama-specific parameters if provider is Ollama
+        if self.llm_provider.lower() == "ollama":
+            config["num_ctx"] = self.ollama_num_ctx
+            if self.ollama_num_predict:
+                config["num_predict"] = self.ollama_num_predict
+
+        return config
+
+    def get_secondary_llm_config(self) -> Optional[dict]:
+        """Get secondary LLM configuration for parallel processing."""
+        if not self.llm_base_url_1:
+            return None
+
+        config = {
+            "provider": self.llm_provider,
+            "model": self.llm_model,
+            "base_url": self.llm_base_url_1,
+            "timeout": self.llm_timeout,
+            "temperature": self.llm_temperature,
+        }
+
+        if self.llm_api_key:
+            config["api_key"] = self.llm_api_key
+
+        # Add Ollama-specific parameters if provider is Ollama
+        if self.llm_provider.lower() == "ollama":
+            config["num_ctx"] = self.ollama_num_ctx
+            if self.ollama_num_predict:
+                config["num_predict"] = self.ollama_num_predict
+
+        return config
+
+    def get_embedding_llm_config(self) -> Optional[dict]:
+        """Get dedicated embedding LLM configuration."""
+        if not self.llm_embedding_base_url:
+            return None
+
+        config = {
+            "provider": self.llm_provider,
+            "model": self.llm_embedding_model or self.llm_model,
+            "base_url": self.llm_embedding_base_url,
+            "timeout": self.llm_timeout,
+        }
+
+        if self.llm_api_key:
+            config["api_key"] = self.llm_api_key
+
+        # Add Ollama-specific parameters if provider is Ollama
+        if self.llm_provider.lower() == "ollama":
+            config["num_ctx"] = self.ollama_num_ctx
+            if self.ollama_num_predict:
+                config["num_predict"] = self.ollama_num_predict
+
+        return config
 
 
 # Global settings instance

@@ -1,11 +1,26 @@
-"""Client for interacting with llama-cpp server."""
+"""Client for interacting with LLM servers using LangChain.
+
+This module provides a unified interface for connecting to various LLM providers
+through LangChain integrations. Supports:
+- Ollama (local) - using ChatOllama for full parameter support (num_ctx, num_predict, etc.)
+- OpenRouter - using ChatOpenAI
+- OpenAI - using ChatOpenAI
+- vLLM - using ChatOpenAI
+- llama.cpp server - using ChatOpenAI
+- Any other OpenAI-compatible endpoint - using ChatOpenAI
+
+The module maintains backward compatibility with the original LlamaCppClient
+and LlamaCppClientPool interfaces while using LangChain under the hood.
+"""
 
 import asyncio
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 import time
 from enum import Enum
 
-import httpx
+from langchain_openai import ChatOpenAI
+from langchain_ollama import ChatOllama
+from langchain_core.messages import HumanMessage, SystemMessage
 
 from config import get_settings
 from logger import get_logger
@@ -16,7 +31,7 @@ DEFAULT_MODEL = "gpt-oss:20b"
 
 
 class ClientType(Enum):
-    """Type of llama.cpp client for different purposes."""
+    """Type of LLM client for different purposes."""
 
     PRIMARY = "primary"
     SECONDARY = "secondary"
@@ -24,52 +39,172 @@ class ClientType(Enum):
 
 
 class LlamaCppClient:
-    """Client for llama-cpp server interactions."""
+    """Client for LLM interactions using LangChain's ChatOpenAI.
+
+    This client provides a unified interface for interacting with various LLM providers
+    that support OpenAI-compatible APIs. It uses LangChain's ChatOpenAI class internally
+    for maximum flexibility and compatibility.
+
+    Features:
+    - Automatic retry with exponential backoff
+    - Demo mode for testing without actual LLM calls
+    - Support for multiple providers (Ollama, OpenRouter, OpenAI, vLLM, etc.)
+    - Async context manager for proper resource cleanup
+    """
 
     def __init__(
         self,
         base_url: Optional[str] = None,
+        model: Optional[str] = None,
+        api_key: Optional[str] = None,
         timeout: Optional[int] = None,
+        temperature: Optional[float] = None,
+        provider: Optional[str] = None,
+        num_ctx: Optional[int] = None,
+        num_predict: Optional[int] = None,
         max_retries: int = 3,
         retry_delay: float = 1.0,
         backoff_factor: float = 2.0,
         demo_mode: bool = True,  # Enable demo mode by default
     ):
-        """Initialize the llama-cpp client."""
+        """Initialize the LLM client.
+
+        Args:
+            base_url: Base URL for the OpenAI-compatible API endpoint
+            model: Model name to use for generation
+            api_key: API key for authentication (optional for local providers)
+            timeout: Timeout for LLM requests in seconds
+            temperature: Temperature for generation (0.0 to 1.0)
+            provider: LLM provider type (ollama, openai, openrouter, vllm, llama_cpp, custom)
+            num_ctx: Context window size (Ollama-specific)
+            num_predict: Maximum tokens to generate (Ollama-specific)
+            max_retries: Maximum number of retry attempts
+            retry_delay: Initial delay between retries in seconds
+            backoff_factor: Multiplier for exponential backoff
+            demo_mode: If True, simulate LLM responses without making actual API calls
+        """
         settings = get_settings()
-        self.base_url = base_url or settings.llama_cpp_url
-        self.timeout = timeout or settings.llama_cpp_timeout
+
+        # Use provided values or fall back to settings
+        self.base_url = base_url or settings.llm_base_url
+        self.model = model or settings.llm_model
+        self.api_key = api_key or settings.llm_api_key
+        self.timeout = timeout or settings.llm_timeout
+        self.temperature = (
+            temperature if temperature is not None else settings.llm_temperature
+        )
+        self.provider = (provider or settings.llm_provider).lower()
+
+        # Ollama-specific parameters
+        self.num_ctx = num_ctx if num_ctx is not None else settings.ollama_num_ctx
+        self.num_predict = num_predict or settings.ollama_num_predict
+
         self.max_retries = max_retries
         self.retry_delay = retry_delay
         self.backoff_factor = backoff_factor
         self.demo_mode = demo_mode
-        self._client: Optional[httpx.AsyncClient] = None
+
+        self._llm: Optional[Union[ChatOpenAI, ChatOllama]] = None
 
     async def __aenter__(self):
         """Async context manager entry."""
-        self._client = httpx.AsyncClient(
-            base_url=self.base_url,
-            timeout=self.timeout,
-        )
+        if not self.demo_mode:
+            # Initialize provider-specific LangChain client
+            if self.provider == "ollama":
+                # Use ChatOllama for Ollama provider to preserve num_ctx and other parameters
+                # ChatOllama expects the base Ollama URL without /v1 suffix
+                base_url = self.base_url
+                if base_url.endswith("/v1"):
+                    base_url = base_url[:-3]  # Remove /v1 suffix
+
+                kwargs = {
+                    "model": self.model,
+                    "base_url": base_url,
+                    "temperature": self.temperature,
+                    "num_ctx": self.num_ctx,
+                }
+
+                # Add optional Ollama parameters
+                if self.num_predict:
+                    kwargs["num_predict"] = self.num_predict
+
+                self._llm = ChatOllama(**kwargs)
+
+                logger.info(
+                    "Initialized LangChain ChatOllama client",
+                    model=self.model,
+                    base_url=base_url,
+                    temperature=self.temperature,
+                    num_ctx=self.num_ctx,
+                    num_predict=self.num_predict,
+                )
+            else:
+                # Use ChatOpenAI for other providers (OpenRouter, OpenAI, vLLM, llama.cpp, etc.)
+                kwargs = {
+                    "model": self.model,
+                    "base_url": self.base_url,
+                    "timeout": self.timeout,
+                    "temperature": self.temperature,
+                    "max_retries": self.max_retries,
+                }
+
+                # Only include api_key if it's provided
+                if self.api_key:
+                    kwargs["api_key"] = self.api_key
+                else:
+                    # Use a dummy key for local providers that don't need auth
+                    kwargs["api_key"] = "sk-dummy-key"
+
+                self._llm = ChatOpenAI(**kwargs)
+
+                logger.info(
+                    "Initialized LangChain ChatOpenAI client",
+                    provider=self.provider,
+                    model=self.model,
+                    base_url=self.base_url,
+                    timeout=self.timeout,
+                    temperature=self.temperature,
+                )
+        else:
+            logger.info("LlamaCppClient initialized in demo mode")
+
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         """Async context manager exit."""
-        if self._client:
-            await self._client.aclose()
+        # LangChain ChatOpenAI doesn't require explicit cleanup
+        self._llm = None
 
     async def generate(
         self,
         prompt: str,
-        model: str = DEFAULT_MODEL,
-        temperature: float = 0.7,
-        num_ctx: int = 64000,
+        model: Optional[str] = None,
+        temperature: Optional[float] = None,
+        num_ctx: Optional[int] = None,
         num_predict: Optional[int] = None,
         stop: Optional[List[str]] = None,
         format: Optional[str] = None,
         **kwargs,
     ) -> str:
-        """Generate text using the Ollama server or demo mode."""
+        """Generate text using the LLM or demo mode.
+
+        Note: In LangChain, parameters like temperature are set during instantiation.
+        If temperature differs from the client's configured value, a temporary client
+        will be created for this request.
+
+        Args:
+            prompt: The input prompt for generation
+            model: Model name (NOTE: not supported for per-request override)
+            temperature: Temperature (creates temporary client if different from default)
+            num_ctx: Context window size (NOTE: not supported for per-request override)
+            num_predict: Maximum tokens to generate (NOTE: not supported for per-request override)
+            stop: Stop sequences (passed to invoke)
+            format: Response format (e.g., "json")
+            **kwargs: Additional provider-specific parameters
+
+        Returns:
+            Generated text response
+        """
         # Demo mode: simulate LLM response
         if self.demo_mode:
             logger.info("Using demo mode for LLM generation")
@@ -93,55 +228,114 @@ class LlamaCppClient:
 
 In a real implementation, this would be generated by a large language model like Llama or GPT. The response would be contextually appropriate and based on the actual prompt provided."""
 
-        if not self._client:
+        if not self._llm:
             raise RuntimeError("Client not initialized. Use as async context manager.")
 
-        # Build options object for Ollama API
-        options = {
-            "temperature": temperature,
-            "num_ctx": num_ctx,
-        }
+        # Check if we need a different temperature than configured
+        needs_temp_client = (
+            temperature is not None
+            and abs(temperature - self.temperature)
+            > 0.001  # Float comparison tolerance
+        )
 
-        if num_predict:
-            options["num_predict"] = num_predict
+        # Use the existing client or create a temporary one
+        llm_to_use = self._llm
+        temp_client = None
+
+        if needs_temp_client:
+            logger.info(
+                "Creating temporary client with different temperature",
+                configured_temp=self.temperature,
+                requested_temp=temperature,
+            )
+            # Create a temporary client instance with the requested temperature
+            if self.provider == "ollama":
+                # ChatOllama expects base URL without /v1 suffix
+                base_url = self.base_url
+                if base_url.endswith("/v1"):
+                    base_url = base_url[:-3]
+
+                temp_client = ChatOllama(
+                    model=self.model,
+                    base_url=base_url,
+                    temperature=temperature,
+                    num_ctx=self.num_ctx,
+                    num_predict=self.num_predict,
+                )
+            else:
+                kwargs_temp = {
+                    "model": self.model,
+                    "base_url": self.base_url,
+                    "timeout": self.timeout,
+                    "temperature": temperature,
+                    "max_retries": self.max_retries,
+                }
+                if self.api_key:
+                    kwargs_temp["api_key"] = self.api_key
+                else:
+                    kwargs_temp["api_key"] = "sk-dummy-key"
+
+                temp_client = ChatOpenAI(**kwargs_temp)
+
+            llm_to_use = temp_client
+
+        # Build kwargs for LangChain invoke
+        # Note: Only pass parameters that are valid for invoke(), not instantiation parameters
+        invoke_kwargs = {}
+
+        # Stop sequences can be passed to invoke
         if stop:
-            options["stop"] = stop
-        if format:
-            options["format"] = format
+            invoke_kwargs["stop"] = stop
 
-        # Add any additional options
-        options.update(kwargs)
-
-        payload = {
-            "model": model,
-            "prompt": prompt,
-            "stream": False,
-            "options": options,
+        # Add any additional kwargs (be careful - most params are instantiation-only)
+        # Filter out known instantiation-only parameters
+        filtered_kwargs = {
+            k: v
+            for k, v in kwargs.items()
+            if k
+            not in [
+                "temperature",
+                "model",
+                "base_url",
+                "api_key",
+                "timeout",
+                "num_ctx",
+                "num_predict",
+            ]
         }
+        invoke_kwargs.update(filtered_kwargs)
 
-        if format:
-            payload["format"] = format
+        # Prepare the message
+        messages = [HumanMessage(content=prompt)]
+
+        # If format is json, add system message requesting JSON
+        if format == "json":
+            messages.insert(
+                0,
+                SystemMessage(
+                    content="You are a helpful assistant that responds in valid JSON format."
+                ),
+            )
 
         last_exception = None
         for attempt in range(self.max_retries + 1):
             try:
+                actual_temp = temperature if needs_temp_client else self.temperature
                 logger.info(
-                    "Sending generation request to Ollama",
-                    model=model,
-                    num_ctx=num_ctx,
+                    "Sending generation request",
+                    model=self.model,
+                    temperature=actual_temp,
                     attempt=attempt + 1,
-                    max_attempts=self.max_retries + 1
+                    max_attempts=self.max_retries + 1,
                 )
 
-                response = await self._client.post("/api/generate", json=payload)
-                response.raise_for_status()
-
-                result = response.json()
-                generated_text = result.get("response", "")
+                # Use ainvoke for async calls
+                response = await llm_to_use.ainvoke(messages, **invoke_kwargs)
+                generated_text = response.content
 
                 # Validate response
                 if not generated_text.strip():
-                    raise ValueError("Empty response from Ollama server")
+                    raise ValueError("Empty response from LLM")
 
                 logger.info(
                     "Generation completed successfully",
@@ -150,46 +344,22 @@ In a real implementation, this would be generated by a large language model like
                 )
                 return generated_text
 
-            except httpx.TimeoutException as e:
-                last_exception = e
-                logger.warning(
-                    "Timeout during generation attempt",
-                    attempt=attempt + 1,
-                    error=str(e)
-                )
-                if attempt < self.max_retries:
-                    delay = self.retry_delay * (self.backoff_factor ** attempt)
-                    logger.info(f"Retrying in {delay:.1f} seconds...")
-                    await asyncio.sleep(delay)
-
-            except httpx.HTTPError as e:
-                last_exception = e
-                status_code = (
-                    e.response.status_code
-                    if hasattr(e, "response") and e.response
-                    else None
-                )
-                logger.warning(
-                    "HTTP error during generation attempt",
-                    attempt=attempt + 1,
-                    status_code=status_code,
-                    error=str(e)
-                )
-                # Don't retry on client errors (4xx), but do retry on server errors (5xx)
-                if status_code and 400 <= status_code < 500:
-                    break
-                if attempt < self.max_retries:
-                    delay = self.retry_delay * (self.backoff_factor ** attempt)
-                    logger.info(f"Retrying in {delay:.1f} seconds...")
-                    await asyncio.sleep(delay)
-
             except Exception as e:
                 last_exception = e
+                error_type = type(e).__name__
+
                 logger.warning(
-                    "Unexpected error during generation attempt",
+                    "Error during generation attempt",
                     attempt=attempt + 1,
-                    error=str(e)
+                    error_type=error_type,
+                    error=str(e),
                 )
+
+                # Don't retry on certain errors (e.g., authentication, validation)
+                if "authentication" in str(e).lower() or "api key" in str(e).lower():
+                    logger.error("Authentication error, not retrying")
+                    break
+
                 if attempt < self.max_retries:
                     delay = self.retry_delay * (self.backoff_factor ** attempt)
                     logger.info(f"Retrying in {delay:.1f} seconds...")
@@ -204,39 +374,57 @@ In a real implementation, this would be generated by a large language model like
         raise last_exception or RuntimeError("Generation failed after all retries")
 
     async def list_models(self) -> List[Dict[str, Any]]:
-        """List available models on the server."""
-        if not self._client:
-            raise RuntimeError("Client not initialized. Use as async context manager.")
+        """List available models on the server.
+
+        Note: This makes a direct HTTP call to /v1/models endpoint as LangChain
+        doesn't provide a models listing method.
+        """
+        import httpx
 
         try:
-            response = await self._client.get("/v1/models")
-            response.raise_for_status()
-            return response.json().get("data", [])
-        except httpx.HTTPError as e:
-            error_details = {
-                "error_type": type(e).__name__,
-                "error_message": str(e),
-            }
-            if hasattr(e, "response") and e.response is not None:
-                error_details["status_code"] = e.response.status_code
-                error_details["response_text"] = e.response.text[:500]
-            logger.error("Failed to list models", **error_details)
+            # Remove /v1 suffix if present to construct base URL
+            base = self.base_url.rstrip("/v1").rstrip("/")
+            models_url = f"{base}/v1/models"
+
+            async with httpx.AsyncClient(timeout=self.timeout) as client:
+                response = await client.get(models_url)
+                response.raise_for_status()
+                return response.json().get("data", [])
+        except Exception as e:
+            logger.error(
+                "Failed to list models", error_type=type(e).__name__, error=str(e)
+            )
             raise
 
     async def health_check(self) -> bool:
-        """Check if the llama-cpp server is healthy."""
-        if not self._client:
-            raise RuntimeError("Client not initialized. Use as async context manager.")
+        """Check if the LLM server is healthy.
+
+        Returns:
+            True if server is accessible, False otherwise
+        """
+        import httpx
 
         try:
-            response = await self._client.get("/health")
-            return response.status_code == 200
-        except httpx.HTTPError:
+            # Try to access the models endpoint as a health check
+            base = self.base_url.rstrip("/v1").rstrip("/")
+            health_url = f"{base}/v1/models"
+
+            async with httpx.AsyncClient(timeout=10) as client:
+                response = await client.get(health_url)
+                return response.status_code == 200
+        except Exception:
             return False
 
 
 class LlamaCppClientPool:
-    """Pool of llama-cpp clients for parallel request processing."""
+    """Pool of LLM clients for parallel request processing.
+
+    This pool manages multiple LangChain ChatOpenAI clients for parallel generation
+    requests. It supports:
+    - Multiple generation backends for load balancing
+    - Dedicated embedding backend (optional)
+    - Round-robin distribution of requests
+    """
 
     def __init__(
         self,
@@ -246,37 +434,52 @@ class LlamaCppClientPool:
         backoff_factor: float = 2.0,
         demo_mode: bool = True,
     ):
-        """Initialize the client pool with URLs from settings."""
+        """Initialize the client pool with URLs from settings.
+
+        Args:
+            timeout: Timeout for LLM requests in seconds
+            max_retries: Maximum number of retry attempts
+            retry_delay: Initial delay between retries in seconds
+            backoff_factor: Multiplier for exponential backoff
+            demo_mode: If True, simulate LLM responses without making actual API calls
+        """
         settings = get_settings()
-        self.timeout = timeout or settings.llama_cpp_timeout
+        self.timeout = timeout or settings.llm_timeout
         self.max_retries = max_retries
         self.retry_delay = retry_delay
         self.backoff_factor = backoff_factor
         self.demo_mode = demo_mode
 
-        # Build list of available backend URLs
-        self.generation_urls = [settings.llama_cpp_url]
-        if settings.llama_cpp_url_1:
-            self.generation_urls.append(settings.llama_cpp_url_1)
+        # Build list of available backend configs
+        self.generation_configs = [settings.get_llm_config()]
 
-        self.embedding_url = settings.llama_cpp_url_embedding or settings.llama_cpp_url
+        secondary_config = settings.get_secondary_llm_config()
+        if secondary_config:
+            self.generation_configs.append(secondary_config)
+
+        self.embedding_config = settings.get_embedding_llm_config()
 
         logger.info(
             "Initialized LlamaCppClientPool",
-            generation_backends=len(self.generation_urls),
-            generation_urls=self.generation_urls,
-            embedding_url=self.embedding_url,
+            generation_backends=len(self.generation_configs),
+            has_dedicated_embedding=self.embedding_config is not None,
         )
 
         self._clients: Dict[str, LlamaCppClient] = {}
 
     async def __aenter__(self):
         """Async context manager entry - initialize all clients."""
-        # Create clients for each generation URL
-        for idx, url in enumerate(self.generation_urls):
+        # Create clients for each generation config
+        for idx, config in enumerate(self.generation_configs):
             client = LlamaCppClient(
-                base_url=url,
+                base_url=config["base_url"],
+                model=config["model"],
+                api_key=config.get("api_key"),
                 timeout=self.timeout,
+                temperature=config.get("temperature"),
+                provider=config.get("provider"),
+                num_ctx=config.get("num_ctx"),
+                num_predict=config.get("num_predict"),
                 max_retries=self.max_retries,
                 retry_delay=self.retry_delay,
                 backoff_factor=self.backoff_factor,
@@ -285,11 +488,16 @@ class LlamaCppClientPool:
             await client.__aenter__()
             self._clients[f"gen_{idx}"] = client
 
-        # Create dedicated embedding client if different from primary
-        if self.embedding_url != self.generation_urls[0]:
+        # Create dedicated embedding client if configured
+        if self.embedding_config:
             embedding_client = LlamaCppClient(
-                base_url=self.embedding_url,
+                base_url=self.embedding_config["base_url"],
+                model=self.embedding_config["model"],
+                api_key=self.embedding_config.get("api_key"),
                 timeout=self.timeout,
+                provider=self.embedding_config.get("provider"),
+                num_ctx=self.embedding_config.get("num_ctx"),
+                num_predict=self.embedding_config.get("num_predict"),
                 max_retries=self.max_retries,
                 retry_delay=self.retry_delay,
                 backoff_factor=self.backoff_factor,
@@ -316,7 +524,7 @@ class LlamaCppClientPool:
         Returns:
             LlamaCppClient for generation requests
         """
-        client_idx = index % len(self.generation_urls)
+        client_idx = index % len(self.generation_configs)
         client_key = f"gen_{client_idx}"
         if client_key not in self._clients:
             raise RuntimeError(
@@ -338,8 +546,8 @@ class LlamaCppClientPool:
     async def generate_parallel(
         self,
         prompts: List[str],
-        model: str = DEFAULT_MODEL,
-        temperature: float = 0.7,
+        model: Optional[str] = None,
+        temperature: Optional[float] = None,
         **kwargs,
     ) -> List[str]:
         """Generate responses for multiple prompts in parallel.
@@ -359,7 +567,7 @@ class LlamaCppClientPool:
         logger.info(
             "Starting parallel generation",
             prompt_count=len(prompts),
-            backend_count=len(self.generation_urls),
+            backend_count=len(self.generation_configs),
         )
 
         # Create tasks for each prompt, distributing across available clients

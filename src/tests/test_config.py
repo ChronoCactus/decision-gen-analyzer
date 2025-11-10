@@ -14,10 +14,12 @@ class TestSettings:
         """Test settings are created with default values."""
         settings = Settings()
 
-        assert settings.llama_cpp_url == "http://localhost:11434"
-        assert settings.llama_cpp_url_1 is None
-        assert settings.llama_cpp_url_embedding is None
-        assert settings.llama_cpp_timeout == 300
+        assert settings.llm_base_url == "http://localhost:11434/v1"
+        assert settings.llm_base_url_1 is None
+        assert settings.llm_embedding_base_url is None
+        assert settings.llm_timeout == 300
+        assert settings.llm_provider == "ollama"
+        assert settings.llm_model == "gpt-oss:20b"
         assert settings.lightrag_url == "http://localhost:9621"
         assert settings.lightrag_timeout == 180
         assert settings.log_level == "INFO"
@@ -31,9 +33,11 @@ class TestSettings:
         with patch.dict(
             os.environ,
             {
-                "LLAMA_CPP_URL": "http://test-llama:8000",
-                "LLAMA_CPP_URL_1": "http://test-llama2:8000",
-                "LLAMA_CPP_URL_EMBEDDING": "http://test-embed:8000",
+                "LLM_BASE_URL": "http://test-llama:8000",
+                "LLM_BASE_URL_1": "http://test-llama2:8000",
+                "LLM_EMBEDDING_BASE_URL": "http://test-embed:8000",
+                "LLM_PROVIDER": "openai",
+                "LLM_MODEL": "test-model",
                 "LIGHTRAG_URL": "http://test-lightrag:9000",
                 "LOG_LEVEL": "DEBUG",
                 "DEBUG": "true",
@@ -44,9 +48,11 @@ class TestSettings:
         ):
             settings = Settings()
 
-            assert settings.llama_cpp_url == "http://test-llama:8000"
-            assert settings.llama_cpp_url_1 == "http://test-llama2:8000"
-            assert settings.llama_cpp_url_embedding == "http://test-embed:8000"
+            assert settings.llm_base_url == "http://test-llama:8000"
+            assert settings.llm_base_url_1 == "http://test-llama2:8000"
+            assert settings.llm_embedding_base_url == "http://test-embed:8000"
+            assert settings.llm_provider == "openai"
+            assert settings.llm_model == "test-model"
             assert settings.lightrag_url == "http://test-lightrag:9000"
             assert settings.log_level == "DEBUG"
             assert settings.debug is True
@@ -58,14 +64,14 @@ class TestSettings:
         with patch.dict(
             os.environ,
             {
-                "LLAMA_CPP_TIMEOUT": "600",
+                "LLM_TIMEOUT": "600",
                 "LIGHTRAG_TIMEOUT": "300",
             },
             clear=False,
         ):
             settings = Settings()
 
-            assert settings.llama_cpp_timeout == 600
+            assert settings.llm_timeout == 600
             assert settings.lightrag_timeout == 300
 
     def test_settings_log_format(self):
@@ -114,7 +120,7 @@ class TestGetSettings:
         settings = get_settings()
 
         assert isinstance(settings, Settings)
-        assert hasattr(settings, "llama_cpp_url")
+        assert hasattr(settings, "llm_base_url")
         assert hasattr(settings, "lightrag_url")
 
     def test_get_settings_caching(self):
@@ -125,7 +131,7 @@ class TestGetSettings:
         # Note: This test depends on implementation of get_settings
         # If it uses functools.lru_cache, instances will be the same
         # Otherwise, they might be different instances with same values
-        assert settings1.llama_cpp_url == settings2.llama_cpp_url
+        assert settings1.llm_base_url == settings2.llm_base_url
 
     def test_get_settings_respects_environment(self):
         """Test that Settings can be created with environment variables."""
@@ -133,14 +139,14 @@ class TestGetSettings:
         # so we test that Settings class respects env vars instead
         with patch.dict(
             os.environ,
-            {"LLAMA_CPP_URL": "http://custom-url:1234"},
+            {"LLM_BASE_URL": "http://custom-url:1234"},
             clear=False,
         ):
             # Create a new Settings instance to test env var reading
             from src.config import Settings
             settings = Settings()
 
-            assert settings.llama_cpp_url == "http://custom-url:1234"
+            assert settings.llm_base_url == "http://custom-url:1234"
 
 
 class TestSettingsValidation:
@@ -163,12 +169,12 @@ class TestSettingsValidation:
         """Test settings work with missing optional fields."""
         # Remove optional environment variables
         env_vars = os.environ.copy()
-        for key in ["LLAMA_CPP_URL_1", "LLAMA_CPP_URL_EMBEDDING", "LIGHTRAG_API_KEY"]:
+        for key in ["LLM_BASE_URL_1", "LLM_EMBEDDING_BASE_URL", "LIGHTRAG_API_KEY"]:
             env_vars.pop(key, None)
 
         with patch.dict(os.environ, env_vars, clear=True):
             settings = Settings()
 
-            assert settings.llama_cpp_url_1 is None
-            assert settings.llama_cpp_url_embedding is None
+            assert settings.llm_base_url_1 is None
+            assert settings.llm_embedding_base_url is None
             assert settings.lightrag_api_key is None

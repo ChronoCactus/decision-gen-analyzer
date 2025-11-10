@@ -13,7 +13,7 @@ class TestSettings:
     def test_default_settings(self):
         """Test default settings values."""
         settings = Settings()
-        assert settings.llama_cpp_url == "http://localhost:11434"
+        assert settings.llm_base_url == "http://localhost:11434/v1"
         # Accept either localhost or LAN IP for lightrag_url
         assert "9621" in settings.lightrag_url
         assert settings.log_level == "INFO"
@@ -23,13 +23,13 @@ class TestSettings:
         """Test custom settings values via environment variables."""
         # Pydantic v2 Settings doesn't accept constructor params
         # Must use environment variables instead
-        monkeypatch.setenv("LLAMA_CPP_URL", "http://custom:8080")
+        monkeypatch.setenv("LLM_BASE_URL", "http://custom:8080")
         monkeypatch.setenv("LIGHTRAG_URL", "http://custom:9090")
         monkeypatch.setenv("LOG_LEVEL", "DEBUG")
         monkeypatch.setenv("DEBUG", "true")
-        
+
         settings = Settings()
-        assert settings.llama_cpp_url == "http://custom:8080"
+        assert settings.llm_base_url == "http://custom:8080"
         assert settings.lightrag_url == "http://custom:9090"
         assert settings.log_level == "DEBUG"
         assert settings.debug is True

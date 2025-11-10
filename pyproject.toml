@@ -27,6 +27,9 @@ dependencies = [
     "celery>=5.3.0",
     "aiofiles>=23.0.0",
     "python-multipart>=0.0.6",  # Required for FastAPI file uploads
+    "langchain-openai>=1.0.2",  # OpenAI-compatible LLM provider (OpenRouter, vLLM, llama.cpp, etc.)
+    "langchain-ollama>=1.0.0",  # Ollama-specific LLM provider with num_ctx support
+    "langchain-core>=1.0.4",  # Core LangChain abstractions
 ]
 requires-python = ">=3.9"
 readme = "README.md"

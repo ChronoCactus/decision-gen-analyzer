@@ -27,12 +27,12 @@ services:
       # LLM Configuration
       - LLM_BINDING=ollama
       - LLM_MODEL=${LIGHTRAG_LLM_MODEL:-llama3.1:8b}
-      - LLM_BINDING_HOST=${LIGHTRAG_LLM_HOST:-${LLAMA_CPP_URL}}
+      - LLM_BINDING_HOST=${LIGHTRAG_LLM_HOST:-${LLM_BASE_URL}}
       - LLM_BINDING_API_KEY=${LIGHTRAG_LLM_API_KEY:-}
       - OLLAMA_LLM_NUM_CTX=${LIGHTRAG_LLM_NUM_CTX:-64000}
       # Embedding Configuration
       - EMBEDDING_BINDING=ollama
-      - EMBEDDING_BINDING_HOST=${LIGHTRAG_EMBEDDING_HOST:-${LLAMA_CPP_URL_EMBEDDING:-${LLAMA_CPP_URL}}}
+      - EMBEDDING_BINDING_HOST=${LIGHTRAG_EMBEDDING_HOST:-${LLM_EMBEDDING_BASE_URL:-${LLM_BASE_URL}}}
       - EMBEDDING_MODEL=${LIGHTRAG_EMBEDDING_MODEL:-nomic-embed-text}
       - EMBEDDING_DIM=${LIGHTRAG_EMBEDDING_DIM:-768}
       - EMBEDDING_BINDING_API_KEY=${LIGHTRAG_EMBEDDING_API_KEY:-}
@@ -80,13 +80,20 @@ services:
       - REDIS_URL=redis://redis:6379/0
       - PYTHONPATH=/app/src
       - ADR_STORAGE_PATH=/app/data/adrs
-      - LLAMA_CPP_URL=${LLAMA_CPP_URL:-http://localhost:11434}
-      - LLAMA_CPP_URL_1=${LLAMA_CPP_URL_1:-}
-      - LLAMA_CPP_URL_EMBEDDING=${LLAMA_CPP_URL_EMBEDDING:-}
       - LIGHTRAG_URL=${LIGHTRAG_URL:-http://lightrag:9621}
       - LIGHTRAG_API_KEY=${LIGHTRAG_API_KEY:-}
       - ENABLE_LAN_DISCOVERY=${ENABLE_LAN_DISCOVERY:-false}
       - HOST_IP=${HOST_IP:-}
+      - LLM_PROVIDER=${LLM_PROVIDER:-ollama}
+      - LLM_BASE_URL=${LLM_BASE_URL:-http://localhost:11434}
+      - LLM_BASE_URL_1=${LLM_BASE_URL_1:-}
+      - LLM_EMBEDDING_BASE_URL=${LLM_EMBEDDING_BASE_URL:-}
+      - LLM_MODEL=${LLM_MODEL:-gpt-oss:20b}
+      - LLM_TEMPERATURE=${LLM_TEMPERATURE:-0.7}
+      - LLM_TIMEOUT=${LLM_TIMEOUT:-60}
+      - OLLAMA_NUM_CTX=${OLLAMA_NUM_CTX:-64000}
+      - OLLAMA_NUM_PREDICT=${OLLAMA_NUM_PREDICT:-4096}
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
     depends_on:
       redis:
         condition: service_healthy
@@ -112,11 +119,18 @@ services:
       - REDIS_URL=redis://redis:6379/0
       - PYTHONPATH=/app/src
       - ADR_STORAGE_PATH=/app/data/adrs
-      - LLAMA_CPP_URL=${LLAMA_CPP_URL:-http://localhost:11434}
-      - LLAMA_CPP_URL_1=${LLAMA_CPP_URL_1:-}
-      - LLAMA_CPP_URL_EMBEDDING=${LLAMA_CPP_URL_EMBEDDING:-}
       - LIGHTRAG_URL=${LIGHTRAG_URL:-http://lightrag:9621}
       - LIGHTRAG_API_KEY=${LIGHTRAG_API_KEY:-}
+      - LLM_PROVIDER=${LLM_PROVIDER:-ollama}
+      - LLM_BASE_URL=${LLM_BASE_URL:-http://localhost:11434}
+      - LLM_BASE_URL_1=${LLM_BASE_URL_1:-}
+      - LLM_EMBEDDING_BASE_URL=${LLM_EMBEDDING_BASE_URL:-}
+      - LLM_MODEL=${LLM_MODEL:-gpt-oss:20b}
+      - LLM_TEMPERATURE=${LLM_TEMPERATURE:-0.7}
+      - LLM_TIMEOUT=${LLM_TIMEOUT:-60}
+      - OLLAMA_NUM_CTX=${OLLAMA_NUM_CTX:-64000}
+      - OLLAMA_NUM_PREDICT=${OLLAMA_NUM_PREDICT:-4096}
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
     depends_on:
       - redis
       - backend
