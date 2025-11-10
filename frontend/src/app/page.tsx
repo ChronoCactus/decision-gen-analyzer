@@ -1,11 +1,12 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { ADR, AnalyzeADRRequest, GenerateADRRequest, TaskResponse } from '@/types/api';
 import { apiClient } from '@/lib/api';
 import { ADRCard } from '@/components/ADRCard';
 import { GenerateADRModal } from '@/components/GenerateADRModal';
 import { ImportExportModal } from '@/components/ImportExportModal';
+import { useCacheStatusWebSocket } from '@/hooks/useCacheStatusWebSocket';
 
 export default function Home() {
   const [adrs, setAdrs] = useState<ADR[]>([]);
@@ -17,8 +18,9 @@ export default function Home() {
   const [generationStartTime, setGenerationStartTime] = useState<number | undefined>(undefined);
   const [isGenerating, setIsGenerating] = useState(false);
   const [currentTime, setCurrentTime] = useState(Date.now());
-  const [cacheRebuilding, setCacheRebuilding] = useState(false);
-  const [lastSyncTime, setLastSyncTime] = useState<number | null>(null);
+
+  // Use WebSocket for real-time cache status updates
+  const { isRebuilding: cacheRebuilding, lastSyncTime, isConnected: wsConnected } = useCacheStatusWebSocket();
 
   useEffect(() => {
     loadADRs();
@@ -30,42 +32,6 @@ export default function Home() {
       setCurrentTime(Date.now());
     }, 1000);
     return () => clearInterval(interval);
-  }, []);
-
-  // Poll cache status at page level (not per card)
-  useEffect(() => {
-    let mounted = true;
-    let intervalId: NodeJS.Timeout;
-
-    const checkCacheStatus = async () => {
-      try {
-        const response = await apiClient.getCacheStatus();
-        if (mounted) {
-          setCacheRebuilding(response.is_rebuilding);
-          if (response.last_sync_time) {
-            setLastSyncTime(response.last_sync_time * 1000); // Convert to milliseconds
-          }
-        }
-      } catch (error) {
-        console.error('Failed to check cache status:', error);
-        if (mounted) {
-          setCacheRebuilding(false);
-        }
-      }
-    };
-
-    // Check immediately
-    checkCacheStatus();
-
-    // Then check every 5 seconds
-    intervalId = setInterval(checkCacheStatus, 5000);
-
-    return () => {
-      mounted = false;
-      if (intervalId) {
-        clearInterval(intervalId);
-      }
-    };
   }, []);
 
   const loadADRs = async () => {
@@ -111,8 +77,8 @@ export default function Home() {
 
   const handlePushToRAG = async (adrId: string) => {
     try {
-      const result = await apiClient.pushADRToRAG(adrId);
-      alert(`Success: ${result.message}`);
+      await apiClient.pushADRToRAG(adrId);
+      // WebSocket upload status provides real-time feedback
     } catch (err) {
       console.error('Failed to push ADR to RAG:', err);
 
@@ -228,6 +194,9 @@ export default function Home() {
             await loadADRs();
             setIsGenerating(false);
             setGenerationStartTime(undefined);
+
+            // Refresh ADR list
+            await loadADRs();
           }
           // Stop polling
           return;
@@ -336,9 +305,9 @@ export default function Home() {
         </div>
 
         {/* RAG Cache Status */}
-        <div className="mb-4 flex justify-end">
+        <div className="mb-4 flex justify-end items-center gap-4">
           <div className="text-sm text-gray-600 dark:text-gray-400 bg-white dark:bg-gray-800 px-4 py-2 rounded-md border border-gray-200 dark:border-gray-700 shadow-sm">
-            <span className="font-medium">RAG Last Cached: </span>
+            <span className="font-medium">RAG Cache: </span>
             {cacheRebuilding ? (
               <span className="text-blue-600 dark:text-blue-400 font-semibold">Rebuilding...</span>
             ) : (
@@ -352,6 +321,9 @@ export default function Home() {
               </>
             )}
           </div>
+          <div className={`text-xs px-2 py-1 rounded-full ${wsConnected ? 'bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-300' : 'bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-300'}`}>
+            {wsConnected ? '● Connected' : '○ Disconnected'}
+          </div>
         </div>
 
         {/* Task Status Notifications */}
@@ -362,19 +334,7 @@ export default function Home() {
                 ? Math.floor((currentTime - task.startTime) / 1000)
                 : 0;
               const showTimer = task.startTime && (task.status === 'queued' || task.status === 'progress');
-              
-              // Debug logging
-              if (task.status === 'progress') {
-                console.log('Task progress:', {
-                  taskId,
-                  startTime: task.startTime,
-                  currentTime,
-                  elapsedSeconds,
-                  showTimer,
-                  message: task.message
-                });
-              }
-              
+
               return (
                 <div
                   key={taskId}

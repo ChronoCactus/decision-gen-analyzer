@@ -110,7 +110,21 @@ class LightRAGClient:
             response.raise_for_status()
 
             result = response.json()
-            logger.info("Document stored successfully", doc_id=doc_id, result=result)
+
+            # Extract track_id if present for monitoring upload status
+            track_id = result.get("track_id")
+            if track_id:
+                logger.info(
+                    "Document upload started with tracking",
+                    doc_id=doc_id,
+                    track_id=track_id,
+                    status=result.get("status"),
+                )
+            else:
+                logger.info(
+                    "Document stored successfully", doc_id=doc_id, result=result
+                )
+
             return result
 
         except httpx.HTTPError as e:
@@ -131,6 +145,61 @@ class LightRAGClient:
                 error_message=str(e),
                 error_repr=repr(e),
                 doc_id=doc_id,
+            )
+            raise
+
+    async def get_track_status(self, track_id: str) -> Dict[str, Any]:
+        """Get the processing status of an uploaded document.
+
+        Args:
+            track_id: The tracking ID returned from store_document
+
+        Returns:
+            Status information including:
+            - status: "processing", "completed", "failed"
+            - message: Status message
+            - progress: Optional progress information
+        """
+        if self.demo_mode:
+            logger.info("Demo mode: Simulating track status check", track_id=track_id)
+            await asyncio.sleep(0.1)
+            return {
+                "status": "completed",
+                "message": "Document processing completed (demo mode)",
+                "track_id": track_id,
+            }
+
+        if not self._client:
+            raise RuntimeError("Client not initialized. Use as async context manager.")
+
+        try:
+            logger.debug("Checking track status", track_id=track_id)
+            response = await self._client.get(f"/documents/track_status/{track_id}")
+            response.raise_for_status()
+
+            result = response.json()
+            logger.debug(
+                "Track status retrieved", track_id=track_id, status=result.get("status")
+            )
+            return result
+
+        except httpx.HTTPError as e:
+            error_details = {
+                "error_type": type(e).__name__,
+                "error_message": str(e),
+                "track_id": track_id,
+            }
+            if hasattr(e, "response") and e.response is not None:
+                error_details["status_code"] = e.response.status_code
+                error_details["response_text"] = e.response.text[:500]
+            logger.error("HTTP error checking track status", **error_details)
+            raise
+        except Exception as e:
+            logger.error(
+                "Unexpected error checking track status",
+                error_type=type(e).__name__,
+                error_message=str(e),
+                track_id=track_id,
             )
             raise
 
