@@ -6,6 +6,7 @@ import { apiClient } from '@/lib/api';
 import { ADRCard } from '@/components/ADRCard';
 import { GenerateADRModal } from '@/components/GenerateADRModal';
 import { ImportExportModal } from '@/components/ImportExportModal';
+import { Toast } from '@/components/Toast';
 import { useCacheStatusWebSocket } from '@/hooks/useCacheStatusWebSocket';
 
 export default function Home() {
@@ -22,6 +23,14 @@ export default function Home() {
   // Multi-select state
   const [selectionMode, setSelectionMode] = useState(false);
   const [selectedADRs, setSelectedADRs] = useState<Set<string>>(new Set());
+
+  // Toast state
+  const [showToast, setShowToast] = useState(false);
+  const [toastMessage, setToastMessage] = useState('');
+  const [toastType, setToastType] = useState<'info' | 'success' | 'warning' | 'error'>('success');
+
+  // Track newly imported ADRs for pulsing outline effect
+  const [newlyImportedADRs, setNewlyImportedADRs] = useState<Set<string>>(new Set());
 
   // Use WebSocket for real-time cache status updates
   const { isRebuilding: cacheRebuilding, lastSyncTime, isConnected: wsConnected } = useCacheStatusWebSocket();
@@ -373,6 +382,28 @@ export default function Home() {
     }
   };
 
+  const handleImportSuccess = (importedCount: number, importedIds: string[]) => {
+    // Show success toast
+    setToastMessage(`Successfully imported ${importedCount} ADR${importedCount !== 1 ? 's' : ''}!`);
+    setToastType('success');
+    setShowToast(true);
+    
+    // Track newly imported ADRs for pulsing outline
+    setNewlyImportedADRs(new Set(importedIds));
+    
+    // Clear the pulsing outline after 10 seconds
+    setTimeout(() => {
+      setNewlyImportedADRs(new Set());
+    }, 10000);
+  };
+
+  const handleExportSuccess = () => {
+    // Show success toast
+    setToastMessage('Export completed successfully!');
+    setToastType('success');
+    setShowToast(true);
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
@@ -596,6 +627,7 @@ export default function Home() {
                 selectionMode={selectionMode}
                 isSelected={selectedADRs.has(adr.metadata.id)}
                 onToggleSelection={toggleADRSelection}
+                isNewlyImported={newlyImportedADRs.has(adr.metadata.id)}
               />
             ))}
           </div>
@@ -617,6 +649,18 @@ export default function Home() {
             onClose={() => setShowImportExportModal(false)}
             onImport={handleImport}
             onExportAll={handleExportAll}
+            onImportSuccess={handleImportSuccess}
+            onExportSuccess={handleExportSuccess}
+          />
+        )}
+
+        {/* Toast Notification */}
+        {showToast && (
+          <Toast
+            message={toastMessage}
+            type={toastType}
+            onClose={() => setShowToast(false)}
+            position="top"
           />
         )}
       </div>

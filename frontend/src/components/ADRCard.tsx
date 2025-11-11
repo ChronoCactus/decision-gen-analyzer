@@ -18,9 +18,10 @@ interface ADRCardProps {
   selectionMode?: boolean;
   isSelected?: boolean;
   onToggleSelection?: (adrId: string) => void;
+  isNewlyImported?: boolean;
 }
 
-export function ADRCard({ adr, onAnalyze, onDelete, onPushToRAG, onExport, cacheRebuilding, selectionMode = false, isSelected = false, onToggleSelection }: ADRCardProps) {
+export function ADRCard({ adr, onAnalyze, onDelete, onPushToRAG, onExport, cacheRebuilding, selectionMode = false, isSelected = false, onToggleSelection, isNewlyImported = false }: ADRCardProps) {
   const [showModal, setShowModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
@@ -138,7 +139,9 @@ export function ADRCard({ adr, onAnalyze, onDelete, onPushToRAG, onExport, cache
             ? isSelected 
               ? 'border-blue-500 dark:border-blue-400 ring-2 ring-blue-500 dark:ring-blue-400 cursor-pointer' 
               : 'border-gray-300 dark:border-gray-600 cursor-pointer hover:border-blue-300 dark:hover:border-blue-600' 
-            : 'border-transparent dark:border-gray-700'
+            : isNewlyImported
+              ? 'border-blue-500 dark:border-blue-400 animate-pulse-border'
+              : 'border-transparent dark:border-gray-700'
         }`}
         onClick={handleCardClick}
       >
