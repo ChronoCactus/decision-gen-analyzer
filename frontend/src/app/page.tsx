@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { ADR, AnalyzeADRRequest, GenerateADRRequest, TaskResponse } from '@/types/api';
 import { apiClient } from '@/lib/api';
 import { ADRCard } from '@/components/ADRCard';
