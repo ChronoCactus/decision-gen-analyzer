@@ -233,12 +233,14 @@ class ApiClient {
     imported_count: number;
     skipped_count: number;
     errors: string[];
+    imported_ids: string[];
   }> {
     const results = {
       message: '',
       imported_count: 0,
       skipped_count: 0,
       errors: [] as string[],
+      imported_ids: [] as string[],
     };
 
     for (const file of files) {
@@ -261,6 +263,7 @@ class ApiClient {
         results.imported_count += result.imported_count;
         results.skipped_count += result.skipped_count;
         results.errors.push(...result.errors.map((e: string) => `${file.name}: ${e}`));
+        results.imported_ids.push(...(result.imported_ids || []));
       } catch (error) {
         results.errors.push(`${file.name}: ${error instanceof Error ? error.message : 'Unknown error'}`);
       }

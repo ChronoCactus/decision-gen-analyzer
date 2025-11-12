@@ -1,22 +1,30 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 
 interface ToastProps {
   message: string;
   type?: 'info' | 'success' | 'warning' | 'error';
   onClose: () => void;
   duration?: number;
+  position?: 'top' | 'bottom';
 }
 
-export function Toast({ message, type = 'info', onClose, duration = 3000 }: ToastProps) {
+export function Toast({ message, type = 'info', onClose, duration = 5000, position = 'bottom' }: ToastProps) {
+  const onCloseRef = useRef(onClose);
+  
+  // Keep the ref updated
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  }, [onClose]);
+
   useEffect(() => {
     const timer = setTimeout(() => {
-      onClose();
+      onCloseRef.current();
     }, duration);
 
     return () => clearTimeout(timer);
-  }, [onClose, duration]);
+  }, [duration]); // Only re-run if duration changes
 
   const bgColor = {
     info: 'bg-blue-600',
@@ -25,8 +33,12 @@ export function Toast({ message, type = 'info', onClose, duration = 3000 }: Toas
     error: 'bg-red-600',
   }[type];
 
+  const positionClasses = position === 'top'
+    ? 'top-4 left-1/2 -translate-x-1/2 animate-slide-down'
+    : 'bottom-4 right-4 animate-slide-up';
+
   return (
-    <div className="fixed bottom-4 right-4 z-50 animate-slide-up">
+    <div className={`fixed ${positionClasses} z-50`}>
       <div className={`${bgColor} text-white px-6 py-3 rounded-lg shadow-lg flex items-center gap-3`}>
         <span>{message}</span>
         <button

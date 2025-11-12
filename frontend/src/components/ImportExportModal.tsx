@@ -10,11 +10,14 @@ interface ImportExportModalProps {
     imported_count: number;
     skipped_count: number;
     errors: string[];
+    imported_ids?: string[];
   }>;
   onExportAll: () => void;
+  onImportSuccess?: (importedCount: number, importedIds: string[]) => void;
+  onExportSuccess?: () => void;
 }
 
-export function ImportExportModal({ onClose, onImport, onExportAll }: ImportExportModalProps) {
+export function ImportExportModal({ onClose, onImport, onExportAll, onImportSuccess, onExportSuccess }: ImportExportModalProps) {
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [overwriteExisting, setOverwriteExisting] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
@@ -49,6 +52,14 @@ export function ImportExportModal({ onClose, onImport, onExportAll }: ImportExpo
       if (fileInputRef.current) {
         fileInputRef.current.value = '';
       }
+      
+      // If import was successful, notify parent and close modal after a brief delay
+      if (result.imported_count > 0) {
+        setTimeout(() => {
+          onImportSuccess?.(result.imported_count, result.imported_ids || []);
+          onClose();
+        }, 500);
+      }
     } catch (error) {
       console.error('Import failed:', error);
       setImportResult({
@@ -64,6 +75,11 @@ export function ImportExportModal({ onClose, onImport, onExportAll }: ImportExpo
 
   const handleExportAll = () => {
     onExportAll();
+    // Close modal and notify parent after a brief delay
+    setTimeout(() => {
+      onExportSuccess?.();
+      onClose();
+    }, 50);
   };
 
   const removeFile = (index: number) => {

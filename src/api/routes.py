@@ -95,6 +95,7 @@ class ImportResponse(BaseModel):
     imported_count: int
     skipped_count: int = 0
     errors: List[str] = []
+    imported_ids: List[str] = []
 
 
 # Create routers
@@ -814,6 +815,7 @@ async def import_adrs_bulk(request: ImportRequest):
         imported_count = 0
         skipped_count = 0
         errors = []
+        imported_ids = []
 
         for adr in adrs:
             adr_id = str(adr.metadata.id)
@@ -832,6 +834,7 @@ async def import_adrs_bulk(request: ImportRequest):
                 # Save ADR
                 storage.save_adr(adr)
                 imported_count += 1
+                imported_ids.append(adr_id)
                 logger.info(f"Imported ADR {adr_id}: {adr.metadata.title}")
 
                 # Automatically push to RAG for indexing
@@ -854,6 +857,7 @@ async def import_adrs_bulk(request: ImportRequest):
             imported_count=imported_count,
             skipped_count=skipped_count,
             errors=errors,
+            imported_ids=imported_ids,
         )
 
     except HTTPException:
