@@ -384,7 +384,7 @@ export default function Home() {
 
   const handleImportSuccess = (importedCount: number, importedIds: string[]) => {
     // Show success toast
-    setToastMessage(`Successfully imported ${importedCount} ADR${importedCount !== 1 ? 's' : ''}!`);
+    setToastMessage(`Successfully imported ${importedCount} record${importedCount !== 1 ? 's' : ''}.`);
     setToastType('success');
     setShowToast(true);
     
@@ -399,7 +399,7 @@ export default function Home() {
 
   const handleExportSuccess = () => {
     // Show success toast
-    setToastMessage('Export completed successfully!');
+    setToastMessage('Export completed successfully.');
     setToastType('success');
     setShowToast(true);
   };

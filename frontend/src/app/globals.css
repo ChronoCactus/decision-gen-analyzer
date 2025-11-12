@@ -52,7 +52,7 @@ body {
 }
 
 .animate-slide-down {
-  animation: slide-down 1s ease-out;
+  animation: slide-down 0.3s ease-out;
 }
 
 @keyframes pulse-border {

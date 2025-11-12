@@ -10,7 +10,7 @@ interface ToastProps {
   position?: 'top' | 'bottom';
 }
 
-export function Toast({ message, type = 'info', onClose, duration = 3000, position = 'bottom' }: ToastProps) {
+export function Toast({ message, type = 'info', onClose, duration = 5000, position = 'bottom' }: ToastProps) {
   useEffect(() => {
     const timer = setTimeout(() => {
       onClose();
