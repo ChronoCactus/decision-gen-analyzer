@@ -13,6 +13,13 @@ vi.mock('@/hooks/useEscapeKey', () => ({
   useEscapeKey: vi.fn(),
 }));
 
+// Mock the API client
+vi.mock('@/lib/api', () => ({
+  apiClient: {
+    updateADRStatus: vi.fn(),
+  },
+}));
+
 describe('ADRModal', () => {
   const mockADR: ADR = {
     metadata: {
@@ -130,15 +137,14 @@ describe('ADRModal', () => {
   });
 
   it('should apply correct status colors', () => {
-    const { rerender } = render(<ADRModal {...mockProps} />);
+    render(<ADRModal {...mockProps} />);
 
-    let statusBadge = screen.getByText('accepted');
-    expect(statusBadge).toHaveClass('bg-green-100', 'text-green-800');
-
-    const proposedADR = { ...mockADR, metadata: { ...mockADR.metadata, status: ADRStatus.PROPOSED } };
-    rerender(<ADRModal {...mockProps} adr={proposedADR} />);
-    statusBadge = screen.getByText('proposed');
-    expect(statusBadge).toHaveClass('bg-yellow-100', 'text-yellow-800');
+    // Status is now a select dropdown with color classes
+    const statusSelect = screen.getByRole('combobox');
+    expect(statusSelect).toHaveValue('accepted');
+    // Check that it has the green color classes for accepted status
+    expect(statusSelect.className).toContain('bg-green-100');
+    expect(statusSelect.className).toContain('text-green-800');
   });
 
   it('should display tags when present', () => {
@@ -170,5 +176,132 @@ describe('ADRModal', () => {
 
     const dateText = new Date('2024-01-15T10:00:00Z').toLocaleDateString();
     expect(screen.getByText(dateText)).toBeInTheDocument();
+  });
+
+  it('should render status dropdown with all status options', () => {
+    render(<ADRModal {...mockProps} />);
+
+    const statusSelect = screen.getByRole('combobox');
+    expect(statusSelect).toBeInTheDocument();
+    
+    // Check all options are present
+    const options = screen.getAllByRole('option');
+    expect(options).toHaveLength(5);
+    expect(screen.getByRole('option', { name: 'proposed' })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'accepted' })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'rejected' })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'deprecated' })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'superseded' })).toBeInTheDocument();
+  });
+
+  it('should call API and update status when dropdown value changes', async () => {
+    const { apiClient } = await import('@/lib/api');
+    const mockUpdateStatus = vi.mocked(apiClient.updateADRStatus);
+    const updatedADR = { ...mockADR, metadata: { ...mockADR.metadata, status: ADRStatus.DEPRECATED } };
+    mockUpdateStatus.mockResolvedValue({ message: 'Status updated', adr: updatedADR });
+
+    const user = userEvent.setup();
+    render(<ADRModal {...mockProps} />);
+
+    const statusSelect = screen.getByRole('combobox');
+    expect(statusSelect).toHaveValue('accepted');
+
+    // Change status to deprecated
+    await user.selectOptions(statusSelect, 'deprecated');
+
+    // Should call API with correct parameters
+    expect(mockUpdateStatus).toHaveBeenCalledWith('adr-123', 'deprecated');
+
+    // Status should be updated in the UI
+    expect(statusSelect).toHaveValue('deprecated');
+  });
+
+  it('should call onADRUpdate callback when status changes', async () => {
+    const { apiClient } = await import('@/lib/api');
+    const mockUpdateStatus = vi.mocked(apiClient.updateADRStatus);
+    const updatedADR = { ...mockADR, metadata: { ...mockADR.metadata, status: ADRStatus.REJECTED } };
+    mockUpdateStatus.mockResolvedValue({ message: 'Status updated', adr: updatedADR });
+
+    const mockOnADRUpdate = vi.fn();
+    const user = userEvent.setup();
+    render(<ADRModal {...mockProps} onADRUpdate={mockOnADRUpdate} />);
+
+    const statusSelect = screen.getByRole('combobox');
+    await user.selectOptions(statusSelect, 'rejected');
+
+    // Wait for the update to complete
+    await vi.waitFor(() => {
+      expect(mockOnADRUpdate).toHaveBeenCalledWith(updatedADR);
+    });
+  });
+
+  it('should disable status dropdown while updating', async () => {
+    const { apiClient } = await import('@/lib/api');
+    const mockUpdateStatus = vi.mocked(apiClient.updateADRStatus);
+    
+    // Make the API call take some time
+    mockUpdateStatus.mockImplementation(() => new Promise(resolve => {
+      setTimeout(() => resolve({ 
+        message: 'Status updated', 
+        adr: { ...mockADR, metadata: { ...mockADR.metadata, status: ADRStatus.PROPOSED } }
+      }), 100);
+    }));
+
+    const user = userEvent.setup();
+    render(<ADRModal {...mockProps} />);
+
+    const statusSelect = screen.getByRole('combobox');
+    
+    // Start changing status
+    await user.selectOptions(statusSelect, 'proposed');
+
+    // Select should be disabled during update
+    expect(statusSelect).toBeDisabled();
+
+    // Wait for update to complete
+    await vi.waitFor(() => {
+      expect(statusSelect).not.toBeDisabled();
+    });
+  });
+
+  it('should handle status update errors gracefully', async () => {
+    const { apiClient } = await import('@/lib/api');
+    const mockUpdateStatus = vi.mocked(apiClient.updateADRStatus);
+    mockUpdateStatus.mockRejectedValue(new Error('Network error'));
+
+    // Mock window.alert
+    const mockAlert = vi.spyOn(window, 'alert').mockImplementation(() => {});
+
+    const user = userEvent.setup();
+    render(<ADRModal {...mockProps} />);
+
+    const statusSelect = screen.getByRole('combobox');
+    await user.selectOptions(statusSelect, 'proposed');
+
+    // Should show error alert
+    await vi.waitFor(() => {
+      expect(mockAlert).toHaveBeenCalledWith('Failed to update ADR status. Please try again.');
+    });
+
+    // Status should remain unchanged
+    expect(statusSelect).toHaveValue('accepted');
+
+    mockAlert.mockRestore();
+  });
+
+  it('should not make API call if status is unchanged', async () => {
+    const { apiClient } = await import('@/lib/api');
+    const mockUpdateStatus = vi.mocked(apiClient.updateADRStatus);
+
+    const user = userEvent.setup();
+    render(<ADRModal {...mockProps} />);
+
+    const statusSelect = screen.getByRole('combobox');
+    
+    // Select the same status (already 'accepted')
+    await user.selectOptions(statusSelect, 'accepted');
+
+    // Should not call API
+    expect(mockUpdateStatus).not.toHaveBeenCalled();
   });
 });

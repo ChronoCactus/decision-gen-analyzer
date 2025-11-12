@@ -340,6 +340,57 @@ async def delete_adr(adr_id: str):
         raise HTTPException(status_code=500, detail=f"Failed to delete ADR: {str(e)}")
 
 
+class UpdateStatusRequest(BaseModel):
+    """Request model for updating ADR status."""
+    status: str
+
+
+@adr_router.patch("/{adr_id}/status")
+async def update_adr_status(adr_id: str, request: UpdateStatusRequest):
+    """Update the status of an ADR."""
+    try:
+        from src.adr_file_storage import get_adr_storage
+        from src.models import ADRStatus
+        from datetime import datetime, UTC
+
+        # Validate status value
+        try:
+            new_status = ADRStatus(request.status)
+        except ValueError:
+            valid_statuses = [status.value for status in ADRStatus]
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid status. Must be one of: {', '.join(valid_statuses)}"
+            )
+
+        storage = get_adr_storage()
+
+        # Get the ADR (run in thread pool - uses blocking file I/O)
+        adr = await asyncio.to_thread(storage.get_adr, adr_id)
+
+        if not adr:
+            raise HTTPException(status_code=404, detail=f"ADR {adr_id} not found")
+
+        # Update status and updated_at timestamp
+        adr.metadata.status = new_status
+        adr.metadata.updated_at = datetime.now(UTC)
+
+        # Save the updated ADR (run in thread pool - uses blocking file I/O)
+        await asyncio.to_thread(storage.save_adr, adr)
+
+        logger.info(f"Updated ADR {adr_id} status to {new_status.value}")
+
+        return {
+            "message": f"ADR status updated to {new_status.value}",
+            "adr": adr
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to update ADR status: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to update ADR status: {str(e)}")
+
+
 async def _push_adr_to_rag_internal(adr: "ADR") -> dict:
     """Internal helper to push an ADR to LightRAG for indexing.
 

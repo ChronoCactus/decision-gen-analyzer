@@ -1,35 +1,64 @@
 'use client';
 
 import { useState } from 'react';
-import { ADR } from '@/types/api';
+import { ADR, ADRStatus } from '@/types/api';
 import { PersonasModal } from './PersonasModal';
 import { useEscapeKey } from '@/hooks/useEscapeKey';
+import { apiClient } from '@/lib/api';
 
 interface ADRModalProps {
   adr: ADR;
   onClose: () => void;
   onAnalyze: () => void;
   isAnalyzing: boolean;
+  onADRUpdate?: (updatedAdr: ADR) => void;
 }
 
-export function ADRModal({ adr, onClose, onAnalyze, isAnalyzing }: ADRModalProps) {
+export function ADRModal({ adr, onClose, onAnalyze, isAnalyzing, onADRUpdate }: ADRModalProps) {
   const [showPersonas, setShowPersonas] = useState(false);
+  const [currentAdr, setCurrentAdr] = useState<ADR>(adr);
+  const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
 
   // Close this modal with ESC, but only if personas modal is not open
   useEscapeKey(onClose, !showPersonas);
 
+  const handleStatusChange = async (newStatus: string) => {
+    if (newStatus === currentAdr.metadata.status) {
+      return; // No change
+    }
+
+    setIsUpdatingStatus(true);
+    try {
+      const response = await apiClient.updateADRStatus(currentAdr.metadata.id, newStatus);
+      const updatedAdr = response.adr;
+      setCurrentAdr(updatedAdr);
+      
+      // Notify parent component of the update
+      if (onADRUpdate) {
+        onADRUpdate(updatedAdr);
+      }
+    } catch (error) {
+      console.error('Failed to update ADR status:', error);
+      alert('Failed to update ADR status. Please try again.');
+    } finally {
+      setIsUpdatingStatus(false);
+    }
+  };
+
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'accepted':
-        return 'bg-green-100 text-green-800 border-green-200';
+        return 'bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-300 border-green-200 dark:border-green-700';
       case 'proposed':
-        return 'bg-yellow-100 text-yellow-800 border-yellow-200';
+        return 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-800 dark:text-yellow-300 border-yellow-200 dark:border-yellow-700';
       case 'rejected':
-        return 'bg-red-100 text-red-800 border-red-200';
+        return 'bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-300 border-red-200 dark:border-red-700';
       case 'deprecated':
-        return 'bg-gray-100 text-gray-800 border-gray-200';
+        return 'bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-300 border-gray-200 dark:border-gray-600';
+      case 'superseded':
+        return 'bg-purple-100 dark:bg-purple-900/30 text-purple-800 dark:text-purple-300 border-purple-200 dark:border-purple-700';
       default:
-        return 'bg-blue-100 text-blue-800 border-blue-200';
+        return 'bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-300 border-blue-200 dark:border-blue-700';
     }
   };
 
@@ -40,14 +69,27 @@ export function ADRModal({ adr, onClose, onAnalyze, isAnalyzing }: ADRModalProps
           <div className="flex justify-between items-start mb-6">
             <div className="flex-1">
               <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100 mb-2">
-                {adr.metadata.title}
+                {currentAdr.metadata.title}
               </h2>
               <div className="flex items-center gap-4 text-sm text-gray-600 dark:text-gray-400">
-                <span>By {adr.metadata.author}</span>
-                <span>{new Date(adr.metadata.created_at).toLocaleDateString()}</span>
-                <span className={`px-3 py-1 rounded-full border ${getStatusColor(adr.metadata.status)}`}>
-                  {adr.metadata.status}
-                </span>
+                <span>By {currentAdr.metadata.author}</span>
+                <span>{new Date(currentAdr.metadata.created_at).toLocaleDateString()}</span>
+                <div className="relative">
+                  <select
+                    value={currentAdr.metadata.status}
+                    onChange={(e) => handleStatusChange(e.target.value)}
+                    disabled={isUpdatingStatus}
+                    className={`px-3 py-1 rounded-full border cursor-pointer text-sm font-medium transition-colors ${getStatusColor(currentAdr.metadata.status)} ${
+                      isUpdatingStatus ? 'opacity-50 cursor-wait' : 'hover:opacity-80'
+                    } focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 dark:focus:ring-offset-gray-800`}
+                  >
+                    <option value={ADRStatus.PROPOSED}>proposed</option>
+                    <option value={ADRStatus.ACCEPTED}>accepted</option>
+                    <option value={ADRStatus.REJECTED}>rejected</option>
+                    <option value={ADRStatus.DEPRECATED}>deprecated</option>
+                    <option value={ADRStatus.SUPERSEDED}>superseded</option>
+                  </select>
+                </div>
               </div>
             </div>
             <button
@@ -62,35 +104,35 @@ export function ADRModal({ adr, onClose, onAnalyze, isAnalyzing }: ADRModalProps
             {/* Context & Problem */}
             <div>
               <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2">Context & Problem</h3>
-              <p className="text-gray-700 dark:text-gray-300 leading-relaxed whitespace-pre-wrap">{adr.content.context_and_problem}</p>
+              <p className="text-gray-700 dark:text-gray-300 leading-relaxed whitespace-pre-wrap">{currentAdr.content.context_and_problem}</p>
             </div>
 
             {/* Decision Outcome */}
             <div>
               <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2">Decision Outcome</h3>
-              <div className="text-gray-700 dark:text-gray-300 leading-relaxed whitespace-pre-wrap">{adr.content.decision_outcome}</div>
+              <div className="text-gray-700 dark:text-gray-300 leading-relaxed whitespace-pre-wrap">{currentAdr.content.decision_outcome}</div>
             </div>
 
             {/* Consequences - Structured or plain text */}
             <div>
               <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-3">Consequences</h3>
-              {adr.content.consequences_structured ? (
+              {currentAdr.content.consequences_structured ? (
                 <div className="space-y-3">
-                  {adr.content.consequences_structured.positive.length > 0 && (
+                  {currentAdr.content.consequences_structured.positive.length > 0 && (
                     <div>
                       <h4 className="text-md font-medium text-green-800 dark:text-green-400 mb-2">✓ Positive</h4>
                       <ul className="list-disc list-inside text-gray-700 dark:text-gray-300 space-y-1 ml-2">
-                        {adr.content.consequences_structured.positive.map((item, index) => (
+                        {currentAdr.content.consequences_structured.positive.map((item, index) => (
                           <li key={index}>{item}</li>
                         ))}
                       </ul>
                     </div>
                   )}
-                  {adr.content.consequences_structured.negative.length > 0 && (
+                  {currentAdr.content.consequences_structured.negative.length > 0 && (
                     <div>
                       <h4 className="text-md font-medium text-red-800 dark:text-red-400 mb-2">✗ Negative</h4>
                       <ul className="list-disc list-inside text-gray-700 dark:text-gray-300 space-y-1 ml-2">
-                        {adr.content.consequences_structured.negative.map((item, index) => (
+                        {currentAdr.content.consequences_structured.negative.map((item, index) => (
                           <li key={index}>{item}</li>
                         ))}
                       </ul>
@@ -99,7 +141,7 @@ export function ADRModal({ adr, onClose, onAnalyze, isAnalyzing }: ADRModalProps
                 </div>
               ) : (
                   <div className="text-gray-700 dark:text-gray-300 leading-relaxed">
-                    {adr.content.consequences.split('\n').map((line, index) => {
+                    {currentAdr.content.consequences.split('\n').map((line, index) => {
                       const trimmed = line.trim();
                       if (!trimmed) return null;
 
@@ -130,11 +172,11 @@ export function ADRModal({ adr, onClose, onAnalyze, isAnalyzing }: ADRModalProps
             </div>
 
             {/* Considered Options */}
-            {adr.content.considered_options && adr.content.considered_options.length > 0 && (
+            {currentAdr.content.considered_options && currentAdr.content.considered_options.length > 0 && (
               <div>
                 <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2">Considered Options</h3>
                 <ul className="list-disc list-inside text-gray-700 dark:text-gray-300 space-y-1">
-                  {adr.content.considered_options.map((option, index) => (
+                  {currentAdr.content.considered_options.map((option, index) => (
                     <li key={index}>{option}</li>
                   ))}
                 </ul>
@@ -142,11 +184,11 @@ export function ADRModal({ adr, onClose, onAnalyze, isAnalyzing }: ADRModalProps
             )}
 
             {/* Options Details with Pros and Cons */}
-            {adr.content.options_details && adr.content.options_details.length > 0 && (
+            {currentAdr.content.options_details && currentAdr.content.options_details.length > 0 && (
               <div>
                 <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-3">Pros & Cons of Options</h3>
                 <div className="space-y-4">
-                  {adr.content.options_details.map((option, index) => (
+                  {currentAdr.content.options_details.map((option, index) => (
                     <div key={index} className="border border-gray-200 dark:border-gray-700 rounded-lg p-4 bg-gray-50 dark:bg-gray-700/50">
                       <h4 className="font-semibold text-gray-900 dark:text-gray-100 mb-1">{option.name}</h4>
                       {option.description && (
@@ -187,11 +229,11 @@ export function ADRModal({ adr, onClose, onAnalyze, isAnalyzing }: ADRModalProps
             )}
 
             {/* Decision Drivers */}
-            {adr.content.decision_drivers && adr.content.decision_drivers.length > 0 && (
+            {currentAdr.content.decision_drivers && currentAdr.content.decision_drivers.length > 0 && (
               <div>
                 <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2">Decision Drivers</h3>
                 <ul className="list-disc list-inside text-gray-700 dark:text-gray-300 space-y-1">
-                  {adr.content.decision_drivers.map((driver, index) => (
+                  {currentAdr.content.decision_drivers.map((driver, index) => (
                     <li key={index}>{driver}</li>
                   ))}
                 </ul>
@@ -199,20 +241,20 @@ export function ADRModal({ adr, onClose, onAnalyze, isAnalyzing }: ADRModalProps
             )}
 
             {/* More Information */}
-            {adr.content.more_information && (
+            {currentAdr.content.more_information && (
               <div>
                 <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2">More Information</h3>
-                <p className="text-gray-700 dark:text-gray-300 leading-relaxed whitespace-pre-wrap">{adr.content.more_information}</p>
+                <p className="text-gray-700 dark:text-gray-300 leading-relaxed whitespace-pre-wrap">{currentAdr.content.more_information}</p>
               </div>
             )}
 
             {/* Referenced ADRs */}
-            {adr.content.referenced_adrs && adr.content.referenced_adrs.length > 0 && (
+            {currentAdr.content.referenced_adrs && currentAdr.content.referenced_adrs.length > 0 && (
               <div>
                 <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2">Referenced ADRs</h3>
                 <p className="text-sm text-gray-600 dark:text-gray-400 mb-2">This ADR was generated with context from the following ADRs:</p>
                 <ul className="space-y-2">
-                  {adr.content.referenced_adrs.map((ref, index) => (
+                  {currentAdr.content.referenced_adrs.map((ref, index) => (
                     <li key={index} className="border-l-2 border-blue-300 dark:border-blue-700 pl-3 py-1">
                       {/* <div className="font-mono text-sm text-blue-700 font-semibold">{ref.id}</div>
                       {ref.title && ref.title !== ref.id && (
@@ -231,7 +273,7 @@ export function ADRModal({ adr, onClose, onAnalyze, isAnalyzing }: ADRModalProps
             <div>
               <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2">Tags</h3>
               <div className="flex flex-wrap gap-2">
-                {adr.metadata.tags.map((tag) => (
+                {currentAdr.metadata.tags.map((tag) => (
                   <span
                     key={tag}
                     className="px-3 py-1 bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 text-sm rounded-md"
@@ -244,12 +286,12 @@ export function ADRModal({ adr, onClose, onAnalyze, isAnalyzing }: ADRModalProps
           </div>
 
           <div className="flex gap-4 mt-8 pt-6 border-t border-gray-200 dark:border-gray-700">
-            {adr.persona_responses && adr.persona_responses.length > 0 && (
+            {currentAdr.persona_responses && currentAdr.persona_responses.length > 0 && (
               <button
                 onClick={() => setShowPersonas(true)}
                 className="flex-1 bg-purple-600 text-white px-6 py-3 rounded-md hover:bg-purple-700 transition-colors font-medium"
               >
-                Show Personas ({adr.persona_responses.length})
+                Show Personas ({currentAdr.persona_responses.length})
               </button>
             )}
             <button
@@ -269,9 +311,9 @@ export function ADRModal({ adr, onClose, onAnalyze, isAnalyzing }: ADRModalProps
         </div>
       </div>
 
-      {showPersonas && adr.persona_responses && (
+      {showPersonas && currentAdr.persona_responses && (
         <PersonasModal
-          personas={adr.persona_responses}
+          personas={currentAdr.persona_responses}
           onClose={() => setShowPersonas(false)}
         />
       )}

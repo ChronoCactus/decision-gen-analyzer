@@ -148,6 +148,13 @@ class ApiClient {
     });
   }
 
+  async updateADRStatus(adrId: string, status: string): Promise<{ message: string; adr: ADR }> {
+    return this.request<{ message: string; adr: ADR }>(`/api/v1/adrs/${adrId}/status`, {
+      method: 'PATCH',
+      body: JSON.stringify({ status }),
+    });
+  }
+
   async pushADRToRAG(adrId: string): Promise<{ message: string; adr_id: string; title: string }> {
     return this.request<{ message: string; adr_id: string; title: string }>(`/api/v1/adrs/${adrId}/push-to-rag`, {
       method: 'POST',

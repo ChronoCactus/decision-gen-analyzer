@@ -31,9 +31,15 @@ export function ADRCard({ adr, onAnalyze, onDelete, onPushToRAG, onExport, cache
   const [showToast, setShowToast] = useState(false);
   const [toastMessage, setToastMessage] = useState('');
   const [toastType, setToastType] = useState<'info' | 'success' | 'warning' | 'error'>('info');
+  const [currentAdr, setCurrentAdr] = useState<ADR>(adr);
 
   // Track upload status via WebSocket
-  const { uploadStatus, uploadMessage } = useUploadStatus(adr.metadata.id);
+  const { uploadStatus, uploadMessage } = useUploadStatus(currentAdr.metadata.id);
+
+  // Update currentAdr when prop changes
+  useEffect(() => {
+    setCurrentAdr(adr);
+  }, [adr]);
 
   // Update RAG status when upload completes
   useEffect(() => {
@@ -48,7 +54,7 @@ export function ADRCard({ adr, onAnalyze, onDelete, onPushToRAG, onExport, cache
 
     const checkRAGStatus = async () => {
       try {
-        const response = await apiClient.getADRRAGStatus(adr.metadata.id);
+        const response = await apiClient.getADRRAGStatus(currentAdr.metadata.id);
         if (mounted) {
           setExistsInRAG(response.exists_in_rag);
           setCheckingRAGStatus(false);
@@ -68,12 +74,12 @@ export function ADRCard({ adr, onAnalyze, onDelete, onPushToRAG, onExport, cache
     return () => {
       mounted = false;
     };
-  }, [adr.metadata.id, cacheRebuilding]); // Re-check when cache rebuild status changes
+  }, [currentAdr.metadata.id, cacheRebuilding]); // Re-check when cache rebuild status changes
 
   const handleAnalyze = async () => {
     setIsAnalyzing(true);
     try {
-      await onAnalyze(adr.metadata.id);
+      await onAnalyze(currentAdr.metadata.id);
     } finally {
       setIsAnalyzing(false);
     }
@@ -82,7 +88,7 @@ export function ADRCard({ adr, onAnalyze, onDelete, onPushToRAG, onExport, cache
   const handleDelete = async () => {
     setIsDeleting(true);
     try {
-      await onDelete(adr.metadata.id);
+      await onDelete(currentAdr.metadata.id);
       setShowDeleteModal(false);
     } catch (error) {
       console.error('Failed to delete ADR:', error);
@@ -101,13 +107,17 @@ export function ADRCard({ adr, onAnalyze, onDelete, onPushToRAG, onExport, cache
       return;
     }
 
-    onPushToRAG(adr.metadata.id);
+    onPushToRAG(currentAdr.metadata.id);
     // Don't optimistically update - wait for WebSocket to confirm upload status
     // The upload status hook will handle showing "Processing RAG..." state
   };
 
   const handleExport = () => {
-    onExport(adr.metadata.id);
+    onExport(currentAdr.metadata.id);
+  };
+
+  const handleADRUpdate = (updatedAdr: ADR) => {
+    setCurrentAdr(updatedAdr);
   };
 
   const getStatusColor = (status: string) => {
@@ -120,6 +130,8 @@ export function ADRCard({ adr, onAnalyze, onDelete, onPushToRAG, onExport, cache
         return 'bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-300';
       case 'deprecated':
         return 'bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-300';
+      case 'superseded':
+        return 'bg-purple-100 dark:bg-purple-900/30 text-purple-800 dark:text-purple-300';
       default:
         return 'bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-300';
     }
@@ -127,7 +139,7 @@ export function ADRCard({ adr, onAnalyze, onDelete, onPushToRAG, onExport, cache
 
   const handleCardClick = () => {
     if (selectionMode && onToggleSelection) {
-      onToggleSelection(adr.metadata.id);
+      onToggleSelection(currentAdr.metadata.id);
     }
   };
 
@@ -151,7 +163,7 @@ export function ADRCard({ adr, onAnalyze, onDelete, onPushToRAG, onExport, cache
             <input
               type="checkbox"
               checked={isSelected}
-              onChange={() => onToggleSelection?.(adr.metadata.id)}
+              onChange={() => onToggleSelection?.(currentAdr.metadata.id)}
               className="w-5 h-5 text-blue-600 bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 rounded focus:ring-blue-500 focus:ring-2 cursor-pointer"
             />
           </div>
@@ -159,21 +171,21 @@ export function ADRCard({ adr, onAnalyze, onDelete, onPushToRAG, onExport, cache
 
         <div className="flex justify-between items-start mb-4">
           <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 line-clamp-2">
-            {adr.metadata.title}
+            {currentAdr.metadata.title}
           </h3>
           {!selectionMode && (
-            <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(adr.metadata.status)}`}>
-              {adr.metadata.status}
+            <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(currentAdr.metadata.status)}`}>
+              {currentAdr.metadata.status}
             </span>
           )}
         </div>
 
         <p className="text-gray-600 dark:text-gray-400 text-sm mb-4 line-clamp-3">
-          {adr.content.context_and_problem}
+          {currentAdr.content.context_and_problem}
         </p>
 
         <div className="flex flex-wrap gap-1 mb-4">
-          {adr.metadata.tags.slice(0, 3).map((tag) => (
+          {currentAdr.metadata.tags.slice(0, 3).map((tag) => (
             <span
               key={tag}
               className="px-2 py-1 bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 text-xs rounded-md"
@@ -181,16 +193,16 @@ export function ADRCard({ adr, onAnalyze, onDelete, onPushToRAG, onExport, cache
               {tag}
             </span>
           ))}
-          {adr.metadata.tags.length > 3 && (
+          {currentAdr.metadata.tags.length > 3 && (
             <span className="px-2 py-1 bg-gray-50 dark:bg-gray-700 text-gray-600 dark:text-gray-400 text-xs rounded-md">
-              +{adr.metadata.tags.length - 3} more
+              +{currentAdr.metadata.tags.length - 3} more
             </span>
           )}
         </div>
 
         <div className="flex justify-between items-center text-sm text-gray-500 dark:text-gray-400 mb-4">
-          <span>By {adr.metadata.author}</span>
-          <span>{new Date(adr.metadata.created_at).toLocaleDateString()}</span>
+          <span>By {currentAdr.metadata.author}</span>
+          <span>{new Date(currentAdr.metadata.created_at).toLocaleDateString()}</span>
         </div>
 
         {/* Hide buttons in selection mode */}
@@ -296,16 +308,17 @@ export function ADRCard({ adr, onAnalyze, onDelete, onPushToRAG, onExport, cache
 
       {showModal && (
         <ADRModal
-          adr={adr}
+          adr={currentAdr}
           onClose={() => setShowModal(false)}
           onAnalyze={handleAnalyze}
           isAnalyzing={isAnalyzing}
+          onADRUpdate={handleADRUpdate}
         />
       )}
 
       {showDeleteModal && (
         <DeleteConfirmationModal
-          adrTitle={adr.metadata.title}
+          adrTitle={currentAdr.metadata.title}
           onConfirm={handleDelete}
           onCancel={() => setShowDeleteModal(false)}
           isDeleting={isDeleting}
