@@ -38,6 +38,8 @@ vi.mock('@/lib/api', () => ({
     getCacheStatus: vi.fn(),
     getADRRAGStatus: vi.fn(),
     exportADR: vi.fn(),
+    getQueueStatus: vi.fn(),
+    getQueueTasks: vi.fn(),
   },
 }));
 
@@ -89,6 +91,13 @@ describe('Home Page', () => {
     (apiClient.getGenerationTaskStatus as any).mockResolvedValue({ status: 'completed' });
     (apiClient.getCacheStatus as any).mockResolvedValue({ is_rebuilding: false });
     (apiClient.getADRRAGStatus as any).mockResolvedValue({ exists_in_rag: false });
+    (apiClient.getQueueStatus as any).mockResolvedValue({ 
+      total_tasks: 0, 
+      active_tasks: 0, 
+      pending_tasks: 0, 
+      workers_online: 1 
+    });
+    (apiClient.getQueueTasks as any).mockResolvedValue([]);
   });
 
   it('should load and display ADRs on mount', async () => {
