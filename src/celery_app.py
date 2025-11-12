@@ -34,6 +34,10 @@ celery_app.conf.update(
     worker_prefetch_multiplier=1,
     task_acks_late=True,
     worker_disable_rate_limits=False,
+    # Fix for slow inspect API - increase broker connection pool
+    # See: https://github.com/celery/celery/issues/5139
+    broker_pool_limit=100,  # No limit on broker connections
+    broker_connection_retry_on_startup=True,
 )
 
 # Periodic tasks
@@ -49,11 +53,26 @@ celery_app.conf.beat_schedule = {
 def analyze_adr_task(self, adr_id: str, persona: str = None):
     """Celery task for ADR analysis."""
     try:
+        import asyncio
+        from src.websocket_broadcaster import get_broadcaster
+
+        # Publish task started status
+        async def _publish_status(status: str, message: str):
+            broadcaster = get_broadcaster()
+            await broadcaster.publish_task_status(
+                task_id=self.request.id,
+                task_name="analyze_adr_task",
+                status=status,
+                position=None,
+                message=message,
+            )
+
+        asyncio.run(_publish_status("active", f"Analyzing ADR {adr_id}"))
+
         self.update_state(state="PROGRESS", meta={"message": "Initializing analysis service"})
 
         # For demo purposes, simulate analysis without external dependencies
         # In production, this would connect to actual Llama.cpp and LightRAG services
-        import asyncio
         import time
 
         # Simulate processing time
@@ -78,9 +97,29 @@ def analyze_adr_task(self, adr_id: str, persona: str = None):
 
         self.update_state(state="PROGRESS", meta={"message": "Analysis completed"})
 
+        asyncio.run(
+            _publish_status("completed", f"Analysis completed for ADR {adr_id}")
+        )
+
         return result
 
     except Exception as e:
+        import asyncio
+        from src.websocket_broadcaster import get_broadcaster
+
+        # Publish task failed status
+        async def _publish_failed():
+            broadcaster = get_broadcaster()
+            await broadcaster.publish_task_status(
+                task_id=self.request.id,
+                task_name="analyze_adr_task",
+                status="failed",
+                position=None,
+                message=f"Error: {str(e)}",
+            )
+
+        asyncio.run(_publish_failed())
+
         self.update_state(state="FAILURE", meta={"error": str(e)})
         raise
 
@@ -97,6 +136,31 @@ def generate_adr_task(self, prompt: str, context: str = None, tags: list = None,
         from src.models import ADRGenerationPrompt, ADR, ADRMetadata, ADRContent, ADRStatus
         from src.adr_file_storage import get_adr_storage
         from datetime import datetime, UTC
+        from src.websocket_broadcaster import get_broadcaster
+
+        # Publish task started status
+        async def _publish_task_started():
+            broadcaster = get_broadcaster()
+            await broadcaster.publish_task_status(
+                task_id=self.request.id,
+                task_name="generate_adr_task",
+                status="active",
+                position=None,
+                message="Starting ADR generation",
+            )
+
+            # Track task in monitor for fast queue status
+            from src.task_queue_monitor import get_task_queue_monitor
+
+            monitor = get_task_queue_monitor()
+            await monitor.track_task_started(
+                task_id=self.request.id,
+                task_name="generate_adr_task",
+                args=(prompt,),
+                kwargs={"context": context, "personas": personas},
+            )
+
+        asyncio.run(_publish_task_started())
 
         self.update_state(state="PROGRESS", meta={"message": "Initializing ADR generation service"})
 
@@ -391,7 +455,7 @@ Considered Options:
                 logger.warning(f"Failed to push ADR to LightRAG: {e}")
 
             # Convert ADR to the expected return format
-            return {
+            return_data = {
                 "id": str(adr.metadata.id),
                 "title": adr.metadata.title,
                 "context_and_problem": adr.content.context_and_problem,
@@ -413,11 +477,42 @@ Considered Options:
                 ),
             }
 
+            # Publish task completed status
+            broadcaster = get_broadcaster()
+            await broadcaster.publish_task_status(
+                task_id=self.request.id,
+                task_name="generate_adr_task",
+                status="completed",
+                position=None,
+                message=f"ADR generated: {adr.metadata.title}",
+            )
+
+            # Track task completion in monitor
+            from src.task_queue_monitor import get_task_queue_monitor
+
+            monitor = get_task_queue_monitor()
+            await monitor.track_task_completed(self.request.id)
+
+            return return_data
+
         # Run the async generation
         result = asyncio.run(_generate())
         return result
 
     except Exception as e:
+        # Publish task failed status
+        async def _publish_task_failed():
+            broadcaster = get_broadcaster()
+            await broadcaster.publish_task_status(
+                task_id=self.request.id,
+                task_name="generate_adr_task",
+                status="failed",
+                position=None,
+                message=f"Error: {str(e)}",
+            )
+
+        asyncio.run(_publish_task_failed())
+
         # Properly handle exceptions for Celery serialization
         error_msg = str(e)
         self.update_state(state="FAILURE", meta={"error": error_msg})

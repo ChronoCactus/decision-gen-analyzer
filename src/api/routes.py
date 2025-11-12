@@ -103,6 +103,7 @@ adr_router = APIRouter()
 analysis_router = APIRouter()
 generation_router = APIRouter()
 config_router = APIRouter()
+queue_router = APIRouter()
 
 
 @adr_router.websocket("/ws/cache-status")
@@ -213,11 +214,11 @@ async def list_adrs(limit: int = 50, offset: int = 0):
     """List all ADRs."""
     try:
         from src.adr_file_storage import get_adr_storage
-        
-        # Get ADRs from file storage
+
+        # Get ADRs from file storage (run in thread pool - blocking file I/O)
         storage = get_adr_storage()
-        adrs, total = storage.list_adrs(limit=limit, offset=offset)
-        
+        adrs, total = await asyncio.to_thread(storage.list_adrs, limit, offset)
+
         # If no ADRs in storage, return demo ADRs
         if total == 0:
             from src.models import ADR, ADRMetadata, ADRContent, ADRStatus
@@ -296,8 +297,8 @@ async def delete_adr(adr_id: str):
 
         storage = get_adr_storage()
 
-        # Delete from file storage
-        deleted_from_storage = storage.delete_adr(adr_id)
+        # Delete from file storage (run in thread pool - uses blocking file I/O)
+        deleted_from_storage = await asyncio.to_thread(storage.delete_adr, adr_id)
 
         if not deleted_from_storage:
             raise HTTPException(status_code=404, detail=f"ADR {adr_id} not found")
@@ -643,7 +644,15 @@ async def get_generation_task_status(task_id: str):
     """Get the status of a generation task."""
     try:
         from src.celery_app import celery_app
+        from src.logger import get_logger
+
+        logger = get_logger(__name__)
         task_result = celery_app.AsyncResult(task_id)
+
+        # Debug logging
+        logger.info(f"Task {task_id} state: {task_result.state}")
+        logger.info(f"Task {task_id} result: {task_result.result}")
+        logger.info(f"Task {task_id} info: {task_result.info}")
 
         if task_result.state == "PENDING":
             response = {"status": "pending", "message": "Task is waiting in queue"}
@@ -661,8 +670,27 @@ async def get_generation_task_status(task_id: str):
                 "message": f'✓ "{title}" generated successfully',
                 "result": task_result.result,
             }
+        elif task_result.state == "FAILURE":
+            # Handle actual failures with proper error message
+            error_msg = (
+                str(task_result.info.get("error", "Unknown error"))
+                if isinstance(task_result.info, dict)
+                else str(task_result.info)
+            )
+            response = {
+                "status": "failed",
+                "message": "Generation failed",
+                "error": error_msg,
+            }
         else:
-            response = {"status": "failed", "message": "Generation failed", "error": str(task_result.info)}
+            # Unknown state - log and return info
+            logger.warning(f"Unknown task state {task_result.state} for task {task_id}")
+            response = {
+                "status": "unknown",
+                "message": f"Unknown task state: {task_result.state}",
+                "state": task_result.state,
+                "info": str(task_result.info),
+            }
 
         return response
     except Exception as e:
@@ -958,3 +986,177 @@ async def import_single_adr(request: ImportRequest):
     except Exception as e:
         logger.error(f"Failed to import ADR: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to import ADR: {str(e)}")
+
+
+# ==================== Queue Management Endpoints ====================
+
+
+@queue_router.get("/status")
+async def get_queue_status():
+    """Get overall queue status including task counts and worker status.
+
+    Now uses fast Redis queries (<10ms) instead of slow Celery inspect API.
+
+    Returns:
+        {
+            "total_tasks": int,
+            "active_tasks": int,
+            "pending_tasks": int,
+            "reserved_tasks": int,
+            "workers_online": int
+        }
+    """
+    try:
+        from src.task_queue_monitor import get_task_queue_monitor
+
+        monitor = get_task_queue_monitor()
+
+        # Get queue status (now instant with Redis - no caching needed)
+        queue_status = monitor.get_queue_status()
+
+        return {
+            "total_tasks": queue_status.total_tasks,
+            "active_tasks": queue_status.active_tasks,
+            "pending_tasks": queue_status.pending_tasks,
+            "reserved_tasks": queue_status.reserved_tasks,
+            "workers_online": queue_status.workers_online,
+        }
+    except Exception as e:
+        logger.error(f"Failed to get queue status: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to get queue status: {str(e)}"
+        )
+
+
+@queue_router.get("/tasks")
+async def get_queue_tasks():
+    """Get all tasks currently in the queue (active, pending, and scheduled).
+
+    Returns cached data immediately to avoid blocking. The periodic broadcaster
+    updates the cache every few seconds.
+
+    Returns:
+        {
+            "tasks": [
+                {
+                    "task_id": str,
+                    "task_name": str,
+                    "status": str,  // "active", "pending", "scheduled"
+                    "position": int | null,  // Queue position (null if active)
+                    "args": tuple,
+                    "kwargs": dict,
+                    "worker": str | null
+                }
+            ]
+        }
+    """
+    try:
+        from src.task_queue_monitor import get_task_queue_monitor
+
+        monitor = get_task_queue_monitor()
+
+        # Get all active tasks (now instant - just returns in-memory dict)
+        tasks = monitor.get_all_tasks()
+
+        return {
+            "tasks": [
+                {
+                    "task_id": task.task_id,
+                    "task_name": task.task_name,
+                    "status": task.status,
+                    "position": task.position,
+                    "args": task.args,
+                    "kwargs": task.kwargs,
+                    "worker": task.worker,
+                    "started_at": task.started_at,
+                    "eta": task.eta,
+                }
+                for task in tasks
+            ]
+        }
+    except Exception as e:
+        logger.error(f"Failed to get queue tasks: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to get queue tasks: {str(e)}"
+        )
+
+
+@queue_router.get("/task/{task_id}")
+async def get_task_info(task_id: str):
+    """Get information about a specific task.
+
+    Returns:
+        {
+            "task_id": str,
+            "task_name": str,
+            "status": str,
+            "position": int | null,
+            "args": tuple,
+            "kwargs": dict
+        }
+    """
+    try:
+        from src.task_queue_monitor import get_task_queue_monitor
+
+        monitor = get_task_queue_monitor()
+        # Run blocking Celery inspect call in thread pool to avoid blocking event loop
+        task = await asyncio.to_thread(monitor.get_task_info, task_id)
+
+        if task is None:
+            raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
+
+        return {
+            "task_id": task.task_id,
+            "task_name": task.task_name,
+            "status": task.status,
+            "position": task.position,
+            "args": task.args,
+            "kwargs": task.kwargs,
+            "worker": task.worker,
+            "started_at": task.started_at,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to get task info: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to get task info: {str(e)}"
+        )
+
+
+@queue_router.post("/task/{task_id}/cancel")
+async def cancel_task(task_id: str, terminate: bool = False):
+    """Cancel a task in the queue.
+
+    Args:
+        task_id: The task ID to cancel
+        terminate: If True, forcefully terminate the task if it's already running
+
+    Returns:
+        {
+            "message": str,
+            "task_id": str,
+            "cancelled": bool
+        }
+    """
+    try:
+        from src.task_queue_monitor import get_task_queue_monitor
+
+        monitor = get_task_queue_monitor()
+        success = monitor.revoke_task(task_id, terminate=terminate)
+
+        if success:
+            return {
+                "message": f"Task {task_id} cancelled successfully",
+                "task_id": task_id,
+                "cancelled": True,
+            }
+        else:
+            raise HTTPException(
+                status_code=500, detail=f"Failed to cancel task {task_id}"
+            )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to cancel task: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to cancel task: {str(e)}")

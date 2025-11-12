@@ -6,8 +6,10 @@ import { apiClient } from '@/lib/api';
 import { ADRCard } from '@/components/ADRCard';
 import { GenerateADRModal } from '@/components/GenerateADRModal';
 import { ImportExportModal } from '@/components/ImportExportModal';
+import { QueueViewerModal } from '@/components/QueueViewerModal';
 import { Toast } from '@/components/Toast';
 import { useCacheStatusWebSocket } from '@/hooks/useCacheStatusWebSocket';
+import { useTaskQueueWebSocket } from '@/hooks/useTaskQueueWebSocket';
 
 export default function Home() {
   const [adrs, setAdrs] = useState<ADR[]>([]);
@@ -15,6 +17,7 @@ export default function Home() {
   const [error, setError] = useState<string | null>(null);
   const [showGenerateModal, setShowGenerateModal] = useState(false);
   const [showImportExportModal, setShowImportExportModal] = useState(false);
+  const [showQueueViewer, setShowQueueViewer] = useState(false);
   const [tasks, setTasks] = useState<Record<string, { status: string; message: string; startTime?: number }>>({});
   const [generationStartTime, setGenerationStartTime] = useState<number | undefined>(undefined);
   const [isGenerating, setIsGenerating] = useState(false);
@@ -34,6 +37,9 @@ export default function Home() {
 
   // Use WebSocket for real-time cache status updates
   const { isRebuilding: cacheRebuilding, lastSyncTime, isConnected: wsConnected } = useCacheStatusWebSocket();
+
+  // Use WebSocket for real-time queue status updates
+  const { queueStatus } = useTaskQueueWebSocket();
 
   useEffect(() => {
     loadADRs();
@@ -444,9 +450,20 @@ export default function Home() {
               <>
                 <button
                   onClick={() => setShowImportExportModal(true)}
-                  className="bg-indigo-600 text-white px-4 py-2 rounded-md hover:bg-indigo-700 font-medium text-sm"
+                  className="bg-purple-600 text-white px-4 py-2 rounded-md hover:bg-purple-700 font-medium text-sm"
                 >
                   Import/Export
+                </button>
+                <button
+                  onClick={() => setShowQueueViewer(true)}
+                  className="bg-indigo-600 text-white px-4 py-2 rounded-md hover:bg-indigo-700 font-medium text-sm relative"
+                >
+                  View Queue
+                  {queueStatus.total_tasks > 0 && (
+                    <span className="absolute -top-2 -right-2 bg-red-500 text-white text-xs font-bold rounded-full h-5 w-5 flex items-center justify-center">
+                      {queueStatus.total_tasks}
+                    </span>
+                  )}
                 </button>
                 <button
                   onClick={toggleSelectionMode}
@@ -651,6 +668,17 @@ export default function Home() {
             onExportAll={handleExportAll}
             onImportSuccess={handleImportSuccess}
             onExportSuccess={handleExportSuccess}
+          />
+        )}
+
+        {/* Queue Viewer Modal */}
+        {showQueueViewer && (
+          <QueueViewerModal
+            onClose={() => setShowQueueViewer(false)}
+            totalTasks={queueStatus.total_tasks}
+            activeTasks={queueStatus.active_tasks}
+            pendingTasks={queueStatus.pending_tasks}
+            workersOnline={queueStatus.workers_online}
           />
         )}
 

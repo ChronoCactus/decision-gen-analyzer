@@ -101,6 +101,104 @@ class WebSocketManager:
                 recipients=len(self.active_connections),
             )
 
+    async def broadcast_queue_status(
+        self,
+        total_tasks: int,
+        active_tasks: int,
+        pending_tasks: int,
+        workers_online: int,
+    ):
+        """Broadcast queue status to all connected clients.
+
+        Args:
+            total_tasks: Total number of tasks in queue
+            active_tasks: Number of currently executing tasks
+            pending_tasks: Number of tasks waiting to execute
+            workers_online: Number of active Celery workers
+        """
+        ws_message = {
+            "type": "queue_status",
+            "total_tasks": total_tasks,
+            "active_tasks": active_tasks,
+            "pending_tasks": pending_tasks,
+            "workers_online": workers_online,
+        }
+
+        disconnected = set()
+        for connection in self.active_connections:
+            try:
+                await connection.send_json(ws_message)
+            except Exception as e:
+                logger.warning(
+                    "Failed to send queue status to WebSocket client",
+                    error=str(e),
+                    error_type=type(e).__name__,
+                )
+                disconnected.add(connection)
+
+        # Clean up disconnected clients
+        for connection in disconnected:
+            self.disconnect(connection)
+
+        if self.active_connections:
+            logger.debug(
+                "Broadcasted queue status",
+                total_tasks=total_tasks,
+                active_tasks=active_tasks,
+                recipients=len(self.active_connections),
+            )
+
+    async def broadcast_task_status(
+        self,
+        task_id: str,
+        task_name: str,
+        status: str,
+        position: int = None,
+        message: str = None,
+    ):
+        """Broadcast individual task status to all connected clients.
+
+        Args:
+            task_id: The Celery task ID
+            task_name: Name of the task (e.g., "generate_adr_task")
+            status: Task status: "queued", "active", "completed", "failed"
+            position: Position in queue (0-indexed, None if active)
+            message: Optional status message
+        """
+        ws_message = {
+            "type": "task_status",
+            "task_id": task_id,
+            "task_name": task_name,
+            "status": status,
+            "position": position,
+            "message": message,
+        }
+
+        disconnected = set()
+        for connection in self.active_connections:
+            try:
+                await connection.send_json(ws_message)
+            except Exception as e:
+                logger.warning(
+                    "Failed to send task status to WebSocket client",
+                    error=str(e),
+                    error_type=type(e).__name__,
+                )
+                disconnected.add(connection)
+
+        # Clean up disconnected clients
+        for connection in disconnected:
+            self.disconnect(connection)
+
+        if self.active_connections:
+            logger.debug(
+                "Broadcasted task status",
+                task_id=task_id,
+                status=status,
+                position=position,
+                recipients=len(self.active_connections),
+            )
+
 
 # Global WebSocket manager instance
 _websocket_manager: WebSocketManager = None

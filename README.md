@@ -1,6 +1,6 @@
-# Decision Analyzer
+# Decision Generator Analyzer
 
-AI-powered system for analyzing Architectural Decision Records (ADRs) using multiple personas and vector-based retrieval.
+AI-powered system for generating and analyzing Architectural Decision Records (ADRs) using multiple personas and vector-based retrieval.
 
 ## Features
 

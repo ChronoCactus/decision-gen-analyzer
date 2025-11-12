@@ -272,6 +272,56 @@ class ApiClient {
     results.message = `Import completed: ${results.imported_count} imported, ${results.skipped_count} skipped`;
     return results;
   }
+
+  // Queue operations
+  async getQueueStatus(): Promise<{
+    total_tasks: number;
+    active_tasks: number;
+    pending_tasks: number;
+    reserved_tasks: number;
+    workers_online: number;
+  }> {
+    return this.request('/api/v1/queue/status');
+  }
+
+  async getQueueTasks(): Promise<{
+    tasks: Array<{
+      task_id: string;
+      task_name: string;
+      status: string;
+      position: number | null;
+      args: unknown[];
+      kwargs: Record<string, unknown>;
+      worker: string | null;
+      started_at: number | null;
+      eta: string | null;
+    }>;
+  }> {
+    return this.request('/api/v1/queue/tasks');
+  }
+
+  async getTaskInfo(taskId: string): Promise<{
+    task_id: string;
+    task_name: string;
+    status: string;
+    position: number | null;
+    args: unknown[];
+    kwargs: Record<string, unknown>;
+    worker: string | null;
+    started_at: number | null;
+  }> {
+    return this.request(`/api/v1/queue/task/${taskId}`);
+  }
+
+  async cancelTask(taskId: string, terminate: boolean = false): Promise<{
+    message: string;
+    task_id: string;
+    cancelled: boolean;
+  }> {
+    return this.request(`/api/v1/queue/task/${taskId}/cancel?terminate=${terminate}`, {
+      method: 'POST',
+    });
+  }
 }
 
 export const apiClient = new ApiClient();
