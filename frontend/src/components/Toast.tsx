@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 
 interface ToastProps {
   message: string;
@@ -11,13 +11,20 @@ interface ToastProps {
 }
 
 export function Toast({ message, type = 'info', onClose, duration = 5000, position = 'bottom' }: ToastProps) {
+  const onCloseRef = useRef(onClose);
+  
+  // Keep the ref updated
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  }, [onClose]);
+
   useEffect(() => {
     const timer = setTimeout(() => {
-      onClose();
+      onCloseRef.current();
     }, duration);
 
     return () => clearTimeout(timer);
-  }, [onClose, duration]);
+  }, [duration]); // Only re-run if duration changes
 
   const bgColor = {
     info: 'bg-blue-600',
