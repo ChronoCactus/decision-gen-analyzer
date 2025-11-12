@@ -77,6 +77,60 @@ async def _celery_task():
 
 **CRITICAL**: Never call `get_websocket_manager()` from Celery tasks - it will have `active_connections=0` because connections are in the FastAPI process. Always use `get_broadcaster()` instead.
 
+### Task Queue Visibility (Real-Time Monitoring)
+
+**Purpose**: Real-time WebSocket-based monitoring of Celery task queue with Redis-backed cross-process tracking.
+
+**Architecture**: Replaced slow Celery inspect API (2-8 second blocking calls) with direct Redis queries for <10ms response times.
+
+**Key Components**:
+- `src/task_queue_monitor.py` - Redis-based task tracking
+  - `get_queue_status()` - Instant queue stats: `redis.llen("celery")` for pending, `redis.hlen("queue:active_tasks")` for active
+  - `track_task_started()` - Stores task JSON in Redis hash `"queue:active_tasks"` (async, broadcasts immediately)
+  - `track_task_completed()` - Removes from Redis hash (async, broadcasts immediately)
+  - `get_all_tasks()` - Returns all active tasks from Redis hash
+- `src/queue_status_broadcaster.py` - Periodic background broadcaster (30s interval for supplementary updates)
+- API endpoints: `/api/v1/queue/status`, `/api/v1/queue/tasks` (instant <10ms responses)
+
+**Cross-Process Task Tracking**:
+```python
+# In Celery tasks (src/celery_app.py)
+from src.task_queue_monitor import get_task_queue_monitor
+
+async def _task():
+    monitor = get_task_queue_monitor()
+    
+    # When task starts
+    await monitor.track_task_started(
+        task_id=self.request.id,
+        task_name="generate_adr_task",
+        args=("context",),
+        kwargs={"personas": ["technical_lead"]}
+    )
+    
+    # When task completes
+    await monitor.track_task_completed(self.request.id)
+```
+
+**Frontend Integration**:
+- `useTaskQueueWebSocket` hook - Receives real-time updates, tracks tasks in memory
+- `QueueViewerModal` component - Shows all active tasks with elapsed time
+- Badge on "View Queue" button updates instantly via WebSocket
+
+**Redis Schema**:
+- Queue length: `redis.llen("celery")` - Celery's default queue key
+- Active tasks: `redis.hash("queue:active_tasks")` - Custom cross-process tracking
+  - Key: task_id
+  - Value: JSON with {task_id, task_name, status, args, kwargs, started_at}
+
+**Message Types** (via Redis pub/sub → WebSocket):
+- `queue_status`: `{type: "queue_status", total_tasks: int, active_tasks: int, pending_tasks: int, workers_online: int}`
+- `task_status`: `{type: "task_status", task_id: str, task_name: str, status: "active"|"completed"|"failed", position: int|null, message: str}`
+
+**Performance**: All queue operations <10ms (was 2000-8000ms with Celery inspect). Tasks broadcast status changes immediately on start/complete, plus periodic broadcaster every 30s for drift correction.
+
+**CRITICAL**: Task tracking methods are **async** - must be awaited in Celery task async functions. Redis hash stores tasks cross-process, enabling FastAPI and Celery worker to share real-time task state.
+
 ### External Services (Network Dependencies)
 
 #### LLM Services (LangChain-Based)
@@ -414,8 +468,12 @@ Documents stored with `doc_id` as ADR UUID. Content includes:
 - `src/models.py` - All Pydantic data models, enums
 - `src/adr_generation.py` - Core generation service with persona orchestration and parallel processing
 - `src/llama_client.py` - LLM client and client pool for parallel requests
-- `src/celery_app.py` - Task definitions, consequences parsing logic
-- `src/api/routes.py` - All REST endpoints
+- `src/celery_app.py` - Task definitions, consequences parsing logic, task tracking integration
+- `src/api/routes.py` - All REST endpoints including queue management
+- `src/task_queue_monitor.py` - Redis-based task queue monitoring (replaces slow Celery inspect)
+- `src/websocket_broadcaster.py` - Redis pub/sub for cross-process WebSocket messages
+- `src/websocket_manager.py` - WebSocket connection manager (FastAPI process only)
 - `config/personas/*.json` - Persona configurations
 - `docker-compose.yml` - Service definitions and network config
 - `docs/PARALLEL_PROCESSING.md` - Multi-backend configuration guide
+- `docs/TASK_QUEUE_VISIBILITY.md` - Task queue monitoring implementation details

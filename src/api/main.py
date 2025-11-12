@@ -14,7 +14,13 @@ from src.adr_generation import ADRGenerationService
 from src.lightrag_client import LightRAGClient
 from src.llama_client import LlamaCppClient
 from src.celery_app import celery_app
-from src.api.routes import adr_router, analysis_router, generation_router, config_router
+from src.api.routes import (
+    adr_router,
+    analysis_router,
+    generation_router,
+    config_router,
+    queue_router,
+)
 from src.logger import get_logger
 from src.config import get_settings
 from src.lightrag_sync import sync_lightrag_cache_task
@@ -54,6 +60,15 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     sync_task = asyncio.create_task(sync_lightrag_cache_task(interval_seconds=300))
     logger.info("Started LightRAG cache sync background task")
 
+    # Start queue status broadcaster background task
+    # Runs every 30 seconds to refresh cache (inspect calls are slow)
+    from src.queue_status_broadcaster import broadcast_queue_status_periodically
+
+    queue_broadcast_task = asyncio.create_task(
+        broadcast_queue_status_periodically(interval_seconds=30)
+    )
+    logger.info("Started queue status broadcaster background task (30s interval)")
+
     yield
 
     # Cleanup on shutdown
@@ -73,6 +88,19 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     sync_task.cancel()
     try:
         await sync_task
+    except asyncio.CancelledError:
+        logger.info("LightRAG cache sync task cancelled")
+    except Exception as e:
+        logger.error("Error stopping cache sync task", error=str(e))
+
+    # Cancel queue broadcast task
+    queue_broadcast_task.cancel()
+    try:
+        await queue_broadcast_task
+    except asyncio.CancelledError:
+        logger.info("Queue status broadcaster task cancelled")
+    except Exception as e:
+        logger.error("Error stopping queue broadcast task", error=str(e))
     except asyncio.CancelledError:
         logger.info("LightRAG cache sync task cancelled")
     except Exception as e:
@@ -122,6 +150,7 @@ def create_application() -> FastAPI:
     app.include_router(analysis_router, prefix="/api/v1/analysis", tags=["Analysis"])
     app.include_router(generation_router, prefix="/api/v1/generation", tags=["Generation"])
     app.include_router(config_router, prefix="/api/v1", tags=["Configuration"])
+    app.include_router(queue_router, prefix="/api/v1/queue", tags=["Queue"])
 
     @app.get("/health")
     async def health_check():
