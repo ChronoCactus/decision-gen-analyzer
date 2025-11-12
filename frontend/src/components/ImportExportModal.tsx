@@ -79,7 +79,7 @@ export function ImportExportModal({ onClose, onImport, onExportAll, onImportSucc
     setTimeout(() => {
       onExportSuccess?.();
       onClose();
-    }, 300);
+    }, 50);
   };
 
   const removeFile = (index: number) => {
