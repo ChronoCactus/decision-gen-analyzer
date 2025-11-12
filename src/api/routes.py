@@ -33,6 +33,7 @@ class GenerateADRRequest(BaseModel):
     context: Optional[str] = None
     tags: Optional[List[str]] = None
     personas: Optional[List[str]] = None  # List of persona names
+    retrieval_mode: Optional[str] = "naive"  # RAG retrieval mode
 
 class TaskResponse(BaseModel):
     """Response model for queued tasks."""
@@ -657,7 +658,8 @@ async def generate_adr(request: GenerateADRRequest, background_tasks: Background
             prompt=request.prompt,
             context=request.context,
             tags=request.tags or [],
-            personas=request.personas or []
+            personas=request.personas or [],
+            retrieval_mode=request.retrieval_mode or "naive",
         )
 
         return TaskResponse(

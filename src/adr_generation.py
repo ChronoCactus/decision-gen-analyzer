@@ -124,17 +124,29 @@ class ADRGenerationService:
             # Query vector database for related ADRs
             async with self.lightrag_client:
                 documents = await self.lightrag_client.retrieve_documents(
-                    query=search_query, limit=5, metadata_filter={"type": "adr"}
+                    query=search_query,
+                    limit=5,
+                    metadata_filter={"type": "adr"},
+                    mode=prompt.retrieval_mode,
                 )
 
             # Extract relevant context and ADR info
             related_context = []
             referenced_adr_info = []
 
+            # Track entities and relationships across all documents
+            all_entities = []
+            all_relationships = []
+
+            related_context.append("**Related Architectural Decision Records (ADRs):**")
             for doc in documents:
-                # Add the document content as context
-                if "content" in doc:
-                    related_context.append(doc["content"])
+                # Extract structured data if available (entities and relationships)
+                if "structured_data" in doc:
+                    structured = doc["structured_data"]
+                    if "entities" in structured:
+                        all_entities.extend(structured["entities"])
+                    if "relationships" in structured:
+                        all_relationships.extend(structured["relationships"])
 
                 # Track the ADR info with ID, title, and summary
                 # Skip the generic "context" document from being listed as a referenced ADR
@@ -146,6 +158,10 @@ class ADRGenerationService:
                 doc_title = doc.get("title", doc_id)
                 doc_content = doc.get("content", "")
 
+                # Add the document content as context
+                if doc_content:
+                    related_context.append(f"**{doc_title}**:\n{doc_content}")
+
                 # Create a 60-character summary
                 summary = doc_content[:60]
                 if len(doc_content) > 60:
@@ -154,6 +170,15 @@ class ADRGenerationService:
                 referenced_adr_info.append(
                     {"id": doc_id, "title": doc_title, "summary": summary}
                 )
+
+            # Format entities and relationships as additional context
+            if all_entities or all_relationships:
+                structured_context = self._format_structured_data(
+                    all_entities, all_relationships
+                )
+                if structured_context:
+                    # Add structured data at the beginning for prominence
+                    related_context.insert(0, structured_context)
 
             logger.info(
                 "Retrieved related ADRs",
@@ -172,6 +197,92 @@ class ADRGenerationService:
                 error_repr=repr(e),
             )
             return [], []
+
+    def _format_structured_data(
+        self, entities: List[Dict[str, Any]], relationships: List[Dict[str, Any]]
+    ) -> str:
+        """Format entities and relationships from knowledge graph into readable context.
+
+        Args:
+            entities: List of entity dictionaries from LightRAG
+            relationships: List of relationship dictionaries from LightRAG
+
+        Returns:
+            Formatted string describing entities and relationships
+        """
+        if not entities and not relationships:
+            return ""
+
+        parts = []
+
+        # Format entities
+        if entities:
+            parts.append("**Key Entities and Concepts:**")
+            # Deduplicate entities by name and sort by relevance (if weight available)
+            seen_entities = {}
+            for entity in entities:
+                name = entity.get("entity_name", "")
+                if name and name not in seen_entities:
+                    entity_type = entity.get("entity_type", "")
+                    description = entity.get("description", "")
+
+                    entity_str = f"- **{name}**"
+                    if entity_type:
+                        entity_str += f" ({entity_type})"
+                    if description:
+                        entity_str += f": {description}"
+
+                    seen_entities[name] = entity_str
+
+            # Add up to 10 most relevant entities
+            for entity_str in list(seen_entities.values())[:10]:
+                parts.append(entity_str)
+
+        # Format relationships
+        if relationships:
+            if entities:
+                parts.append("")  # Add blank line separator
+            parts.append("**Key Relationships:**")
+
+            # Sort by weight (if available) and take top relationships
+            sorted_relationships = sorted(
+                relationships, key=lambda r: r.get("weight", 0.0), reverse=True
+            )
+
+            # Deduplicate and format relationships
+            seen_relationships = set()
+            relationship_count = 0
+
+            for rel in sorted_relationships:
+                if relationship_count >= 10:  # Limit to 10 relationships
+                    break
+
+                src = rel.get("src_id", "")
+                tgt = rel.get("tgt_id", "")
+                desc = rel.get("description", "")
+                keywords = rel.get("keywords", "")
+                weight = rel.get("weight", 0.0)
+
+                # Create a unique key for deduplication
+                rel_key = f"{src}→{tgt}"
+                if rel_key in seen_relationships:
+                    continue
+
+                seen_relationships.add(rel_key)
+
+                if src and tgt:
+                    rel_str = f"- **{src}** → **{tgt}**"
+                    if desc:
+                        rel_str += f": {desc}"
+                    if (
+                        keywords and weight > 0.7
+                    ):  # Only show keywords for high-confidence relationships
+                        rel_str += f" (Keywords: {keywords})"
+
+                    parts.append(rel_str)
+                    relationship_count += 1
+
+        return "\n".join(parts) if parts else ""
 
     async def _generate_persona_perspectives(
         self,
