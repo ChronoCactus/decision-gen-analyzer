@@ -125,7 +125,14 @@ def analyze_adr_task(self, adr_id: str, persona: str = None):
 
 
 @celery_app.task(bind=True)
-def generate_adr_task(self, prompt: str, context: str = None, tags: list = None, personas: list = None):
+def generate_adr_task(
+    self,
+    prompt: str,
+    context: str = None,
+    tags: list = None,
+    personas: list = None,
+    retrieval_mode: str = "local",
+):
     """Celery task for ADR generation."""
     try:
         import asyncio
@@ -195,7 +202,8 @@ def generate_adr_task(self, prompt: str, context: str = None, tags: list = None,
                 title=f"ADR: {prompt[:50]}",
                 context=context or "No additional context provided",
                 problem_statement=prompt,  # The prompt IS the problem statement
-                tags=tags or []
+                tags=tags or [],
+                retrieval_mode=retrieval_mode or "naive",
             )
 
             # Default personas if none provided

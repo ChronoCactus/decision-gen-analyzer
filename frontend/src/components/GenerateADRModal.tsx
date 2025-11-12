@@ -16,6 +16,7 @@ export function GenerateADRModal({ onClose, onGenerate, isGenerating, generation
   const [prompt, setPrompt] = useState('');
   const [context, setContext] = useState('');
   const [tags, setTags] = useState('');
+  const [retrievalMode, setRetrievalMode] = useState('naive');
   const [personas, setPersonas] = useState<Persona[]>([]);
   const [selectedPersonas, setSelectedPersonas] = useState<string[]>([]);
   const [loadingPersonas, setLoadingPersonas] = useState(true);
@@ -101,6 +102,7 @@ export function GenerateADRModal({ onClose, onGenerate, isGenerating, generation
       context: context.trim() || undefined,
       tags: tagArray.length > 0 ? tagArray : undefined,
       personas: selectedPersonas.length > 0 ? selectedPersonas : undefined,
+      retrieval_mode: retrievalMode,
     });
   };
 
@@ -168,6 +170,31 @@ export function GenerateADRModal({ onClose, onGenerate, isGenerating, generation
               />
               <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
                 Optional: Comma-separated tags to categorize the ADR.
+              </p>
+            </div>
+
+            <div>
+              <label htmlFor="retrieval-mode" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                RAG Retrieval Mode
+              </label>
+              <select
+                id="retrieval-mode"
+                value={retrievalMode}
+                onChange={(e) => setRetrievalMode(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              >
+                <option value="naive">Naive - Simple vector similarity search (Recommended)</option>
+                <option value="local">Local - Focused entity-based retrieval</option>
+                <option value="global">Global - Broader pattern analysis across knowledge graph</option>
+                <option value="hybrid">Hybrid - Combines local and global approaches</option>
+                <option value="mix">Mix - Integrates knowledge graph with vector search</option>
+                <option value="bypass">Bypass - Direct LLM query without retrieval</option>
+              </select>
+              <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                Controls how related ADRs are retrieved from the knowledge base. Naive mode uses simple vector similarity without knowledge graph processing.
+              </p>
+              <p className="text-sm text-amber-600 dark:text-amber-400 mt-1">
+                💡 <strong>Tip:</strong> Getting unrelated results? Increase the <code className="px-1 py-0.5 bg-gray-100 dark:bg-gray-700 rounded text-xs">COSINE_THRESHOLD</code> environment variable on your LightRAG deployment (default: 0.2, try 0.3-0.5 for stricter matching).
               </p>
             </div>
 

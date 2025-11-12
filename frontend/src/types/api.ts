@@ -80,6 +80,7 @@ export interface GenerateADRRequest {
   context?: string;
   tags?: string[];
   personas?: string[];
+  retrieval_mode?: string;
 }
 
 export interface Persona {

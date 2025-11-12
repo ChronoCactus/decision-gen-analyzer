@@ -17,6 +17,26 @@ class ADRStatus(str, Enum):
     REJECTED = "rejected"
 
 
+class RetrievalMode(str, Enum):
+    """RAG retrieval modes for LightRAG queries.
+
+    Different modes provide different retrieval strategies:
+    - LOCAL: Focuses on specific entities and their direct relationships
+    - GLOBAL: Analyzes broader patterns and relationships across the knowledge graph
+    - HYBRID: Combines local and global approaches for comprehensive results
+    - NAIVE: Simple vector similarity search without knowledge graph
+    - MIX: Integrates knowledge graph retrieval with vector search (recommended)
+    - BYPASS: Direct LLM query without knowledge retrieval
+    """
+
+    LOCAL = "local"
+    GLOBAL = "global"
+    HYBRID = "hybrid"
+    NAIVE = "naive"
+    MIX = "mix"
+    BYPASS = "bypass"
+
+
 class AnalysisPersona(str, Enum):
     """DEPRECATED: Different personas for ADR analysis.
 
@@ -385,6 +405,10 @@ class ADRGenerationPrompt(BaseModel):
     constraints: Optional[List[str]] = Field(default=None, description="Constraints or requirements")
     stakeholders: Optional[List[str]] = Field(default=None, description="Key stakeholders involved")
     tags: Optional[List[str]] = Field(default=None, description="Relevant tags for categorization")
+    retrieval_mode: str = Field(
+        default="naive",
+        description="RAG retrieval mode: local, global, hybrid, naive, mix, or bypass",
+    )
 
 
 class ADRGenerationOptions(BaseModel):

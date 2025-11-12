@@ -207,9 +207,18 @@ class LightRAGClient:
         self,
         query: str,
         limit: int = 10,
-        metadata_filter: Optional[Dict[str, Any]] = None
+        metadata_filter: Optional[Dict[str, Any]] = None,
+        mode: str = "naive",
     ) -> List[Dict[str, Any]]:
-        """Retrieve documents from LightRAG based on semantic search."""
+        """Retrieve documents from LightRAG based on semantic search.
+
+        Args:
+            query: The search query
+            limit: Maximum number of documents to return
+            metadata_filter: Optional metadata filters
+            mode: Retrieval mode - one of: local, global, hybrid, naive, mix, bypass
+                  Default is 'naive' for simple vector similarity search
+        """
         # Demo mode: return mock related documents
         if self.demo_mode:
             logger.info(
@@ -243,7 +252,11 @@ class LightRAGClient:
             raise RuntimeError("Client not initialized. Use as async context manager.")
 
         # LightRAG uses /query endpoint with mode parameter
-        payload = {"query": query, "mode": "hybrid"}  # Use hybrid mode for best results
+        payload = {
+            "query": query,
+            "mode": mode,
+            "only_need_context": True,
+        }
 
         last_exception = None
         for attempt in range(self.max_retries + 1):
@@ -265,7 +278,22 @@ class LightRAGClient:
 
                 # Extract data from the response
                 data = result.get("data", {}) if isinstance(result, dict) else {}
+                metadata = (
+                    result.get("metadata", {}) if isinstance(result, dict) else {}
+                )
+
                 chunks = data.get("chunks", [])
+                entities = data.get("entities", [])
+                relationships = data.get("relationships", [])
+
+                # Store structured data in metadata for consumers to use
+                structured_data = {}
+                if entities:
+                    structured_data["entities"] = entities
+                if relationships:
+                    structured_data["relationships"] = relationships
+                if metadata:
+                    structured_data["query_metadata"] = metadata
 
                 if chunks:
                     # Group chunks by file_path and deduplicate
@@ -307,6 +335,7 @@ class LightRAGClient:
                                     "file_path": file_path,
                                     "reference_id": chunk_data["reference_id"],
                                 },
+                                "structured_data": structured_data,
                             }
                         )
 
