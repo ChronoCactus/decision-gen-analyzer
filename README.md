@@ -2,6 +2,20 @@
 
 AI-powered system for generating and analyzing Architectural Decision Records (ADRs) using multiple personas and vector-based retrieval.
 
+## Project Progression
+
+This project follows a phased development approach, with each phase representing a major milestone:
+
+| Phase | Status | Description |
+|-------|--------|-------------|
+| **Phase 1: Generation** | 🚧 **In Progress** (v1.x) | Multi-persona ADR generation, import/export, async processing |
+| **Phase 2: Analyzation** | 📅 Planned (v2.x) | Contextual analysis, conflict detection, reasoning validation |
+| **Phase 3: Decision Change Trees** | 📅 Planned (v3.x) | Explicit relationships, dependency graphs, change impact analysis |
+| **Phase 4: Decision Severity Scoring** | 📅 Planned (v4.x) | Quantitative impact scoring, criticality metrics, risk assessment |
+| **Phase 5: Compartmentalization** | 📅 Planned (v5.x) | Enterprise features, RBAC, multi-tenancy, audit logging |
+
+For detailed information about each phase, including planned features, technical objectives, and use cases, see [docs/PHASES.md](docs/PHASES.md).
+
 ## Features
 
 - **Multi-Persona Analysis**: Analyze ADRs from different viewpoints (engineer, customer support, philosopher, etc.)
