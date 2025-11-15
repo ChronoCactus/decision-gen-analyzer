@@ -17,5 +17,10 @@
     "Are there ethical concerns to consider?",
     "Is this decision philosophically sound?",
     "Does this promote sustainable practices?"
-  ]
+  ],
+  "llm_config": {
+    "name": "gpt-oss:20b",
+    "provider": "ollama",
+    "temperature": 0.7
+  }
 }
