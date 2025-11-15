@@ -7,6 +7,7 @@ import { GenerateADRModal } from './GenerateADRModal';
 vi.mock('@/lib/api', () => ({
   apiClient: {
     getPersonas: vi.fn(),
+    getDefaultModelConfig: vi.fn(),
   },
 }));
 
@@ -26,6 +27,11 @@ describe('GenerateADRModal', () => {
     ],
   };
 
+  const mockDefaultModelConfig = {
+    provider: 'ollama',
+    model_name: 'gpt-oss:20b',
+  };
+
   const mockProps = {
     onClose: vi.fn(),
     onGenerate: vi.fn(),
@@ -36,6 +42,7 @@ describe('GenerateADRModal', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     (apiClient.getPersonas as any).mockResolvedValue(mockPersonas);
+    (apiClient.getDefaultModelConfig as any).mockResolvedValue(mockDefaultModelConfig);
   });
 
   it('should render modal with form fields', async () => {

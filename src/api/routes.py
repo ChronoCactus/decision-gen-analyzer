@@ -41,11 +41,33 @@ class TaskResponse(BaseModel):
     status: str
     message: str
 
+
+class ModelConfigInfo(BaseModel):
+    """Model configuration information."""
+
+    name: str
+    provider: Optional[str] = None
+    base_url: Optional[str] = None
+    temperature: Optional[float] = None
+    num_ctx: Optional[int] = None
+
+
 class PersonaInfo(BaseModel):
     """Information about an analysis persona."""
     value: str
     label: str
     description: str
+    llm_config: Optional[ModelConfigInfo] = None
+
+
+class DefaultModelConfig(BaseModel):
+    """Default model configuration from environment."""
+
+    model: str
+    provider: str
+    base_url: str
+    temperature: float
+    num_ctx: int
 
 
 class ConfigResponse(BaseModel):
@@ -201,13 +223,42 @@ async def list_personas():
     all_personas = persona_manager.discover_all_personas()
 
     for persona_value, config in all_personas.items():
+        # Convert model_config to API format if present
+        llm_config_info = None
+        if config.model_config:
+            mc = config.model_config
+            llm_config_info = ModelConfigInfo(
+                name=mc.name,
+                provider=mc.provider,
+                base_url=mc.base_url,
+                temperature=mc.temperature,
+                num_ctx=mc.num_ctx,
+            )
+
         personas.append(
             PersonaInfo(
-                value=persona_value, label=config.name, description=config.description
+                value=persona_value,
+                label=config.name,
+                description=config.description,
+                llm_config=llm_config_info,
             )
         )
 
     return {"personas": personas}
+
+
+@adr_router.get("/config/model")
+async def get_default_model_config():
+    """Get the default model configuration from environment variables."""
+    settings = get_settings()
+
+    return DefaultModelConfig(
+        model=settings.llm_model,
+        provider=settings.llm_provider,
+        base_url=settings.llm_base_url,
+        temperature=settings.llm_temperature,
+        num_ctx=settings.ollama_num_ctx,
+    )
 
 
 @adr_router.get("/", response_model=ADRListResponse)

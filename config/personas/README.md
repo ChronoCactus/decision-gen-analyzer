@@ -35,7 +35,14 @@ Each persona is defined in a JSON file with the following structure:
     "Question or criterion 1?",
     "Question or criterion 2?",
     "..."
-  ]
+  ],
+  "llm_config": {
+    "name": "gpt-oss:20b",
+    "provider": "ollama",
+    "temperature": 0.7,
+    "base_url": "http://localhost:11434/v1",
+    "num_ctx": 64000
+  }
 }
 ```
 
@@ -46,6 +53,31 @@ Each persona is defined in a JSON file with the following structure:
 - **instructions** (string, required): Detailed instructions for the LLM explaining how to analyze decisions from this perspective
 - **focus_areas** (array of strings, required): List of key areas this persona focuses on
 - **evaluation_criteria** (array of strings, required): List of questions or criteria the persona should evaluate
+- **llm_config** (object, optional): Custom LLM configuration for this persona (see below)
+
+### LLM Configuration (Optional)
+
+The `llm_config` field allows you to specify a different LLM model/provider for this persona. If omitted, the persona uses the default model configured via environment variables (`LLM_MODEL`, `LLM_PROVIDER`, etc.).
+
+**All fields in `llm_config` are optional except `name`:**
+
+- **name** (string, required): Model name (e.g., `"gpt-oss:20b"`, `"llama3:70b"`, `"gpt-4"`)
+- **provider** (string, optional): Provider type - one of: `ollama`, `openai`, `openrouter`, `vllm`, `llama_cpp`, `custom`
+  - Defaults to environment variable `LLM_PROVIDER` if not specified
+- **base_url** (string, optional): Base URL for the LLM API endpoint
+  - Defaults to environment variable `LLM_BASE_URL` if not specified
+  - Example: `"http://localhost:11434/v1"` for Ollama
+- **temperature** (number, optional): Generation temperature (0.0 to 1.0)
+  - Defaults to environment variable `LLM_TEMPERATURE` if not specified
+  - Higher values = more creative/random, lower = more focused/deterministic
+- **num_ctx** (integer, optional): Context window size (Ollama-specific)
+  - Defaults to environment variable `OLLAMA_NUM_CTX` if not specified
+  - Example: `64000` for 64K token context window
+
+**UI Visibility:**
+- The model for each persona is shown in the persona selection UI
+- Format: `provider/model` (e.g., "ollama/gpt-oss:20b")
+- Default model is displayed at the top of the Generate ADR modal
 
 ## Default Personas
 

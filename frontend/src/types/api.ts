@@ -83,10 +83,27 @@ export interface GenerateADRRequest {
   retrieval_mode?: string;
 }
 
+export interface ModelConfig {
+  name: string;
+  provider?: string;
+  base_url?: string;
+  temperature?: number;
+  num_ctx?: number;
+}
+
 export interface Persona {
   value: string;
   label: string;
   description: string;
+  llm_config?: ModelConfig;
+}
+
+export interface DefaultModelConfig {
+  model: string;
+  provider: string;
+  base_url: string;
+  temperature: number;
+  num_ctx: number;
 }
 
 export interface TaskResponse {

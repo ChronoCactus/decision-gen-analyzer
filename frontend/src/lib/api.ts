@@ -1,4 +1,4 @@
-import { ADR, ADRListResponse, AnalyzeADRRequest, GenerateADRRequest, TaskResponse, TaskStatus, Persona } from '@/types/api';
+import { ADR, ADRListResponse, AnalyzeADRRequest, GenerateADRRequest, TaskResponse, TaskStatus, Persona, DefaultModelConfig } from '@/types/api';
 
 const DEFAULT_API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
@@ -175,6 +175,10 @@ class ApiClient {
 
   async getPersonas(): Promise<{ personas: Persona[] }> {
     return this.request<{ personas: Persona[] }>('/api/v1/adrs/personas');
+  }
+
+  async getDefaultModelConfig(): Promise<DefaultModelConfig> {
+    return this.request<DefaultModelConfig>('/api/v1/adrs/config/model');
   }
 
   // Analysis operations

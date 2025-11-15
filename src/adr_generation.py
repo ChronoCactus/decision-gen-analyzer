@@ -15,7 +15,11 @@ from src.models import (
     PersonaSynthesisInput,
 )
 from src.persona_manager import PersonaManager, PersonaConfig
-from src.llama_client import LlamaCppClient, LlamaCppClientPool
+from src.llama_client import (
+    LlamaCppClient,
+    LlamaCppClientPool,
+    create_client_from_persona_config,
+)
 from src.lightrag_client import LightRAGClient
 from src.logger import get_logger
 
@@ -307,9 +311,11 @@ class ADRGenerationService:
         if progress_callback:
             progress_callback(f"Generating perspectives from {total_personas} personas")
 
-        # Build prompts for all personas
+        # Build prompts for all personas and create their specific clients
         persona_prompts = []
         persona_configs = []
+        persona_clients = []
+
         for persona_value in personas:
             persona_config = self.persona_manager.get_persona_config(persona_value)
             if persona_config:
@@ -318,26 +324,37 @@ class ADRGenerationService:
                     persona_config, prompt, related_context
                 )
                 persona_prompts.append(system_prompt)
+
+                # Create a client for this persona with its specific model config
+                persona_client = create_client_from_persona_config(
+                    persona_config, demo_mode=False
+                )
+                persona_clients.append(persona_client)
             else:
                 logger.warning(f"Skipping unknown persona: {persona_value}")
 
-        # Use parallel generation if pool is available
-        if self.use_pool:
+        # Use parallel generation if pool is available or if personas have custom models
+        has_custom_models = any(
+            config.model_config is not None for _, config in persona_configs
+        )
+
+        if self.use_pool or has_custom_models:
             logger.info(
                 "Using parallel generation for persona perspectives",
                 persona_count=total_personas,
+                has_custom_models=has_custom_models,
             )
 
             # Create tasks with indices for parallel execution with progress tracking
             async def generate_with_index(
-                idx: int, prompt_text: str
+                idx: int, prompt_text: str, client: LlamaCppClient
             ) -> tuple[int, str]:
                 """Generate response and return with index for ordering."""
                 try:
-                    client = self.llama_client.get_generation_client(idx)
-                    response = await client.generate(
-                        prompt=prompt_text, temperature=0.7, num_predict=2000
-                    )
+                    async with client:
+                        response = await client.generate(
+                            prompt=prompt_text, temperature=0.7, num_predict=2000
+                        )
                     return (idx, response)
                 except Exception as e:
                     logger.warning(
@@ -348,8 +365,10 @@ class ADRGenerationService:
                     return (idx, "")
 
             tasks = [
-                generate_with_index(idx, prompt_text)
-                for idx, prompt_text in enumerate(persona_prompts)
+                generate_with_index(idx, prompt_text, client)
+                for idx, (prompt_text, client) in enumerate(
+                    zip(persona_prompts, persona_clients)
+                )
             ]
 
             # Execute with progress tracking as each completes
@@ -381,15 +400,17 @@ class ADRGenerationService:
                 persona_count=total_personas,
             )
             responses = []
-            for index, system_prompt in enumerate(persona_prompts, 1):
+            for index, (system_prompt, client) in enumerate(
+                zip(persona_prompts, persona_clients), 1
+            ):
                 try:
                     if progress_callback:
                         progress_callback(
                             f"Generating perspective {index}/{total_personas}: {personas[index-1].replace('_', ' ').title()}"
                         )
 
-                    async with self.llama_client:
-                        response = await self.llama_client.generate(
+                    async with client:
+                        response = await client.generate(
                             prompt=system_prompt, temperature=0.7, num_predict=2000
                         )
                     responses.append(response)

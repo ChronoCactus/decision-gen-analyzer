@@ -8,6 +8,43 @@ from dataclasses import dataclass
 
 
 @dataclass
+class ModelConfig:
+    """Configuration for the LLM model used by a persona."""
+
+    name: str  # Model name (e.g., "gpt-oss:20b", "llama3:70b")
+    provider: Optional[str] = (
+        None  # Provider type: ollama, openai, openrouter, vllm, llama_cpp, custom
+    )
+    base_url: Optional[str] = None  # Base URL for the LLM API endpoint
+    temperature: Optional[float] = None  # Temperature for generation (0.0 to 1.0)
+    num_ctx: Optional[int] = None  # Context window size (Ollama-specific)
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "ModelConfig":
+        """Create a ModelConfig from a dictionary."""
+        return cls(
+            name=data["name"],
+            provider=data.get("provider"),
+            base_url=data.get("base_url"),
+            temperature=data.get("temperature"),
+            num_ctx=data.get("num_ctx"),
+        )
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert ModelConfig to a dictionary."""
+        result = {"name": self.name}
+        if self.provider is not None:
+            result["provider"] = self.provider
+        if self.base_url is not None:
+            result["base_url"] = self.base_url
+        if self.temperature is not None:
+            result["temperature"] = self.temperature
+        if self.num_ctx is not None:
+            result["num_ctx"] = self.num_ctx
+        return result
+
+
+@dataclass
 class PersonaConfig:
     """Configuration for an analysis persona."""
     name: str
@@ -15,16 +52,26 @@ class PersonaConfig:
     instructions: str
     focus_areas: List[str]
     evaluation_criteria: List[str]
+    model_config: Optional[ModelConfig] = (
+        None  # Optional per-persona model configuration
+    )
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'PersonaConfig':
         """Create a PersonaConfig from a dictionary."""
+        model_config = None
+        # Support both 'llm_config' (new) and 'model_config' (legacy) for backward compatibility
+        config_data = data.get("llm_config") or data.get("model_config")
+        if config_data:
+            model_config = ModelConfig.from_dict(config_data)
+
         return cls(
-            name=data['name'],
-            description=data['description'],
-            instructions=data['instructions'],
-            focus_areas=data.get('focus_areas', []),
-            evaluation_criteria=data.get('evaluation_criteria', [])
+            name=data["name"],
+            description=data["description"],
+            instructions=data["instructions"],
+            focus_areas=data.get("focus_areas", []),
+            evaluation_criteria=data.get("evaluation_criteria", []),
+            model_config=model_config,
         )
 
 
