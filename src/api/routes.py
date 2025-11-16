@@ -34,6 +34,7 @@ class GenerateADRRequest(BaseModel):
     tags: Optional[List[str]] = None
     personas: Optional[List[str]] = None  # List of persona names
     retrieval_mode: Optional[str] = "naive"  # RAG retrieval mode
+    provider_id: Optional[str] = None  # Optional LLM provider ID
 
 class TaskResponse(BaseModel):
     """Response model for queued tasks."""
@@ -41,11 +42,33 @@ class TaskResponse(BaseModel):
     status: str
     message: str
 
+
+class ModelConfigInfo(BaseModel):
+    """Model configuration information."""
+
+    name: str
+    provider: Optional[str] = None
+    base_url: Optional[str] = None
+    temperature: Optional[float] = None
+    num_ctx: Optional[int] = None
+
+
 class PersonaInfo(BaseModel):
     """Information about an analysis persona."""
     value: str
     label: str
     description: str
+    llm_config: Optional[ModelConfigInfo] = None
+
+
+class DefaultModelConfig(BaseModel):
+    """Default model configuration from environment."""
+
+    model: str
+    provider: str
+    base_url: str
+    temperature: float
+    num_ctx: int
 
 
 class ConfigResponse(BaseModel):
@@ -105,6 +128,7 @@ analysis_router = APIRouter()
 generation_router = APIRouter()
 config_router = APIRouter()
 queue_router = APIRouter()
+provider_router = APIRouter()
 
 
 @adr_router.websocket("/ws/cache-status")
@@ -201,13 +225,42 @@ async def list_personas():
     all_personas = persona_manager.discover_all_personas()
 
     for persona_value, config in all_personas.items():
+        # Convert model_config to API format if present
+        llm_config_info = None
+        if config.model_config:
+            mc = config.model_config
+            llm_config_info = ModelConfigInfo(
+                name=mc.name,
+                provider=mc.provider,
+                base_url=mc.base_url,
+                temperature=mc.temperature,
+                num_ctx=mc.num_ctx,
+            )
+
         personas.append(
             PersonaInfo(
-                value=persona_value, label=config.name, description=config.description
+                value=persona_value,
+                label=config.name,
+                description=config.description,
+                llm_config=llm_config_info,
             )
         )
 
     return {"personas": personas}
+
+
+@adr_router.get("/config/model")
+async def get_default_model_config():
+    """Get the default model configuration from environment variables."""
+    settings = get_settings()
+
+    return DefaultModelConfig(
+        model=settings.llm_model,
+        provider=settings.llm_provider,
+        base_url=settings.llm_base_url,
+        temperature=settings.llm_temperature,
+        num_ctx=settings.ollama_num_ctx,
+    )
 
 
 @adr_router.get("/", response_model=ADRListResponse)
@@ -660,6 +713,7 @@ async def generate_adr(request: GenerateADRRequest, background_tasks: Background
             tags=request.tags or [],
             personas=request.personas or [],
             retrieval_mode=request.retrieval_mode or "naive",
+            provider_id=request.provider_id,
         )
 
         return TaskResponse(
@@ -1213,3 +1267,214 @@ async def cancel_task(task_id: str, terminate: bool = False):
     except Exception as e:
         logger.error(f"Failed to cancel task: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to cancel task: {str(e)}")
+
+
+# ==================== Provider Management Routes ====================
+
+
+@provider_router.get("")
+async def list_providers():
+    """List all configured LLM providers.
+
+    Returns:
+        {
+            "providers": List[ProviderResponse]
+        }
+    """
+    try:
+        from src.llm_provider_storage import get_provider_storage
+
+        storage = get_provider_storage()
+        await storage.ensure_env_provider()
+        providers = await storage.list_all()
+
+        return {"providers": providers}
+    except Exception as e:
+        logger.error(f"Failed to list providers: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to list providers: {str(e)}"
+        )
+
+
+@provider_router.get("/default")
+async def get_default_provider():
+    """Get the default LLM provider.
+
+    Returns:
+        ProviderResponse or null if no default set
+    """
+    try:
+        from src.llm_provider_storage import get_provider_storage
+
+        storage = get_provider_storage()
+        await storage.ensure_env_provider()
+        provider = await storage.get_default()
+
+        return provider
+    except Exception as e:
+        logger.error(f"Failed to get default provider: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to get default provider: {str(e)}"
+        )
+
+
+@provider_router.get("/{provider_id}")
+async def get_provider(provider_id: str):
+    """Get a specific provider by ID (without decrypted API key).
+
+    Args:
+        provider_id: The provider ID
+
+    Returns:
+        ProviderResponse or 404 if not found
+    """
+    try:
+        from src.llm_provider_storage import get_provider_storage
+
+        storage = get_provider_storage()
+        provider = await storage.get(provider_id)
+
+        if not provider:
+            raise HTTPException(
+                status_code=404, detail=f"Provider {provider_id} not found"
+            )
+
+        # Convert to response (hide encrypted key)
+        from src.llm_provider_storage import ProviderResponse
+
+        return ProviderResponse(
+            id=provider.id,
+            name=provider.name,
+            provider_type=provider.provider_type,
+            base_url=provider.base_url,
+            model_name=provider.model_name,
+            has_api_key=bool(provider.api_key_encrypted),
+            temperature=provider.temperature,
+            num_ctx=provider.num_ctx,
+            num_predict=provider.num_predict,
+            is_default=provider.is_default,
+            is_env_based=provider.is_env_based,
+            created_at=provider.created_at,
+            updated_at=provider.updated_at,
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to get provider: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to get provider: {str(e)}")
+
+
+@provider_router.post("")
+async def create_provider(request: dict):
+    """Create a new LLM provider configuration.
+
+    Request body:
+        {
+            "name": str,
+            "provider_type": str,  # ollama, openai, openrouter, vllm, llama_cpp, custom
+            "base_url": str,
+            "model_name": str,
+            "api_key": str (optional),
+            "temperature": float (optional, default 0.7),
+            "num_ctx": int (optional),
+            "num_predict": int (optional),
+            "is_default": bool (optional, default false)
+        }
+
+    Returns:
+        ProviderResponse
+    """
+    try:
+        from src.llm_provider_storage import get_provider_storage, CreateProviderRequest
+
+        storage = get_provider_storage()
+        create_request = CreateProviderRequest(**request)
+        provider = await storage.create(create_request)
+
+        return provider
+    except Exception as e:
+        logger.error(f"Failed to create provider: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to create provider: {str(e)}"
+        )
+
+
+@provider_router.put("/{provider_id}")
+async def update_provider(provider_id: str, request: dict):
+    """Update an existing LLM provider configuration.
+
+    Args:
+        provider_id: The provider ID
+
+    Request body (all fields optional):
+        {
+            "name": str,
+            "provider_type": str,
+            "base_url": str,
+            "model_name": str,
+            "api_key": str,
+            "temperature": float,
+            "num_ctx": int,
+            "num_predict": int,
+            "is_default": bool
+        }
+
+    Returns:
+        ProviderResponse or 404 if not found
+    """
+    try:
+        from src.llm_provider_storage import get_provider_storage, UpdateProviderRequest
+
+        storage = get_provider_storage()
+        update_request = UpdateProviderRequest(**request)
+        provider = await storage.update(provider_id, update_request)
+
+        if not provider:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Provider {provider_id} not found or cannot be updated (env-based providers are read-only)",
+            )
+
+        return provider
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to update provider: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to update provider: {str(e)}"
+        )
+
+
+@provider_router.delete("/{provider_id}")
+async def delete_provider(provider_id: str):
+    """Delete an LLM provider configuration.
+
+    Args:
+        provider_id: The provider ID
+
+    Returns:
+        {"message": str, "deleted": bool}
+    """
+    try:
+        from src.llm_provider_storage import get_provider_storage
+
+        storage = get_provider_storage()
+        success = await storage.delete(provider_id)
+
+        if not success:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Provider {provider_id} not found or cannot be deleted (env-based providers are read-only)",
+            )
+
+        return {
+            "message": f"Provider {provider_id} deleted successfully",
+            "deleted": True,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to delete provider: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to delete provider: {str(e)}"
+        )

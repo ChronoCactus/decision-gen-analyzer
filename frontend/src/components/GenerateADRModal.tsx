@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { GenerateADRRequest, Persona } from '@/types/api';
+import { GenerateADRRequest, Persona, LLMProvider } from '@/types/api';
 import { apiClient } from '@/lib/api';
 import { useEscapeKey } from '@/hooks/useEscapeKey';
 
@@ -20,6 +20,8 @@ export function GenerateADRModal({ onClose, onGenerate, isGenerating, generation
   const [personas, setPersonas] = useState<Persona[]>([]);
   const [selectedPersonas, setSelectedPersonas] = useState<string[]>([]);
   const [loadingPersonas, setLoadingPersonas] = useState(true);
+  const [providers, setProviders] = useState<LLMProvider[]>([]);
+  const [selectedProviderId, setSelectedProviderId] = useState<string>('');
   const [elapsedTime, setElapsedTime] = useState(0);
   const [isMac, setIsMac] = useState(false);
   const [isWin, setIsWin] = useState(false);
@@ -65,18 +67,29 @@ export function GenerateADRModal({ onClose, onGenerate, isGenerating, generation
   }, [prompt, context, tags, selectedPersonas, isGenerating]);
 
   useEffect(() => {
-    // Load available personas
-    apiClient.getPersonas()
-      .then(response => {
-        setPersonas(response.personas);
-        // Set default selections
-        const defaultPersonas = response.personas
+    // Load available personas and providers
+    Promise.all([
+      apiClient.getPersonas(),
+      apiClient.listProviders()
+    ])
+      .then(([personasResponse, providersResponse]) => {
+        setPersonas(personasResponse.personas);
+        setProviders(providersResponse.providers);
+
+        // Set default provider (the one marked as default)
+        const defaultProvider = providersResponse.providers.find(p => p.is_default);
+        if (defaultProvider) {
+          setSelectedProviderId(defaultProvider.id);
+        }
+
+        // Set default persona selections
+        const defaultPersonas = personasResponse.personas
           .filter(p => ['technical_lead', 'architect', 'business_analyst'].includes(p.value))
           .map(p => p.value);
         setSelectedPersonas(defaultPersonas);
       })
       .catch(error => {
-        console.error('Failed to load personas:', error);
+        console.error('Failed to load personas or providers:', error);
       })
       .finally(() => {
         setLoadingPersonas(false);
@@ -91,6 +104,21 @@ export function GenerateADRModal({ onClose, onGenerate, isGenerating, generation
     );
   };
 
+  const getModelDisplay = (persona: Persona): string => {
+    if (persona.llm_config) {
+      const provider = persona.llm_config.provider || 'custom';
+      const model = persona.llm_config.name;
+      return `${provider}/${model}`;
+    } else {
+      // Use selected provider's model
+      const provider = providers.find(p => p.id === selectedProviderId);
+      if (provider) {
+        return `${provider.provider_type}/${provider.model_name}`;
+      }
+      return 'default';
+    }
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!prompt.trim()) return;
@@ -103,6 +131,7 @@ export function GenerateADRModal({ onClose, onGenerate, isGenerating, generation
       tags: tagArray.length > 0 ? tagArray : undefined,
       personas: selectedPersonas.length > 0 ? selectedPersonas : undefined,
       retrieval_mode: retrievalMode,
+      provider_id: selectedProviderId || undefined,
     });
   };
 
@@ -110,11 +139,33 @@ export function GenerateADRModal({ onClose, onGenerate, isGenerating, generation
     <div className="fixed inset-0 bg-black bg-opacity-50 dark:bg-opacity-70 flex items-center justify-center p-4 z-50">
       <div className="bg-white dark:bg-gray-800 rounded-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto">
         <div className="p-6">
-          <div className="flex justify-between items-center mb-6">
-            <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Generate New ADR</h2>
+          <div className="flex justify-between items-start mb-6">
+            <div className="flex-1">
+              <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Generate New ADR</h2>
+              {providers.length > 0 && (
+                <div className="mt-2 flex items-center gap-2">
+                  <label htmlFor="provider-select" className="text-xs text-gray-600 dark:text-gray-400">
+                    Model:
+                  </label>
+                  <select
+                    id="provider-select"
+                    value={selectedProviderId}
+                    onChange={(e) => setSelectedProviderId(e.target.value)}
+                    className="text-xs px-2 py-1 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 font-mono"
+                  >
+                    {providers.map(provider => (
+                      <option key={provider.id} value={provider.id}>
+                        {provider.provider_type}/{provider.model_name}
+                        {provider.is_default ? ' (default)' : ''}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+            </div>
             <button
               onClick={onClose}
-              className="text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300 text-2xl"
+              className="text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300 text-2xl ml-4"
             >
               ×
             </button>
@@ -225,8 +276,13 @@ export function GenerateADRModal({ onClose, onGenerate, isGenerating, generation
                         className="mt-1 mr-3 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 dark:border-gray-600 rounded"
                       />
                       <div className="flex-1">
-                        <div className="font-medium text-sm text-gray-900 dark:text-gray-100">
-                          {persona.label}
+                        <div className="flex items-center justify-between">
+                          <div className="font-medium text-sm text-gray-900 dark:text-gray-100">
+                            {persona.label}
+                          </div>
+                          <div className="text-xs px-2 py-0.5 rounded-full bg-gray-200 dark:bg-gray-600 text-gray-700 dark:text-gray-300 ml-2">
+                            {getModelDisplay(persona)}
+                          </div>
                         </div>
                         <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
                           {persona.description}

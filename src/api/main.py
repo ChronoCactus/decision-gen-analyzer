@@ -20,6 +20,7 @@ from src.api.routes import (
     generation_router,
     config_router,
     queue_router,
+    provider_router,
 )
 from src.logger import get_logger
 from src.config import get_settings
@@ -151,6 +152,9 @@ def create_application() -> FastAPI:
     app.include_router(generation_router, prefix="/api/v1/generation", tags=["Generation"])
     app.include_router(config_router, prefix="/api/v1", tags=["Configuration"])
     app.include_router(queue_router, prefix="/api/v1/queue", tags=["Queue"])
+    app.include_router(
+        provider_router, prefix="/api/v1/llm-providers", tags=["LLM Providers"]
+    )
 
     @app.get("/health")
     async def health_check():

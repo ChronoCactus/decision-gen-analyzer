@@ -15,7 +15,12 @@ from src.models import (
     PersonaSynthesisInput,
 )
 from src.persona_manager import PersonaManager, PersonaConfig
-from src.llama_client import LlamaCppClient, LlamaCppClientPool
+from src.llama_client import (
+    LlamaCppClient,
+    LlamaCppClientPool,
+    create_client_from_persona_config,
+    create_client_from_provider_id,
+)
 from src.lightrag_client import LightRAGClient
 from src.logger import get_logger
 
@@ -49,6 +54,7 @@ class ADRGenerationService:
         personas: Optional[List[str]] = None,
         include_context: bool = True,
         progress_callback: Optional[callable] = None,
+        provider_id: Optional[str] = None,
     ) -> ADRGenerationResult:
         """Generate a new ADR from a prompt using multiple personas.
 
@@ -57,6 +63,7 @@ class ADRGenerationService:
             personas: List of persona values (e.g., ['technical_lead', 'architect'])
             include_context: Whether to retrieve related context from vector DB
             progress_callback: Optional callback function for progress updates
+            provider_id: Optional provider ID to use for personas without custom model_config
 
         Returns:
             ADRGenerationResult: The generated ADR with all components
@@ -81,7 +88,7 @@ class ADRGenerationService:
 
         # Generate perspectives from each persona
         synthesis_inputs = await self._generate_persona_perspectives(
-            prompt, personas, related_context, progress_callback
+            prompt, personas, related_context, progress_callback, provider_id
         )
 
         # Synthesize all perspectives into final ADR
@@ -290,6 +297,7 @@ class ADRGenerationService:
         personas: List[str],
         related_context: List[str],
         progress_callback: Optional[callable] = None,
+        provider_id: Optional[str] = None,
     ) -> List[PersonaSynthesisInput]:
         """Generate perspectives from each persona.
 
@@ -298,6 +306,7 @@ class ADRGenerationService:
             personas: List of persona values to generate perspectives for
             related_context: Related context from vector DB
             progress_callback: Optional callback for progress updates
+            provider_id: Optional provider ID to use for personas without custom model_config
 
         Returns:
             List of persona synthesis inputs
@@ -307,9 +316,11 @@ class ADRGenerationService:
         if progress_callback:
             progress_callback(f"Generating perspectives from {total_personas} personas")
 
-        # Build prompts for all personas
+        # Build prompts for all personas and create their specific clients
         persona_prompts = []
         persona_configs = []
+        persona_clients = []
+
         for persona_value in personas:
             persona_config = self.persona_manager.get_persona_config(persona_value)
             if persona_config:
@@ -318,26 +329,52 @@ class ADRGenerationService:
                     persona_config, prompt, related_context
                 )
                 persona_prompts.append(system_prompt)
+
+                # Create a client for this persona
+                # If persona has custom model_config, use it
+                # Otherwise, use the selected provider_id if provided
+                if persona_config.model_config:
+                    # Persona has custom model config - use it (don't override)
+                    persona_client = create_client_from_persona_config(
+                        persona_config, demo_mode=False
+                    )
+                elif provider_id:
+                    # No custom config, but provider selected - use that provider
+                    persona_client = await create_client_from_provider_id(
+                        provider_id, demo_mode=False
+                    )
+                else:
+                    # No custom config, no provider selected - use defaults
+                    persona_client = create_client_from_persona_config(
+                        persona_config, demo_mode=False
+                    )
+                
+                persona_clients.append(persona_client)
             else:
                 logger.warning(f"Skipping unknown persona: {persona_value}")
 
-        # Use parallel generation if pool is available
-        if self.use_pool:
+        # Use parallel generation if pool is available or if personas have custom models
+        has_custom_models = any(
+            config.model_config is not None for _, config in persona_configs
+        )
+
+        if self.use_pool or has_custom_models:
             logger.info(
                 "Using parallel generation for persona perspectives",
                 persona_count=total_personas,
+                has_custom_models=has_custom_models,
             )
 
             # Create tasks with indices for parallel execution with progress tracking
             async def generate_with_index(
-                idx: int, prompt_text: str
+                idx: int, prompt_text: str, client: LlamaCppClient
             ) -> tuple[int, str]:
                 """Generate response and return with index for ordering."""
                 try:
-                    client = self.llama_client.get_generation_client(idx)
-                    response = await client.generate(
-                        prompt=prompt_text, temperature=0.7, num_predict=2000
-                    )
+                    async with client:
+                        response = await client.generate(
+                            prompt=prompt_text, temperature=0.7, num_predict=2000
+                        )
                     return (idx, response)
                 except Exception as e:
                     logger.warning(
@@ -348,8 +385,10 @@ class ADRGenerationService:
                     return (idx, "")
 
             tasks = [
-                generate_with_index(idx, prompt_text)
-                for idx, prompt_text in enumerate(persona_prompts)
+                generate_with_index(idx, prompt_text, client)
+                for idx, (prompt_text, client) in enumerate(
+                    zip(persona_prompts, persona_clients)
+                )
             ]
 
             # Execute with progress tracking as each completes
@@ -381,15 +420,17 @@ class ADRGenerationService:
                 persona_count=total_personas,
             )
             responses = []
-            for index, system_prompt in enumerate(persona_prompts, 1):
+            for index, (system_prompt, client) in enumerate(
+                zip(persona_prompts, persona_clients), 1
+            ):
                 try:
                     if progress_callback:
                         progress_callback(
                             f"Generating perspective {index}/{total_personas}: {personas[index-1].replace('_', ' ').title()}"
                         )
 
-                    async with self.llama_client:
-                        response = await self.llama_client.generate(
+                    async with client:
+                        response = await client.generate(
                             prompt=system_prompt, temperature=0.7, num_predict=2000
                         )
                     responses.append(response)

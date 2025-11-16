@@ -21,7 +21,13 @@ class ADRFileStorage:
         Args:
             storage_path: Path to store ADR files. Defaults to /app/data/adrs
         """
-        self.storage_path = Path(storage_path or os.getenv("ADR_STORAGE_PATH", "/app/data/adrs"))
+        if storage_path is None:
+            from src.config import get_settings
+
+            settings = get_settings()
+            storage_path = settings.adr_storage_path
+
+        self.storage_path = Path(storage_path)
         self._ensure_storage_exists()
 
     def _ensure_storage_exists(self):
@@ -52,13 +58,13 @@ class ADRFileStorage:
         """
         try:
             file_path = self._get_adr_file_path(str(adr.metadata.id))
-            
+
             # Convert ADR to dict for JSON serialization
             adr_dict = adr.model_dump(mode='json')
-            
+
             with open(file_path, 'w') as f:
                 json.dump(adr_dict, f, indent=2)
-            
+
             logger.info(f"Saved ADR {adr.metadata.id} to {file_path}")
         except Exception as e:
             logger.error(f"Failed to save ADR {adr.metadata.id}: {e}")
@@ -75,13 +81,13 @@ class ADRFileStorage:
         """
         try:
             file_path = self._get_adr_file_path(adr_id)
-            
+
             if not file_path.exists():
                 return None
-            
+
             with open(file_path, 'r') as f:
                 adr_dict = json.load(f)
-            
+
             return ADR(**adr_dict)
         except Exception as e:
             logger.error(f"Failed to load ADR {adr_id}: {e}")
@@ -104,12 +110,12 @@ class ADRFileStorage:
                 key=lambda p: p.stat().st_mtime,
                 reverse=True  # Most recent first
             )
-            
+
             total = len(adr_files)
-            
+
             # Apply pagination
             paginated_files = adr_files[offset:offset + limit]
-            
+
             # Load ADRs
             adrs = []
             for file_path in paginated_files:
@@ -120,7 +126,7 @@ class ADRFileStorage:
                 except Exception as e:
                     logger.warning(f"Failed to load ADR from {file_path}: {e}")
                     continue
-            
+
             return adrs, total
         except Exception as e:
             logger.error(f"Failed to list ADRs: {e}")
@@ -137,10 +143,10 @@ class ADRFileStorage:
         """
         try:
             file_path = self._get_adr_file_path(adr_id)
-            
+
             if not file_path.exists():
                 return False
-            
+
             file_path.unlink()
             logger.info(f"Deleted ADR {adr_id}")
             return True

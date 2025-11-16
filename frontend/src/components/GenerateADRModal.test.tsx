@@ -7,6 +7,7 @@ import { GenerateADRModal } from './GenerateADRModal';
 vi.mock('@/lib/api', () => ({
   apiClient: {
     getPersonas: vi.fn(),
+    listProviders: vi.fn(),
   },
 }));
 
@@ -26,6 +27,29 @@ describe('GenerateADRModal', () => {
     ],
   };
 
+  const mockProviders = {
+    providers: [
+      {
+        id: 'provider-1',
+        name: 'Default Provider',
+        provider_type: 'ollama',
+        model_name: 'gpt-oss:20b',
+        base_url: 'http://localhost:11434/v1',
+        is_default: true,
+        temperature: 0.7,
+      },
+      {
+        id: 'provider-2',
+        name: 'Secondary Provider',
+        provider_type: 'openai',
+        model_name: 'gpt-4',
+        base_url: 'https://api.openai.com/v1',
+        is_default: false,
+        temperature: 0.5,
+      },
+    ],
+  };
+
   const mockProps = {
     onClose: vi.fn(),
     onGenerate: vi.fn(),
@@ -36,6 +60,7 @@ describe('GenerateADRModal', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     (apiClient.getPersonas as any).mockResolvedValue(mockPersonas);
+    (apiClient.listProviders as any).mockResolvedValue(mockProviders);
   });
 
   it('should render modal with form fields', async () => {
@@ -54,7 +79,21 @@ describe('GenerateADRModal', () => {
 
     await waitFor(() => {
       expect(apiClient.getPersonas).toHaveBeenCalled();
+      expect(apiClient.listProviders).toHaveBeenCalled();
     });
+  });
+
+  it('should render provider dropdown with available providers', async () => {
+    render(<GenerateADRModal {...mockProps} />);
+
+    await waitFor(() => {
+      const providerSelect = screen.getByLabelText(/Model:/i);
+      expect(providerSelect).toBeInTheDocument();
+    });
+
+    // Check that the default provider is selected
+    const providerSelect = screen.getByLabelText(/Model:/i) as HTMLSelectElement;
+    expect(providerSelect.value).toBe('provider-1');
   });
 
   it('should handle prompt input', async () => {
@@ -93,9 +132,10 @@ describe('GenerateADRModal', () => {
     const user = userEvent.setup();
     render(<GenerateADRModal {...mockProps} />);
 
-    // Wait for personas to load
+    // Wait for personas and providers to load
     await waitFor(() => {
       expect(apiClient.getPersonas).toHaveBeenCalled();
+      expect(apiClient.listProviders).toHaveBeenCalled();
     });
 
     const promptInput = screen.getByPlaceholderText(/Describe the decision/);
@@ -107,6 +147,7 @@ describe('GenerateADRModal', () => {
     expect(mockProps.onGenerate).toHaveBeenCalledWith(
       expect.objectContaining({
         prompt: 'Test decision',
+        provider_id: 'provider-1', // Default provider should be selected
       })
     );
   });
@@ -165,6 +206,7 @@ describe('GenerateADRModal', () => {
     const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
     
     (apiClient.getPersonas as any).mockRejectedValue(new Error('Failed to load'));
+    (apiClient.listProviders as any).mockResolvedValue(mockProviders); // Providers still load
     
     render(<GenerateADRModal {...mockProps} />);
 

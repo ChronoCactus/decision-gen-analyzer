@@ -132,12 +132,13 @@ def generate_adr_task(
     tags: list = None,
     personas: list = None,
     retrieval_mode: str = "local",
+    provider_id: str = None,
 ):
     """Celery task for ADR generation."""
     try:
         import asyncio
         from src.adr_generation import ADRGenerationService
-        from src.llama_client import LlamaCppClient
+        from src.llama_client import LlamaCppClient, create_client_from_provider_id
         from src.lightrag_client import LightRAGClient
         from src.persona_manager import PersonaManager
         from src.models import ADRGenerationPrompt, ADR, ADRMetadata, ADRContent, ADRStatus
@@ -164,7 +165,11 @@ def generate_adr_task(
                 task_id=self.request.id,
                 task_name="generate_adr_task",
                 args=(prompt,),
-                kwargs={"context": context, "personas": personas},
+                kwargs={
+                    "context": context,
+                    "personas": personas,
+                    "provider_id": provider_id,
+                },
             )
 
         asyncio.run(_publish_task_started())
@@ -173,19 +178,23 @@ def generate_adr_task(
 
         async def _generate():
             # Initialize clients with demo_mode=False to use real LLM
-            # Use LlamaCppClientPool for parallel generation if multiple backends are configured
             from src.llama_client import LlamaCppClientPool
             from src.config import get_settings
 
             settings = get_settings()
 
-            # Use pool if secondary backend is configured, otherwise use single client
-            if settings.llm_base_url_1 or settings.llm_embedding_base_url:
-                logger.info("Using LlamaCppClientPool for parallel generation")
-                llama_client = LlamaCppClientPool(demo_mode=False)
+            # If a specific provider_id was requested, use that provider
+            if provider_id:
+                logger.info(f"Creating LLM client from provider_id: {provider_id}")
+                llama_client = await create_client_from_provider_id(provider_id)
             else:
-                logger.info("Using single LlamaCppClient")
-                llama_client = LlamaCppClient(demo_mode=False)
+                # Use default behavior: pool if secondary backend configured, otherwise single client
+                if settings.llm_base_url_1 or settings.llm_embedding_base_url:
+                    logger.info("Using LlamaCppClientPool for parallel generation")
+                    llama_client = LlamaCppClientPool(demo_mode=False)
+                else:
+                    logger.info("Using single LlamaCppClient")
+                    llama_client = LlamaCppClient(demo_mode=False)
 
             lightrag_client = LightRAGClient(demo_mode=False)
             persona_manager = PersonaManager()
@@ -239,6 +248,7 @@ def generate_adr_task(
                     generation_prompt,
                     personas=persona_list,
                     progress_callback=update_progress,
+                    provider_id=provider_id,
                 )
 
             self.update_state(

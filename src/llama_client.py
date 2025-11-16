@@ -14,7 +14,7 @@ and LlamaCppClientPool interfaces while using LangChain under the hood.
 """
 
 import asyncio
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Union, TYPE_CHECKING
 import time
 from enum import Enum
 
@@ -24,6 +24,9 @@ from langchain_core.messages import HumanMessage, SystemMessage
 
 from config import get_settings
 from logger import get_logger
+
+if TYPE_CHECKING:
+    from src.persona_manager import PersonaConfig
 
 logger = get_logger(__name__)
 
@@ -591,3 +594,95 @@ class LlamaCppClientPool:
 
         # Return results, converting exceptions to empty strings
         return [r if isinstance(r, str) else "" for r in results]
+
+
+def create_client_from_persona_config(
+    persona_config: "PersonaConfig", demo_mode: bool = False
+) -> LlamaCppClient:
+    """Create a LlamaCppClient instance from a PersonaConfig's model_config.
+
+    Args:
+        persona_config: PersonaConfig with optional model_config
+        demo_mode: Whether to run in demo mode without actual LLM calls
+
+    Returns:
+        LlamaCppClient configured for the persona, or using defaults if no model_config specified
+    """
+    from src.persona_manager import (
+        PersonaConfig,
+    )  # Import here to avoid circular dependency
+
+    settings = get_settings()
+
+    # If persona has model_config, use it; otherwise use defaults from settings
+    if persona_config.model_config:
+        mc = persona_config.model_config
+        return LlamaCppClient(
+            base_url=mc.base_url if mc.base_url else settings.llm_base_url,
+            model=mc.name,
+            provider=mc.provider if mc.provider else settings.llm_provider,
+            temperature=(
+                mc.temperature
+                if mc.temperature is not None
+                else settings.llm_temperature
+            ),
+            num_ctx=mc.num_ctx if mc.num_ctx is not None else settings.ollama_num_ctx,
+            demo_mode=demo_mode,
+        )
+    else:
+        # Use default settings
+        return LlamaCppClient(demo_mode=demo_mode)
+
+
+async def create_client_from_provider_id(
+    provider_id: Optional[str] = None, demo_mode: bool = False
+) -> LlamaCppClient:
+    """Create a LlamaCppClient instance from a stored provider configuration.
+
+    Args:
+        provider_id: ID of the provider to use. If None, uses the default provider.
+        demo_mode: Whether to run in demo mode without actual LLM calls
+
+    Returns:
+        LlamaCppClient configured for the provider, or using env defaults if provider not found
+    """
+    from src.llm_provider_storage import get_provider_storage
+
+    settings = get_settings()
+    storage = get_provider_storage()
+
+    # Ensure env provider exists
+    await storage.ensure_env_provider()
+
+    # Get the provider config
+    if provider_id:
+        provider_config = await storage.get(provider_id)
+    else:
+        # Get default provider
+        default_response = await storage.get_default()
+        if default_response:
+            provider_config = await storage.get(default_response.id)
+        else:
+            provider_config = None
+
+    # If no provider found, fall back to env defaults
+    if not provider_config:
+        logger.warning(f"Provider {provider_id} not found, using environment defaults")
+        return LlamaCppClient(demo_mode=demo_mode)
+
+    # Get decrypted API key if present
+    api_key = None
+    if provider_config.api_key_encrypted:
+        api_key = await storage.get_decrypted_api_key(provider_config.id)
+
+    # Create client with provider config
+    return LlamaCppClient(
+        base_url=provider_config.base_url,
+        model=provider_config.model_name,
+        provider=provider_config.provider_type,
+        api_key=api_key,
+        temperature=provider_config.temperature,
+        num_ctx=provider_config.num_ctx,
+        num_predict=provider_config.num_predict,
+        demo_mode=demo_mode,
+    )

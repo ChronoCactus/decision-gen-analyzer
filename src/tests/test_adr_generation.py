@@ -76,15 +76,25 @@ class TestADRGenerationService:
         self, mock_llama_client, mock_lightrag_client, mock_persona_manager, generation_prompt
     ):
         """Test ADR generation with personas."""
-        service = ADRGenerationService(mock_llama_client, mock_lightrag_client, mock_persona_manager)
+        # Mock the client factory to return our mock client
+        with patch(
+            "src.adr_generation.create_client_from_persona_config"
+        ) as mock_factory:
+            mock_factory.return_value = mock_llama_client
 
-        personas = ["technical_lead", "business_analyst"]
+            service = ADRGenerationService(
+                mock_llama_client, mock_lightrag_client, mock_persona_manager
+            )
 
-        result = await service.generate_adr(generation_prompt, personas=personas)
+            personas = ["technical_lead", "business_analyst"]
 
-        assert result is not None
-        # Should call generate multiple times for personas
-        assert mock_llama_client.generate.call_count >= 2
+            result = await service.generate_adr(generation_prompt, personas=personas)
+
+            assert result is not None
+            # Should create a client for each persona
+            assert mock_factory.call_count >= 2
+            # And the generated clients should be called
+            assert mock_llama_client.generate.call_count >= 2
 
     @pytest.mark.asyncio
     async def test_generate_adr_with_related_context(

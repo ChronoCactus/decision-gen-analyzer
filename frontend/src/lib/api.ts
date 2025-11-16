@@ -1,4 +1,4 @@
-import { ADR, ADRListResponse, AnalyzeADRRequest, GenerateADRRequest, TaskResponse, TaskStatus, Persona } from '@/types/api';
+import { ADR, ADRListResponse, AnalyzeADRRequest, GenerateADRRequest, TaskResponse, TaskStatus, Persona, DefaultModelConfig } from '@/types/api';
 
 const DEFAULT_API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
@@ -177,6 +177,10 @@ class ApiClient {
     return this.request<{ personas: Persona[] }>('/api/v1/adrs/personas');
   }
 
+  async getDefaultModelConfig(): Promise<DefaultModelConfig> {
+    return this.request<DefaultModelConfig>('/api/v1/adrs/config/model');
+  }
+
   // Analysis operations
   async analyzeADR(request: AnalyzeADRRequest): Promise<TaskResponse> {
     return this.request<TaskResponse>('/api/v1/analysis/analyze', {
@@ -327,6 +331,52 @@ class ApiClient {
   }> {
     return this.request(`/api/v1/queue/task/${taskId}/cancel?terminate=${terminate}`, {
       method: 'POST',
+    });
+  }
+
+  // ==================== LLM Provider Management ====================
+
+  async listProviders(): Promise<import('@/types/api').ProvidersListResponse> {
+    return this.request('/api/v1/llm-providers');
+  }
+
+  async getProvider(providerId: string): Promise<import('@/types/api').LLMProvider> {
+    return this.request(`/api/v1/llm-providers/${providerId}`);
+  }
+
+  async getDefaultProvider(): Promise<import('@/types/api').LLMProvider | null> {
+    return this.request('/api/v1/llm-providers/default');
+  }
+
+  async createProvider(request: import('@/types/api').CreateProviderRequest): Promise<import('@/types/api').LLMProvider> {
+    return this.request('/api/v1/llm-providers', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(request),
+    });
+  }
+
+  async updateProvider(
+    providerId: string,
+    request: import('@/types/api').UpdateProviderRequest
+  ): Promise<import('@/types/api').LLMProvider> {
+    return this.request(`/api/v1/llm-providers/${providerId}`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(request),
+    });
+  }
+
+  async deleteProvider(providerId: string): Promise<{
+    message: string;
+    deleted: boolean;
+  }> {
+    return this.request(`/api/v1/llm-providers/${providerId}`, {
+      method: 'DELETE',
     });
   }
 }
