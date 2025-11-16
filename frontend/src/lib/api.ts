@@ -4,7 +4,7 @@ const DEFAULT_API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhos
 
 class ApiClient {
   private apiBaseUrl: string = DEFAULT_API_BASE_URL;
-  private configFetched: boolean = false;
+  private configFetchPromise: Promise<void> | null = null;
 
   /**
    * Fetch the API configuration from the backend to support LAN discovery.
@@ -23,7 +23,7 @@ class ApiClient {
    * @internal For testing only
    */
   _resetConfigForTesting(): void {
-    this.configFetched = false;
+    this.configFetchPromise = null;
     this.apiBaseUrl = DEFAULT_API_BASE_URL;
   }
 
@@ -32,16 +32,22 @@ class ApiClient {
    * @internal For testing only
    */
   _setTestMode(testApiUrl: string): void {
-    this.configFetched = true; // Skip config fetch
+    this.configFetchPromise = Promise.resolve(); // Skip config fetch
     this.apiBaseUrl = testApiUrl;
   }
 
   private async fetchConfig(): Promise<void> {
-    if (this.configFetched) {
-      return;
+    // If already fetching or fetched, reuse the same promise
+    if (this.configFetchPromise) {
+      return this.configFetchPromise;
     }
 
-    this.configFetched = true; // Mark as fetched to avoid multiple attempts
+    // Create the fetch promise and store it to prevent concurrent fetches
+    this.configFetchPromise = this._doFetchConfig();
+    return this.configFetchPromise;
+  }
+
+  private async _doFetchConfig(): Promise<void> {
 
     // If NEXT_PUBLIC_API_URL is already set to a non-localhost value, use it directly
     if (DEFAULT_API_BASE_URL !== 'http://localhost:8000') {
@@ -51,15 +57,29 @@ class ApiClient {
     }
 
     // Infer the backend URL from the current window location
-    // If user accessed frontend via http://192.168.0.58:3003, backend is likely at http://192.168.0.58:8000
+    // For LAN access: If user accessed frontend via http://192.168.0.58:3003, backend is likely at http://192.168.0.58:8000
+    // For production with LB: If accessed via https://mywebsite.mydomain.com, backend is at same host (no port needed)
     let inferredBackendUrl = DEFAULT_API_BASE_URL;
 
     if (typeof window !== 'undefined') {
+      const protocol = window.location.protocol;
       const hostname = window.location.hostname;
+      const port = window.location.port;
+
       // Only infer if not running on localhost (which would be development mode)
       if (hostname !== 'localhost' && hostname !== '127.0.0.1') {
-        inferredBackendUrl = `http://${hostname}:8000`;
-        console.log('Inferred backend URL from window location:', inferredBackendUrl);
+        // If accessed with a port (e.g., :3000, :3003), assume backend is on port 8000 (LAN mode)
+        // If accessed without a port (e.g., production with LB), assume backend is on same host
+        if (port && port !== '80' && port !== '443') {
+          // LAN mode: frontend on custom port, backend on 8000
+          inferredBackendUrl = `${protocol}//${hostname}:8000`;
+          console.log('Inferred backend URL (LAN mode):', inferredBackendUrl);
+        } else {
+          // Production mode: accessed via standard port (80/443) or no port
+          // Backend is on same host (load balancer handles routing)
+          inferredBackendUrl = `${protocol}//${hostname}`;
+          console.log('Inferred backend URL (production mode):', inferredBackendUrl);
+        }
       }
     }
 

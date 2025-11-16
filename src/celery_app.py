@@ -220,7 +220,7 @@ def generate_adr_task(
                 persona_list = ["technical_lead", "architect", "business_analyst"]
             else:
                 # Validate persona strings against available personas
-                from persona_manager import get_persona_manager
+                from src.persona_manager import get_persona_manager
 
                 manager = get_persona_manager()
                 available_personas = manager.list_persona_values()

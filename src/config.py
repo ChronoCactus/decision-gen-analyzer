@@ -128,6 +128,12 @@ class Settings(BaseSettings):
         description="Host IP address for LAN discovery (e.g., 192.168.0.2)",
         alias="HOST_IP",
     )
+    api_base_url: Optional[str] = Field(
+        default=None,
+        description="Explicit API base URL for frontend (e.g., https://mysite.com for production). "
+        "If not set, falls back to LAN discovery (http://{host_ip}:8000) or localhost:8000",
+        alias="API_BASE_URL",
+    )
 
     # Web Search Configuration
     serpapi_key: Optional[str] = Field(default=None, description="SerpAPI key for web search")

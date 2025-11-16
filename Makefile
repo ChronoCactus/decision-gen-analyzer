@@ -1,4 +1,4 @@
-.PHONY: test test-backend test-frontend test-backend-unit test-backend-integration test-coverage test-coverage-backend test-coverage-frontend clean help install-frontend-deps docker-build docker-push-local docker-tag version test-version-script docker-buildx-setup docker-build-multiarch
+.PHONY: test test-backend test-frontend test-backend-unit test-backend-integration test-coverage test-coverage-backend test-coverage-frontend clean help install-frontend-deps docker-build docker-push-local docker-tag version test-version-script docker-buildx-setup docker-build-multiarch docker-push-local-multiarch docker-push-backend-multiarch docker-push-frontend-multiarch docker-push-frontend-multiarch-sequential docker-push-local-multiarch-sequential docker-buildx-reset
 
 # Configuration
 REGISTRY ?= localhost:5000
@@ -201,6 +201,8 @@ docker-push-backend-multiarch: docker-buildx-setup
 		-t $(REGISTRY)/$(BACKEND_IMAGE):$(VERSION_WITH_SHA) \
 		-t $(REGISTRY)/$(BACKEND_IMAGE):$(VERSION) \
 		-t $(REGISTRY)/$(BACKEND_IMAGE):latest \
+		--cache-from type=registry,ref=$(REGISTRY)/$(BACKEND_IMAGE):buildcache \
+		--cache-to type=registry,ref=$(REGISTRY)/$(BACKEND_IMAGE):buildcache,mode=max \
 		--push \
 		-f Dockerfile.backend .
 	@echo "Successfully pushed backend image to $(REGISTRY):"
@@ -226,11 +228,15 @@ docker-push-frontend-multiarch-sequential: docker-buildx-setup
 	@echo "Step 1/2: Building for linux/amd64..."
 	docker buildx build --platform linux/amd64 \
 		-t $(REGISTRY)/$(FRONTEND_IMAGE):$(VERSION_WITH_SHA)-amd64 \
+		--cache-from type=registry,ref=$(REGISTRY)/$(FRONTEND_IMAGE):buildcache-amd64 \
+		--cache-to type=registry,ref=$(REGISTRY)/$(FRONTEND_IMAGE):buildcache-amd64,mode=max \
 		--push \
 		-f Dockerfile.frontend .
 	@echo "Step 2/2: Building for linux/arm64..."
 	docker buildx build --platform linux/arm64 \
 		-t $(REGISTRY)/$(FRONTEND_IMAGE):$(VERSION_WITH_SHA)-arm64 \
+		--cache-from type=registry,ref=$(REGISTRY)/$(FRONTEND_IMAGE):buildcache-arm64 \
+		--cache-to type=registry,ref=$(REGISTRY)/$(FRONTEND_IMAGE):buildcache-arm64,mode=max \
 		--push \
 		-f Dockerfile.frontend .
 	@echo "Creating manifest lists..."

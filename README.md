@@ -247,6 +247,7 @@ Images are automatically published to `ghcr.io` when code is merged to `master`/
 
 See [docs/DOCKER_PUBLISHING.md](docs/DOCKER_PUBLISHING.md) for detailed information.
 See [docs/MULTI_ARCH_BUILDS.md](docs/MULTI_ARCH_BUILDS.md) for multi-architecture build guide.
+See [docs/LOAD_BALANCER_DEPLOYMENT.md](docs/LOAD_BALANCER_DEPLOYMENT.md) for deploying behind a load balancer.
 
 ## Development
 

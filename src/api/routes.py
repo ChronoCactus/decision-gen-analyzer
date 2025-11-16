@@ -199,12 +199,22 @@ async def websocket_cache_status(websocket: WebSocket):
 
 @config_router.get("/config", response_model=ConfigResponse)
 async def get_config():
-    """Get API configuration including base URL for LAN discovery."""
+    """Get API configuration including base URL for LAN discovery.
+
+    Returns the API base URL with the following priority:
+    1. API_BASE_URL env var (explicit, e.g., https://mysite.com for production)
+    2. LAN discovery (http://{HOST_IP}:8000 if ENABLE_LAN_DISCOVERY=true)
+    3. Localhost fallback (http://localhost:8000)
+    """
     settings = get_settings()
 
-    # Determine the API base URL
-    if settings.enable_lan_discovery and settings.host_ip:
+    # Priority 1: Explicit API_BASE_URL (for production behind load balancer)
+    if settings.api_base_url:
+        api_base_url = settings.api_base_url
+    # Priority 2: LAN discovery (for development access from other machines)
+    elif settings.enable_lan_discovery and settings.host_ip:
         api_base_url = f"http://{settings.host_ip}:8000"
+    # Priority 3: Localhost fallback (local development)
     else:
         api_base_url = "http://localhost:8000"
 
