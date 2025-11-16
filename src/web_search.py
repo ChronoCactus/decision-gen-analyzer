@@ -9,7 +9,7 @@ from urllib.parse import urlparse
 import httpx
 import structlog
 
-from config import Settings
+from src.config import Settings
 
 
 logger = structlog.get_logger(__name__)

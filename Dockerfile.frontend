@@ -13,7 +13,10 @@ RUN npm ci
 # Copy source code
 COPY frontend/ ./
 
-# Build the application
+# Build the application with increased Node.js memory limit
+# Default Node.js memory limit is ~512MB-2GB depending on architecture
+# Next.js builds can require 4-6GB for large projects
+ENV NODE_OPTIONS="--max-old-space-size=4096"
 RUN npm run build
 
 # Expose port

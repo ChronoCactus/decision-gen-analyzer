@@ -6,7 +6,7 @@ from typing import Any, Dict
 
 import structlog
 
-from config import get_settings
+from src.config import get_settings
 
 
 def setup_logging() -> None:
