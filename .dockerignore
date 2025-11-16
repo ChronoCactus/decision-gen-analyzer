@@ -1,7 +1,69 @@
+# Python
 **venv/
-.next
 **__pycache__/
-**node_modules/
-dist/
-tests/
 .pytest_cache
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+htmlcov/
+.coverage
+.tox/
+.mypy_cache/
+
+# Frontend
+.next
+**node_modules/
+frontend/.next/
+frontend/out/
+frontend/build/
+frontend/coverage/
+
+# Build artifacts
+dist/
+build/
+
+# Tests
+tests/
+*.test.tsx
+*.test.ts
+*.test.js
+test_*.py
+
+# Git and GitHub
+.git
+.gitignore
+.github
+
+# Documentation
+*.md
+docs/
+decisions/
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Data directories (mounted as volumes)
+data/
+
+# CI/CD
+Makefile
+docker-compose.yml
+Dockerfile.*
+scripts/
+
+# Logs
+*.log
+logs/
+tmp/
+temp/

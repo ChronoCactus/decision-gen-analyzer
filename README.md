@@ -213,6 +213,42 @@ components/ADRCard.tsx → components/ADRCard.test.tsx
 
 See [docs/TESTING.md](docs/TESTING.md) for comprehensive testing guidelines.
 
+## Docker Image Publishing
+
+The project supports automated Docker image building and publishing with semantic versioning based on conventional commits.
+
+### Local Development
+
+Build and push images to a local registry:
+```bash
+# Check calculated version
+make version
+
+# Build images (current architecture)
+make docker-build
+
+# Build multi-architecture images (for Kubernetes with mixed architectures)
+make docker-buildx-setup  # one-time setup
+make docker-build-multiarch
+
+# Push to local registry
+make docker-push-local REGISTRY=192.168.0.118:5000
+
+# Push multi-architecture images (recommended for Kubernetes)
+make docker-push-local-multiarch REGISTRY=192.168.0.118:5000
+```
+
+### Production (GitHub Container Registry)
+
+Images are automatically published to `ghcr.io` when code is merged to `master`/`main`. Version is calculated from conventional commits:
+- `feat:` → Minor version bump (0.1.0 → 0.2.0)
+- `fix:`, `docs:`, etc. → Patch version bump (0.1.0 → 0.1.1)
+- `feat!:`, `fix!:`, etc. → Major version bump (0.1.0 → 1.0.0)
+
+See [docs/DOCKER_PUBLISHING.md](docs/DOCKER_PUBLISHING.md) for detailed information.
+See [docs/MULTI_ARCH_BUILDS.md](docs/MULTI_ARCH_BUILDS.md) for multi-architecture build guide.
+See [docs/LOAD_BALANCER_DEPLOYMENT.md](docs/LOAD_BALANCER_DEPLOYMENT.md) for deploying behind a load balancer.
+
 ## Development
 
 ### Code Quality

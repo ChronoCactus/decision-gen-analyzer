@@ -187,7 +187,7 @@ def get_persona_manager(include_defaults: Optional[bool] = None) -> PersonaManag
     if _persona_manager is None:
         if include_defaults is None:
             # Import here to avoid circular dependency
-            from config import get_settings
+            from src.config import get_settings
 
             settings = get_settings()
             include_defaults = settings.include_default_personas

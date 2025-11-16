@@ -90,11 +90,22 @@ export function useTaskQueueWebSocket() {
       if (!isMountedRef.current) return;
 
       // Use the same pattern as useCacheStatusWebSocket for LAN discovery
-      // Backend always runs on port 8000, regardless of frontend port
+      // For LAN: frontend on :3000, backend on :8000
+      // For production with LB: frontend and backend on same host (no port in URL)
       const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
       const host = window.location.hostname;
-      const port = '8000'; // Backend port is always 8000
-      const wsUrl = `${protocol}//${host}:${port}/api/v1/adrs/ws/cache-status`;
+      const frontendPort = window.location.port;
+
+      let wsUrl: string;
+      // If accessed with a custom port (e.g., :3000), assume LAN mode with backend on :8000
+      // If accessed without port or with standard port (80/443), assume production mode
+      if (frontendPort && frontendPort !== '80' && frontendPort !== '443') {
+        // LAN mode: backend on port 8000
+        wsUrl = `${protocol}//${host}:8000/api/v1/adrs/ws/cache-status`;
+      } else {
+        // Production mode: backend on same host (load balancer handles routing)
+        wsUrl = `${protocol}//${host}/api/v1/adrs/ws/cache-status`;
+      }
 
       console.log('Connecting to WebSocket for queue updates:', wsUrl);
 

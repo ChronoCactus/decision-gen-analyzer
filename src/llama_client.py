@@ -22,8 +22,8 @@ from langchain_openai import ChatOpenAI
 from langchain_ollama import ChatOllama
 from langchain_core.messages import HumanMessage, SystemMessage
 
-from config import get_settings
-from logger import get_logger
+from src.config import get_settings
+from src.logger import get_logger
 
 if TYPE_CHECKING:
     from src.persona_manager import PersonaConfig

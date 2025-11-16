@@ -13,7 +13,16 @@ RUN npm ci
 # Copy source code
 COPY frontend/ ./
 
-# Build the application
+# Build-time environment variables (optional)
+# These can be overridden during docker build with --build-arg
+# If not set, the app will auto-detect the backend URL at runtime
+ARG NEXT_PUBLIC_API_URL=""
+ENV NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
+
+# Build the application with increased Node.js memory limit
+# Default Node.js memory limit is ~512MB-2GB depending on architecture
+# Next.js builds can require 4-6GB for large projects
+ENV NODE_OPTIONS="--max-old-space-size=4096"
 RUN npm run build
 
 # Expose port

@@ -5,8 +5,8 @@ from typing import Any, Dict, List, Optional
 
 import httpx
 
-from config import get_settings
-from logger import get_logger
+from src.config import get_settings
+from src.logger import get_logger
 
 logger = get_logger(__name__)
 
