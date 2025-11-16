@@ -81,6 +81,7 @@ export interface GenerateADRRequest {
   tags?: string[];
   personas?: string[];
   retrieval_mode?: string;
+  provider_id?: string;
 }
 
 export interface ModelConfig {
@@ -203,4 +204,49 @@ export interface SingleADRExport {
 export interface BulkADRExport {
   schema: ExportSchemaMetadata;
   adrs: ADRExportV1[];
+}
+
+// LLM Provider Configuration types
+export interface LLMProvider {
+  id: string;
+  name: string;
+  provider_type: string;  // ollama, openai, openrouter, vllm, llama_cpp, custom
+  base_url: string;
+  model_name: string;
+  has_api_key: boolean;
+  temperature: number;
+  num_ctx?: number;
+  num_predict?: number;
+  is_default: boolean;
+  is_env_based: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreateProviderRequest {
+  name: string;
+  provider_type: string;
+  base_url: string;
+  model_name: string;
+  api_key?: string;
+  temperature?: number;
+  num_ctx?: number;
+  num_predict?: number;
+  is_default?: boolean;
+}
+
+export interface UpdateProviderRequest {
+  name?: string;
+  provider_type?: string;
+  base_url?: string;
+  model_name?: string;
+  api_key?: string;
+  temperature?: number;
+  num_ctx?: number;
+  num_predict?: number;
+  is_default?: boolean;
+}
+
+export interface ProvidersListResponse {
+  providers: LLMProvider[];
 }

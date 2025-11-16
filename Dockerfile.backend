@@ -30,7 +30,8 @@ RUN pip install --no-cache-dir \
     python-multipart \
     langchain-openai>=1.0.2 \
     langchain-core>=1.0.4 \
-    langchain-ollama>=1.0.0
+    langchain-ollama>=1.0.0 \
+    cryptography>=41.0.0
 
 # Copy source code
 COPY src/ ./src/

@@ -107,6 +107,13 @@ class Settings(BaseSettings):
     log_level: str = Field(default="INFO", description="Logging level")
     log_format: str = Field(default="json", description="Log format (json or text)")
 
+    # Storage Configuration
+    adr_storage_path: str = Field(
+        default="/app/data/adrs",
+        description="Path to ADR storage directory",
+        alias="ADR_STORAGE_PATH",
+    )
+
     # Development settings
     debug: bool = Field(default=False, description="Enable debug mode")
 
@@ -139,6 +146,13 @@ class Settings(BaseSettings):
         default=None,
         description="Custom personas configuration directory (defaults to config/personas)",
         alias="PERSONAS_CONFIG_DIR",
+    )
+
+    # Encryption Configuration
+    encryption_salt: str = Field(
+        default="decision_analyzer_default_salt_change_me",
+        description="Salt for encrypting API credentials in storage",
+        alias="ENCRYPTION_SALT",
     )
 
     class Config:

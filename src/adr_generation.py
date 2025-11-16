@@ -19,6 +19,7 @@ from src.llama_client import (
     LlamaCppClient,
     LlamaCppClientPool,
     create_client_from_persona_config,
+    create_client_from_provider_id,
 )
 from src.lightrag_client import LightRAGClient
 from src.logger import get_logger
@@ -53,6 +54,7 @@ class ADRGenerationService:
         personas: Optional[List[str]] = None,
         include_context: bool = True,
         progress_callback: Optional[callable] = None,
+        provider_id: Optional[str] = None,
     ) -> ADRGenerationResult:
         """Generate a new ADR from a prompt using multiple personas.
 
@@ -61,6 +63,7 @@ class ADRGenerationService:
             personas: List of persona values (e.g., ['technical_lead', 'architect'])
             include_context: Whether to retrieve related context from vector DB
             progress_callback: Optional callback function for progress updates
+            provider_id: Optional provider ID to use for personas without custom model_config
 
         Returns:
             ADRGenerationResult: The generated ADR with all components
@@ -85,7 +88,7 @@ class ADRGenerationService:
 
         # Generate perspectives from each persona
         synthesis_inputs = await self._generate_persona_perspectives(
-            prompt, personas, related_context, progress_callback
+            prompt, personas, related_context, progress_callback, provider_id
         )
 
         # Synthesize all perspectives into final ADR
@@ -294,6 +297,7 @@ class ADRGenerationService:
         personas: List[str],
         related_context: List[str],
         progress_callback: Optional[callable] = None,
+        provider_id: Optional[str] = None,
     ) -> List[PersonaSynthesisInput]:
         """Generate perspectives from each persona.
 
@@ -302,6 +306,7 @@ class ADRGenerationService:
             personas: List of persona values to generate perspectives for
             related_context: Related context from vector DB
             progress_callback: Optional callback for progress updates
+            provider_id: Optional provider ID to use for personas without custom model_config
 
         Returns:
             List of persona synthesis inputs
@@ -325,10 +330,25 @@ class ADRGenerationService:
                 )
                 persona_prompts.append(system_prompt)
 
-                # Create a client for this persona with its specific model config
-                persona_client = create_client_from_persona_config(
-                    persona_config, demo_mode=False
-                )
+                # Create a client for this persona
+                # If persona has custom model_config, use it
+                # Otherwise, use the selected provider_id if provided
+                if persona_config.model_config:
+                    # Persona has custom model config - use it (don't override)
+                    persona_client = create_client_from_persona_config(
+                        persona_config, demo_mode=False
+                    )
+                elif provider_id:
+                    # No custom config, but provider selected - use that provider
+                    persona_client = await create_client_from_provider_id(
+                        provider_id, demo_mode=False
+                    )
+                else:
+                    # No custom config, no provider selected - use defaults
+                    persona_client = create_client_from_persona_config(
+                        persona_config, demo_mode=False
+                    )
+                
                 persona_clients.append(persona_client)
             else:
                 logger.warning(f"Skipping unknown persona: {persona_value}")

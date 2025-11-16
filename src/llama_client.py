@@ -632,3 +632,57 @@ def create_client_from_persona_config(
     else:
         # Use default settings
         return LlamaCppClient(demo_mode=demo_mode)
+
+
+async def create_client_from_provider_id(
+    provider_id: Optional[str] = None, demo_mode: bool = False
+) -> LlamaCppClient:
+    """Create a LlamaCppClient instance from a stored provider configuration.
+
+    Args:
+        provider_id: ID of the provider to use. If None, uses the default provider.
+        demo_mode: Whether to run in demo mode without actual LLM calls
+
+    Returns:
+        LlamaCppClient configured for the provider, or using env defaults if provider not found
+    """
+    from src.llm_provider_storage import get_provider_storage
+
+    settings = get_settings()
+    storage = get_provider_storage()
+
+    # Ensure env provider exists
+    await storage.ensure_env_provider()
+
+    # Get the provider config
+    if provider_id:
+        provider_config = await storage.get(provider_id)
+    else:
+        # Get default provider
+        default_response = await storage.get_default()
+        if default_response:
+            provider_config = await storage.get(default_response.id)
+        else:
+            provider_config = None
+
+    # If no provider found, fall back to env defaults
+    if not provider_config:
+        logger.warning(f"Provider {provider_id} not found, using environment defaults")
+        return LlamaCppClient(demo_mode=demo_mode)
+
+    # Get decrypted API key if present
+    api_key = None
+    if provider_config.api_key_encrypted:
+        api_key = await storage.get_decrypted_api_key(provider_config.id)
+
+    # Create client with provider config
+    return LlamaCppClient(
+        base_url=provider_config.base_url,
+        model=provider_config.model_name,
+        provider=provider_config.provider_type,
+        api_key=api_key,
+        temperature=provider_config.temperature,
+        num_ctx=provider_config.num_ctx,
+        num_predict=provider_config.num_predict,
+        demo_mode=demo_mode,
+    )

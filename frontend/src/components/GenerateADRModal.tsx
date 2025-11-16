@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { GenerateADRRequest, Persona, DefaultModelConfig } from '@/types/api';
+import { GenerateADRRequest, Persona, LLMProvider } from '@/types/api';
 import { apiClient } from '@/lib/api';
 import { useEscapeKey } from '@/hooks/useEscapeKey';
 
@@ -20,7 +20,8 @@ export function GenerateADRModal({ onClose, onGenerate, isGenerating, generation
   const [personas, setPersonas] = useState<Persona[]>([]);
   const [selectedPersonas, setSelectedPersonas] = useState<string[]>([]);
   const [loadingPersonas, setLoadingPersonas] = useState(true);
-  const [defaultModelConfig, setDefaultModelConfig] = useState<DefaultModelConfig | null>(null);
+  const [providers, setProviders] = useState<LLMProvider[]>([]);
+  const [selectedProviderId, setSelectedProviderId] = useState<string>('');
   const [elapsedTime, setElapsedTime] = useState(0);
   const [isMac, setIsMac] = useState(false);
   const [isWin, setIsWin] = useState(false);
@@ -66,22 +67,29 @@ export function GenerateADRModal({ onClose, onGenerate, isGenerating, generation
   }, [prompt, context, tags, selectedPersonas, isGenerating]);
 
   useEffect(() => {
-    // Load available personas and default model config
+    // Load available personas and providers
     Promise.all([
       apiClient.getPersonas(),
-      apiClient.getDefaultModelConfig()
+      apiClient.listProviders()
     ])
-      .then(([personasResponse, modelConfigResponse]) => {
+      .then(([personasResponse, providersResponse]) => {
         setPersonas(personasResponse.personas);
-        setDefaultModelConfig(modelConfigResponse);
-        // Set default selections
+        setProviders(providersResponse.providers);
+
+        // Set default provider (the one marked as default)
+        const defaultProvider = providersResponse.providers.find(p => p.is_default);
+        if (defaultProvider) {
+          setSelectedProviderId(defaultProvider.id);
+        }
+
+        // Set default persona selections
         const defaultPersonas = personasResponse.personas
           .filter(p => ['technical_lead', 'architect', 'business_analyst'].includes(p.value))
           .map(p => p.value);
         setSelectedPersonas(defaultPersonas);
       })
       .catch(error => {
-        console.error('Failed to load personas or model config:', error);
+        console.error('Failed to load personas or providers:', error);
       })
       .finally(() => {
         setLoadingPersonas(false);
@@ -101,10 +109,14 @@ export function GenerateADRModal({ onClose, onGenerate, isGenerating, generation
       const provider = persona.llm_config.provider || 'custom';
       const model = persona.llm_config.name;
       return `${provider}/${model}`;
-    } else if (defaultModelConfig) {
-      return `${defaultModelConfig.provider}/${defaultModelConfig.model}`;
+    } else {
+      // Use selected provider's model
+      const provider = providers.find(p => p.id === selectedProviderId);
+      if (provider) {
+        return `${provider.provider_type}/${provider.model_name}`;
+      }
+      return 'default';
     }
-    return 'default';
   };
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -119,6 +131,7 @@ export function GenerateADRModal({ onClose, onGenerate, isGenerating, generation
       tags: tagArray.length > 0 ? tagArray : undefined,
       personas: selectedPersonas.length > 0 ? selectedPersonas : undefined,
       retrieval_mode: retrievalMode,
+      provider_id: selectedProviderId || undefined,
     });
   };
 
@@ -129,10 +142,25 @@ export function GenerateADRModal({ onClose, onGenerate, isGenerating, generation
           <div className="flex justify-between items-start mb-6">
             <div className="flex-1">
               <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Generate New ADR</h2>
-              {defaultModelConfig && (
-                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                  Default model: <span className="font-mono">{defaultModelConfig.provider}/{defaultModelConfig.model}</span>
-                </p>
+              {providers.length > 0 && (
+                <div className="mt-2 flex items-center gap-2">
+                  <label htmlFor="provider-select" className="text-xs text-gray-600 dark:text-gray-400">
+                    Model:
+                  </label>
+                  <select
+                    id="provider-select"
+                    value={selectedProviderId}
+                    onChange={(e) => setSelectedProviderId(e.target.value)}
+                    className="text-xs px-2 py-1 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 font-mono"
+                  >
+                    {providers.map(provider => (
+                      <option key={provider.id} value={provider.id}>
+                        {provider.provider_type}/{provider.model_name}
+                        {provider.is_default ? ' (default)' : ''}
+                      </option>
+                    ))}
+                  </select>
+                </div>
               )}
             </div>
             <button

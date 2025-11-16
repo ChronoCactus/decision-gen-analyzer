@@ -333,6 +333,52 @@ class ApiClient {
       method: 'POST',
     });
   }
+
+  // ==================== LLM Provider Management ====================
+
+  async listProviders(): Promise<import('@/types/api').ProvidersListResponse> {
+    return this.request('/api/v1/llm-providers');
+  }
+
+  async getProvider(providerId: string): Promise<import('@/types/api').LLMProvider> {
+    return this.request(`/api/v1/llm-providers/${providerId}`);
+  }
+
+  async getDefaultProvider(): Promise<import('@/types/api').LLMProvider | null> {
+    return this.request('/api/v1/llm-providers/default');
+  }
+
+  async createProvider(request: import('@/types/api').CreateProviderRequest): Promise<import('@/types/api').LLMProvider> {
+    return this.request('/api/v1/llm-providers', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(request),
+    });
+  }
+
+  async updateProvider(
+    providerId: string,
+    request: import('@/types/api').UpdateProviderRequest
+  ): Promise<import('@/types/api').LLMProvider> {
+    return this.request(`/api/v1/llm-providers/${providerId}`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(request),
+    });
+  }
+
+  async deleteProvider(providerId: string): Promise<{
+    message: string;
+    deleted: boolean;
+  }> {
+    return this.request(`/api/v1/llm-providers/${providerId}`, {
+      method: 'DELETE',
+    });
+  }
 }
 
 export const apiClient = new ApiClient();
