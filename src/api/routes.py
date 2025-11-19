@@ -799,6 +799,12 @@ async def get_generation_task_status(task_id: str):
                 "message": "Generation failed",
                 "error": error_msg,
             }
+        elif task_result.state == "REVOKED":
+            # Task was cancelled
+            response = {
+                "status": "revoked",
+                "message": "Task was cancelled",
+            }
         else:
             # Unknown state - log and return info
             logger.warning(f"Unknown task state {task_result.state} for task {task_id}")
@@ -1277,6 +1283,81 @@ async def cancel_task(task_id: str, terminate: bool = False):
     except Exception as e:
         logger.error(f"Failed to cancel task: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to cancel task: {str(e)}")
+
+
+@queue_router.post("/cleanup-orphaned")
+async def cleanup_orphaned_tasks():
+    """Clean up orphaned task records in Redis.
+
+    Orphaned tasks are those marked as active in Redis but don't have
+    corresponding Celery tasks running. This can happen after crashes,
+    restarts, or task failures without proper cleanup.
+
+    Returns:
+        {
+            "message": str,
+            "cleaned_count": int,
+            "error_count": int,
+            "cleaned_tasks": list[dict],
+            "errors": list[str]
+        }
+    """
+    try:
+        from src.task_queue_monitor import get_task_queue_monitor
+
+        monitor = get_task_queue_monitor()
+        result = await monitor.cleanup_orphaned_tasks()
+
+        return {
+            "message": f"Cleaned {result['cleaned_count']} orphaned tasks",
+            **result,
+        }
+    except Exception as e:
+        logger.error(f"Failed to cleanup orphaned tasks: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to cleanup orphaned tasks: {str(e)}"
+        )
+
+
+@queue_router.post("/clear")
+async def clear_all_tasks(force: bool = False):
+    """Clear all tasks from the queue.
+
+    This will:
+    1. Revoke all pending tasks in the Celery queue
+    2. Optionally terminate active tasks (if force=True)
+    3. Clear all task tracking data from Redis
+
+    WARNING: This is a destructive operation and will cancel all queued work.
+
+    Args:
+        force: If True, forcefully terminate running tasks (default: False)
+
+    Returns:
+        {
+            "message": str,
+            "revoked_active": int,
+            "purged_pending": int,
+            "cleared_redis_records": int,
+            "error_count": int,
+            "revoked_tasks": list[dict],
+            "errors": list[str]
+        }
+    """
+    try:
+        from src.task_queue_monitor import get_task_queue_monitor
+
+        monitor = get_task_queue_monitor()
+        result = await monitor.clear_all_tasks(force=force)
+
+        total_cleared = result["revoked_active"] + result["purged_pending"]
+        return {
+            "message": f"Cleared {total_cleared} tasks from queue (active: {result['revoked_active']}, pending: {result['purged_pending']})",
+            **result,
+        }
+    except Exception as e:
+        logger.error(f"Failed to clear queue: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to clear queue: {str(e)}")
 
 
 # ==================== Provider Management Routes ====================

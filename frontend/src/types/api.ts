@@ -114,7 +114,7 @@ export interface TaskResponse {
 }
 
 export interface TaskStatus {
-  status: "pending" | "progress" | "completed" | "failed";
+  status: "pending" | "progress" | "completed" | "failed" | "revoked";
   message?: string;
   result?: any;
   error?: string;
