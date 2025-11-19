@@ -354,6 +354,39 @@ class ApiClient {
     });
   }
 
+  async cleanupOrphanedTasks(): Promise<{
+    message: string;
+    cleaned_count: number;
+    error_count: number;
+    cleaned_tasks: Array<{
+      task_id: string;
+      task_name: string;
+      state: string;
+    }>;
+    errors: string[];
+  }> {
+    return this.request('/api/v1/queue/cleanup-orphaned', {
+      method: 'POST',
+    });
+  }
+
+  async clearQueue(force: boolean = false): Promise<{
+    message: string;
+    revoked_active: number;
+    purged_pending: number;
+    cleared_redis_records: number;
+    error_count: number;
+    revoked_tasks: Array<{
+      task_id: string;
+      task_name: string;
+    }>;
+    errors: string[];
+  }> {
+    return this.request(`/api/v1/queue/clear?force=${force}`, {
+      method: 'POST',
+    });
+  }
+
   // ==================== LLM Provider Management ====================
 
   async listProviders(): Promise<import('@/types/api').ProvidersListResponse> {

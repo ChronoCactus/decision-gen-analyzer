@@ -233,6 +233,16 @@ export default function Home() {
           return;
         }
 
+        if (status.status === 'revoked') {
+          // Task was cancelled - clear generation state
+          if (type === 'generation') {
+            setIsGenerating(false);
+            setGenerationStartTime(undefined);
+          }
+          // Stop polling
+          return;
+        }
+
         // Continue polling
         setTimeout(poll, 2000);
       } catch (err) {
@@ -594,6 +604,8 @@ export default function Home() {
                     ? 'bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800'
                       : task.status === 'failed'
                       ? 'bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800'
+                      : task.status === 'revoked'
+                        ? 'bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800'
                       : 'bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800'
                   }`}
                 >
@@ -602,6 +614,7 @@ export default function Home() {
                       <span className="text-sm font-medium text-gray-900 dark:text-gray-100">
                         {task.status === 'completed' && '✅ '}
                         {task.status === 'failed' && '❌ '}
+                        {task.status === 'revoked' && '🚫 '}
                         {task.status === 'queued' && '⏳ '}
                         {task.status === 'progress' && '🔄 '}
                         {task.message}
@@ -612,7 +625,7 @@ export default function Home() {
                         </span>
                       )}
                     </div>
-                    {task.status === 'completed' || task.status === 'failed' ? (
+                    {task.status === 'completed' || task.status === 'failed' || task.status === 'revoked' ? (
                       <button
                         onClick={() => setTasks(prev => {
                           const newTasks = { ...prev };

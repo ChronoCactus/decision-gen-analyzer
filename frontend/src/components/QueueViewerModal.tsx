@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { useEscapeKey } from '@/hooks/useEscapeKey';
 import { apiClient } from '@/lib/api';
 import { useTaskQueueWebSocket } from '@/hooks/useTaskQueueWebSocket';
+import { Toast } from '@/components/Toast';
 
 interface QueueTask {
   task_id: string;
@@ -35,6 +36,18 @@ export function QueueViewerModal({
   const [tasks, setTasks] = useState<QueueTask[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [actionLoading, setActionLoading] = useState(false);
+  const [confirmAction, setConfirmAction] = useState<{
+    type: 'clear' | 'cleanup' | 'cancel';
+    taskId?: string;
+    taskName?: string;
+    taskStatus?: string;
+  } | null>(null);
+
+  // Toast state
+  const [showToast, setShowToast] = useState(false);
+  const [toastMessage, setToastMessage] = useState('');
+  const [toastType, setToastType] = useState<'info' | 'success' | 'warning' | 'error'>('success');
   
   // Use WebSocket for real-time updates
   const { trackedTasks } = useTaskQueueWebSocket();
@@ -126,6 +139,68 @@ export function QueueViewerModal({
     return `${minutes}:${seconds.toString().padStart(2, '0')}`;
   };
 
+  const handleCleanupOrphaned = async () => {
+    setActionLoading(true);
+    try {
+      const result = await apiClient.cleanupOrphanedTasks();
+      setToastMessage(`✅ Cleaned ${result.cleaned_count} orphaned tasks`);
+      setToastType('success');
+      setShowToast(true);
+      // Refresh task list
+      const data = await apiClient.getQueueTasks();
+      setTasks(data.tasks || []);
+    } catch (err) {
+      setToastMessage(`❌ Failed to cleanup: ${err instanceof Error ? err.message : 'Unknown error'}`);
+      setToastType('error');
+      setShowToast(true);
+    } finally {
+      setActionLoading(false);
+      setConfirmAction(null);
+    }
+  };
+
+  const handleClearQueue = async () => {
+    setActionLoading(true);
+    try {
+      const result = await apiClient.clearQueue(false); // Don't force terminate by default
+      setToastMessage(`✅ Cleared queue: ${result.revoked_active} active + ${result.purged_pending} pending tasks`);
+      setToastType('success');
+      setShowToast(true);
+      // Refresh task list
+      const data = await apiClient.getQueueTasks();
+      setTasks(data.tasks || []);
+    } catch (err) {
+      setToastMessage(`❌ Failed to clear queue: ${err instanceof Error ? err.message : 'Unknown error'}`);
+      setToastType('error');
+      setShowToast(true);
+    } finally {
+      setActionLoading(false);
+      setConfirmAction(null);
+    }
+  };
+
+  const handleCancelTask = async (taskId: string, taskStatus: string) => {
+    setActionLoading(true);
+    try {
+      // For active tasks, we need to terminate them. For pending tasks, revoke is enough.
+      const terminate = taskStatus === 'active';
+      await apiClient.cancelTask(taskId, terminate);
+      setToastMessage(`✅ Task cancelled successfully`);
+      setToastType('success');
+      setShowToast(true);
+      // Refresh task list
+      const data = await apiClient.getQueueTasks();
+      setTasks(data.tasks || []);
+    } catch (err) {
+      setToastMessage(`❌ Failed to cancel task: ${err instanceof Error ? err.message : 'Unknown error'}`);
+      setToastType('error');
+      setShowToast(true);
+    } finally {
+      setActionLoading(false);
+      setConfirmAction(null);
+    }
+  };
+
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 dark:bg-opacity-70 flex items-center justify-center z-50 p-4">
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-4xl w-full max-h-[80vh] overflow-hidden flex flex-col">
@@ -165,6 +240,24 @@ export function QueueViewerModal({
               <div className="text-sm text-green-600 dark:text-green-400">Workers</div>
               <div className="text-2xl font-semibold text-green-900 dark:text-green-300">{workersOnline}</div>
             </div>
+          </div>
+
+          {/* Action Buttons */}
+          <div className="flex gap-2 mt-4">
+            <button
+              onClick={() => setConfirmAction({ type: 'cleanup' })}
+              disabled={actionLoading}
+              className="px-3 py-1.5 bg-blue-600 dark:bg-blue-700 text-white text-sm rounded hover:bg-blue-700 dark:hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            >
+              Cleanup Orphaned
+            </button>
+            <button
+              onClick={() => setConfirmAction({ type: 'clear' })}
+              disabled={actionLoading || totalTasks === 0}
+              className="px-3 py-1.5 bg-red-600 dark:bg-red-700 text-white text-sm rounded hover:bg-red-700 dark:hover:bg-red-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            >
+              Clear Queue
+            </button>
           </div>
         </div>
 
@@ -206,11 +299,26 @@ export function QueueViewerModal({
                         {task.task_id}
                       </div>
                     </div>
-                    {task.started_at && (
-                      <div className="text-sm text-gray-600 dark:text-gray-400">
-                        {formatElapsedTime(task.started_at)}
-                      </div>
-                    )}
+                    <div className="flex items-center gap-2">
+                      {task.started_at && (
+                        <div className="text-sm text-gray-600 dark:text-gray-400">
+                          {formatElapsedTime(task.started_at)}
+                        </div>
+                      )}
+                      <button
+                        onClick={() => setConfirmAction({
+                          type: 'cancel',
+                          taskId: task.task_id,
+                          taskName: getTaskDisplayName(task.task_name),
+                          taskStatus: task.status
+                        })}
+                        disabled={actionLoading}
+                        className="px-2 py-1 bg-red-600 dark:bg-red-700 text-white text-xs rounded hover:bg-red-700 dark:hover:bg-red-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                        title="Cancel this task"
+                      >
+                        Cancel
+                      </button>
+                    </div>
                   </div>
 
                   {/* Task Details */}
@@ -263,6 +371,60 @@ export function QueueViewerModal({
           </div>
         </div>
       </div>
+
+      {/* Confirmation Dialog */}
+      {confirmAction && (
+        <div className="fixed inset-0 bg-black bg-opacity-75 dark:bg-opacity-85 flex items-center justify-center z-[60]">
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-md w-full mx-4 p-6">
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2">
+              {confirmAction.type === 'clear' && 'Clear Entire Queue?'}
+              {confirmAction.type === 'cleanup' && 'Cleanup Orphaned Tasks?'}
+              {confirmAction.type === 'cancel' && `Cancel Task: ${confirmAction.taskName}?`}
+            </h3>
+            <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
+              {confirmAction.type === 'clear' &&
+                'This will cancel all pending tasks and revoke active tasks. This action cannot be undone.'}
+              {confirmAction.type === 'cleanup' &&
+                'This will remove task records in Redis that don\'t have corresponding Celery tasks. This is safe and helps clean up orphaned records from crashes or restarts.'}
+              {confirmAction.type === 'cancel' &&
+                'This will cancel this specific task. If it\'s currently running, it will be revoked.'}
+            </p>
+            <div className="flex gap-2 justify-end">
+              <button
+                onClick={() => setConfirmAction(null)}
+                disabled={actionLoading}
+                className="px-4 py-2 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded hover:bg-gray-200 dark:hover:bg-gray-600 disabled:opacity-50 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  if (confirmAction.type === 'clear') handleClearQueue();
+                  else if (confirmAction.type === 'cleanup') handleCleanupOrphaned();
+                  else if (confirmAction.type === 'cancel' && confirmAction.taskId && confirmAction.taskStatus) {
+                    handleCancelTask(confirmAction.taskId, confirmAction.taskStatus);
+                  }
+                }}
+                disabled={actionLoading}
+                className="px-4 py-2 bg-red-600 dark:bg-red-700 text-white rounded hover:bg-red-700 dark:hover:bg-red-600 disabled:opacity-50 transition-colors"
+              >
+                {actionLoading ? 'Processing...' : 'Confirm'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Toast Notification */}
+      {showToast && (
+        <Toast
+          message={toastMessage}
+          type={toastType}
+          onClose={() => setShowToast(false)}
+          duration={5000}
+          position="top"
+        />
+      )}
     </div>
   );
 }

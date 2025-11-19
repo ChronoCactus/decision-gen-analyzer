@@ -62,14 +62,20 @@ class TestADRGenerationService:
         self, mock_llama_client, mock_lightrag_client, mock_persona_manager, generation_prompt
     ):
         """Test basic ADR generation."""
-        service = ADRGenerationService(mock_llama_client, mock_lightrag_client, mock_persona_manager)
+        # Mock the client factory functions to return our mock client
+        with patch("src.adr_generation.create_client_from_persona_config") as mock_factory, \
+             patch("src.adr_generation.create_client_from_provider_id") as mock_provider_factory:
+            mock_factory.return_value = mock_llama_client
+            mock_provider_factory.return_value = mock_llama_client
+            
+            service = ADRGenerationService(mock_llama_client, mock_lightrag_client, mock_persona_manager)
 
-        result = await service.generate_adr(generation_prompt)
+            result = await service.generate_adr(generation_prompt)
 
-        assert result is not None
-        assert result.generated_title is not None
-        assert result.decision_outcome is not None
-        mock_llama_client.generate.assert_called()
+            assert result is not None
+            assert result.generated_title is not None
+            assert result.decision_outcome is not None
+            mock_llama_client.generate.assert_called()
 
     @pytest.mark.asyncio
     async def test_generate_adr_with_personas(
@@ -105,12 +111,18 @@ class TestADRGenerationService:
             {"id": "adr-1", "content": "Previous decision about databases"}
         ]
 
-        service = ADRGenerationService(mock_llama_client, mock_lightrag_client, mock_persona_manager)
+        # Mock the client factory functions to return our mock client
+        with patch("src.adr_generation.create_client_from_persona_config") as mock_factory, \
+             patch("src.adr_generation.create_client_from_provider_id") as mock_provider_factory:
+            mock_factory.return_value = mock_llama_client
+            mock_provider_factory.return_value = mock_llama_client
+            
+            service = ADRGenerationService(mock_llama_client, mock_lightrag_client, mock_persona_manager)
 
-        result = await service.generate_adr(generation_prompt, include_context=True)
+            result = await service.generate_adr(generation_prompt, include_context=True)
 
-        assert result is not None
-        mock_lightrag_client.retrieve_documents.assert_called()
+            assert result is not None
+            mock_lightrag_client.retrieve_documents.assert_called()
 
     @pytest.mark.asyncio
     async def test_generate_adr_handles_llm_error(
@@ -120,13 +132,19 @@ class TestADRGenerationService:
         # Make generate raise an exception
         mock_llama_client.generate = AsyncMock(side_effect=Exception("LLM Error"))
 
-        service = ADRGenerationService(mock_llama_client, mock_lightrag_client, mock_persona_manager)
+        # Mock the client factory functions to return our mock client
+        with patch("src.adr_generation.create_client_from_persona_config") as mock_factory, \
+             patch("src.adr_generation.create_client_from_provider_id") as mock_provider_factory:
+            mock_factory.return_value = mock_llama_client
+            mock_provider_factory.return_value = mock_llama_client
+            
+            service = ADRGenerationService(mock_llama_client, mock_lightrag_client, mock_persona_manager)
 
-        # The service might catch and handle the error gracefully
-        # So we just test that it doesn't crash completely
-        try:
-            result = await service.generate_adr(generation_prompt)
-            # If no exception, that's fine - error was handled gracefully
-        except Exception as e:
-            # If exception raised, that's also acceptable
-            assert "LLM Error" in str(e) or "Error" in str(e)
+            # The service might catch and handle the error gracefully
+            # So we just test that it doesn't crash completely
+            try:
+                result = await service.generate_adr(generation_prompt)
+                # If no exception, that's fine - error was handled gracefully
+            except Exception as e:
+                # If exception raised, that's also acceptable
+                assert "LLM Error" in str(e) or "Error" in str(e)

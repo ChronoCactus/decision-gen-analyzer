@@ -217,3 +217,225 @@ class TestGenerationRoutes:
 
         # Status should be 200 or 404
         assert response.status_code in [200, 404, 500]
+
+
+class TestQueueManagementRoutes:
+    """Test queue management and cleanup routes."""
+
+    @pytest.mark.asyncio
+    @patch("src.task_queue_monitor.get_task_queue_monitor")
+    async def test_cleanup_orphaned_tasks_success(self, mock_get_monitor):
+        """Test successful cleanup of orphaned tasks."""
+        # Setup mock monitor
+        mock_monitor = MagicMock()
+        mock_monitor.cleanup_orphaned_tasks = AsyncMock(
+            return_value={
+                "cleaned_count": 3,
+                "error_count": 0,
+                "cleaned_tasks": [
+                    {
+                        "task_id": "task-1",
+                        "task_name": "generate_adr",
+                        "state": "SUCCESS",
+                    },
+                    {
+                        "task_id": "task-2",
+                        "task_name": "analyze_adr",
+                        "state": "FAILURE",
+                    },
+                    {
+                        "task_id": "task-3",
+                        "task_name": "generate_adr",
+                        "state": "REVOKED",
+                    },
+                ],
+                "errors": [],
+            }
+        )
+        mock_get_monitor.return_value = mock_monitor
+
+        client = TestClient(app)
+        response = client.post("/api/v1/queue/cleanup-orphaned")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["cleaned_count"] == 3
+        assert data["error_count"] == 0
+        assert len(data["cleaned_tasks"]) == 3
+        assert "Cleaned 3 orphaned tasks" in data["message"]
+
+        # Verify monitor method was called
+        mock_monitor.cleanup_orphaned_tasks.assert_called_once()
+
+    @pytest.mark.asyncio
+    @patch("src.task_queue_monitor.get_task_queue_monitor")
+    async def test_cleanup_orphaned_tasks_no_orphans(self, mock_get_monitor):
+        """Test cleanup when no orphaned tasks exist."""
+        mock_monitor = MagicMock()
+        mock_monitor.cleanup_orphaned_tasks = AsyncMock(
+            return_value={
+                "cleaned_count": 0,
+                "error_count": 0,
+                "cleaned_tasks": [],
+                "errors": [],
+            }
+        )
+        mock_get_monitor.return_value = mock_monitor
+
+        client = TestClient(app)
+        response = client.post("/api/v1/queue/cleanup-orphaned")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["cleaned_count"] == 0
+        assert "Cleaned 0 orphaned tasks" in data["message"]
+
+    @pytest.mark.asyncio
+    @patch("src.task_queue_monitor.get_task_queue_monitor")
+    async def test_cleanup_orphaned_tasks_with_errors(self, mock_get_monitor):
+        """Test cleanup with some errors."""
+        mock_monitor = MagicMock()
+        mock_monitor.cleanup_orphaned_tasks = AsyncMock(
+            return_value={
+                "cleaned_count": 2,
+                "error_count": 1,
+                "cleaned_tasks": [
+                    {
+                        "task_id": "task-1",
+                        "task_name": "generate_adr",
+                        "state": "SUCCESS",
+                    },
+                    {
+                        "task_id": "task-2",
+                        "task_name": "analyze_adr",
+                        "state": "FAILURE",
+                    },
+                ],
+                "errors": ["Error checking task task-3: Connection timeout"],
+            }
+        )
+        mock_get_monitor.return_value = mock_monitor
+
+        client = TestClient(app)
+        response = client.post("/api/v1/queue/cleanup-orphaned")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["cleaned_count"] == 2
+        assert data["error_count"] == 1
+        assert len(data["errors"]) == 1
+
+    @pytest.mark.asyncio
+    @patch("src.task_queue_monitor.get_task_queue_monitor")
+    async def test_clear_all_tasks_success(self, mock_get_monitor):
+        """Test successful clearing of all tasks."""
+        mock_monitor = MagicMock()
+        mock_monitor.clear_all_tasks = AsyncMock(
+            return_value={
+                "revoked_active": 2,
+                "purged_pending": 3,
+                "cleared_redis_records": 1,
+                "error_count": 0,
+                "revoked_tasks": [
+                    {"task_id": "task-1", "task_name": "generate_adr"},
+                    {"task_id": "task-2", "task_name": "analyze_adr"},
+                ],
+                "errors": [],
+            }
+        )
+        mock_get_monitor.return_value = mock_monitor
+
+        client = TestClient(app)
+        response = client.post("/api/v1/queue/clear?force=false")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["revoked_active"] == 2
+        assert data["purged_pending"] == 3
+        assert "Cleared 5 tasks" in data["message"]
+        assert "active: 2" in data["message"]
+        assert "pending: 3" in data["message"]
+
+        # Verify monitor method was called with force=False
+        mock_monitor.clear_all_tasks.assert_called_once_with(force=False)
+
+    @pytest.mark.asyncio
+    @patch("src.task_queue_monitor.get_task_queue_monitor")
+    async def test_clear_all_tasks_with_force(self, mock_get_monitor):
+        """Test clearing all tasks with force terminate."""
+        mock_monitor = MagicMock()
+        mock_monitor.clear_all_tasks = AsyncMock(
+            return_value={
+                "revoked_active": 1,
+                "purged_pending": 0,
+                "cleared_redis_records": 1,
+                "error_count": 0,
+                "revoked_tasks": [{"task_id": "task-1", "task_name": "generate_adr"}],
+                "errors": [],
+            }
+        )
+        mock_get_monitor.return_value = mock_monitor
+
+        client = TestClient(app)
+        response = client.post("/api/v1/queue/clear?force=true")
+
+        assert response.status_code == 200
+        # Verify monitor method was called with force=True
+        mock_monitor.clear_all_tasks.assert_called_once_with(force=True)
+
+    @pytest.mark.asyncio
+    @patch("src.task_queue_monitor.get_task_queue_monitor")
+    async def test_clear_all_tasks_empty_queue(self, mock_get_monitor):
+        """Test clearing when queue is empty."""
+        mock_monitor = MagicMock()
+        mock_monitor.clear_all_tasks = AsyncMock(
+            return_value={
+                "revoked_active": 0,
+                "purged_pending": 0,
+                "cleared_redis_records": 0,
+                "error_count": 0,
+                "revoked_tasks": [],
+                "errors": [],
+            }
+        )
+        mock_get_monitor.return_value = mock_monitor
+
+        client = TestClient(app)
+        response = client.post("/api/v1/queue/clear")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["revoked_active"] == 0
+        assert data["purged_pending"] == 0
+
+    @pytest.mark.asyncio
+    @patch("src.task_queue_monitor.get_task_queue_monitor")
+    async def test_clear_all_tasks_error_handling(self, mock_get_monitor):
+        """Test error handling when clearing tasks fails."""
+        mock_monitor = MagicMock()
+        mock_monitor.clear_all_tasks = AsyncMock(
+            side_effect=Exception("Redis connection failed")
+        )
+        mock_get_monitor.return_value = mock_monitor
+
+        client = TestClient(app)
+        response = client.post("/api/v1/queue/clear")
+
+        assert response.status_code == 500
+        assert "Failed to clear queue" in response.json()["detail"]
+
+    @pytest.mark.asyncio
+    @patch("src.task_queue_monitor.get_task_queue_monitor")
+    async def test_cleanup_orphaned_tasks_error_handling(self, mock_get_monitor):
+        """Test error handling when cleanup fails."""
+        mock_monitor = MagicMock()
+        mock_monitor.cleanup_orphaned_tasks = AsyncMock(
+            side_effect=Exception("Unexpected error")
+        )
+        mock_get_monitor.return_value = mock_monitor
+
+        client = TestClient(app)
+        response = client.post("/api/v1/queue/cleanup-orphaned")
+
+        assert response.status_code == 500
+        assert "Failed to cleanup orphaned tasks" in response.json()["detail"]
