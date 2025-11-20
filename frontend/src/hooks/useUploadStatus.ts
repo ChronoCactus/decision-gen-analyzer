@@ -10,12 +10,17 @@ interface UploadStatusInfo {
 
 // Global event emitter for upload status updates from WebSocket
 const uploadStatusListeners = new Map<string, Set<(status: UploadStatusInfo) => void>>();
+const globalUploadStatusListeners = new Set<(adrId: string, status: UploadStatusInfo) => void>();
 
 export function emitUploadStatus(adrId: string, status: UploadStatusInfo) {
+  // Emit to specific ADR listeners
   const listeners = uploadStatusListeners.get(adrId);
   if (listeners) {
     listeners.forEach(listener => listener(status));
   }
+
+  // Emit to global listeners
+  globalUploadStatusListeners.forEach(listener => listener(adrId, status));
 }
 
 /**
@@ -67,4 +72,21 @@ export function useUploadStatus(adrId: string) {
     uploadStatus,
     uploadMessage,
   };
+}
+
+/**
+ * Hook to listen to all upload status events globally.
+ * 
+ * Useful for showing toasts or notifications for any ADR operation.
+ * 
+ * @param callback - Called when any ADR status changes
+ */
+export function useGlobalUploadStatus(callback: (adrId: string, status: UploadStatusInfo) => void) {
+  useEffect(() => {
+    globalUploadStatusListeners.add(callback);
+
+    return () => {
+      globalUploadStatusListeners.delete(callback);
+    };
+  }, [callback]);
 }

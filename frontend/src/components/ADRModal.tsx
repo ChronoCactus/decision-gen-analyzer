@@ -1,10 +1,11 @@
 'use client';
 
 import { useState } from 'react';
-import { ADR, ADRStatus } from '@/types/api';
+import { ADR, ADRStatus, PersonaRefinementItem } from '@/types/api';
 import { PersonasModal } from './PersonasModal';
 import { useEscapeKey } from '@/hooks/useEscapeKey';
 import { apiClient } from '@/lib/api';
+import { Toast } from './Toast';
 
 interface ADRModalProps {
   adr: ADR;
@@ -12,12 +13,18 @@ interface ADRModalProps {
   onAnalyze: () => void;
   isAnalyzing: boolean;
   onADRUpdate?: (updatedAdr: ADR) => void;
+  onRefineQueued?: (taskId: string) => void;
 }
 
-export function ADRModal({ adr, onClose, onAnalyze, isAnalyzing, onADRUpdate }: ADRModalProps) {
+export function ADRModal({ adr, onClose, onAnalyze, isAnalyzing, onADRUpdate, onRefineQueued }: ADRModalProps) {
   const [showPersonas, setShowPersonas] = useState(false);
   const [currentAdr, setCurrentAdr] = useState<ADR>(adr);
   const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
+  const [refinementToast, setRefinementToast] = useState<{ show: boolean; message: string; type: 'success' | 'error' }>({
+    show: false,
+    message: '',
+    type: 'success'
+  });
 
   // Close this modal with ESC, but only if personas modal is not open
   useEscapeKey(onClose, !showPersonas);
@@ -42,6 +49,37 @@ export function ADRModal({ adr, onClose, onAnalyze, isAnalyzing, onADRUpdate }: 
       alert('Failed to update ADR status. Please try again.');
     } finally {
       setIsUpdatingStatus(false);
+    }
+  };
+
+  const handleRefinePersonas = async (refinements: PersonaRefinementItem[]) => {
+    try {
+      const response = await apiClient.refinePersonas(currentAdr.metadata.id, {
+        refinements,
+        provider_id: undefined // Use default provider
+      });
+
+      // Close both modals so user can see progress
+      setShowPersonas(false);
+      onClose();
+
+      // Notify parent to start polling for the refinement task
+      if (onRefineQueued) {
+        onRefineQueued(response.task_id);
+      }
+
+    } catch (error) {
+      console.error('Failed to refine personas:', error);
+      setRefinementToast({
+        show: true,
+        message: 'Failed to queue persona refinement. Please try again.',
+        type: 'error'
+      });
+
+      // Auto-hide error toast after 5 seconds
+      setTimeout(() => {
+        setRefinementToast({ show: false, message: '', type: 'success' });
+      }, 5000);
     }
   };
 
@@ -314,7 +352,17 @@ export function ADRModal({ adr, onClose, onAnalyze, isAnalyzing, onADRUpdate }: 
       {showPersonas && currentAdr.persona_responses && (
         <PersonasModal
           personas={currentAdr.persona_responses}
+          adrId={currentAdr.metadata.id}
           onClose={() => setShowPersonas(false)}
+          onRefine={handleRefinePersonas}
+        />
+      )}
+
+      {refinementToast.show && (
+        <Toast
+          message={refinementToast.message}
+          type={refinementToast.type}
+          onClose={() => setRefinementToast({ show: false, message: '', type: 'success' })}
         />
       )}
     </div>

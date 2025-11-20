@@ -540,6 +540,9 @@ class ADRGenerationResult(BaseModel):
     persona_responses: Optional[List["PersonaSynthesisInput"]] = Field(
         default=None, description="Individual persona responses"
     )
+    original_prompt_text: Optional[str] = Field(
+        default=None, description="Original prompt text for refinement purposes"
+    )
 
 
 class PersonaSynthesisInput(BaseModel):
@@ -558,6 +561,10 @@ class PersonaSynthesisInput(BaseModel):
     )
     requirements: List[str] = Field(
         default_factory=list, description="Requirements identified by this persona"
+    )
+    original_prompt_text: Optional[str] = Field(
+        default=None,
+        description="Original prompt text used to generate this persona's response",
     )
 
 
@@ -579,6 +586,26 @@ class ADRGenerationBatch(BaseModel):
     )
     results: List[ADRGenerationResult] = Field(
         default_factory=list, description="Generated ADR results"
+    )
+
+
+class PersonaRefinement(BaseModel):
+    """Refinement request for a specific persona."""
+
+    persona: str = Field(..., description="The persona to refine")
+    refinement_prompt: str = Field(
+        ..., description="Additional prompt to refine the persona's perspective"
+    )
+
+
+class RefinePersonasRequest(BaseModel):
+    """Request to refine specific personas in an ADR."""
+
+    refinements: List[PersonaRefinement] = Field(
+        ..., description="List of persona refinements to apply"
+    )
+    provider_id: Optional[str] = Field(
+        default=None, description="Optional provider ID for refinement generation"
     )
 
 

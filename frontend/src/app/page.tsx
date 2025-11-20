@@ -11,6 +11,7 @@ import { SettingsModal } from '@/components/SettingsModal';
 import { Toast } from '@/components/Toast';
 import { useCacheStatusWebSocket } from '@/hooks/useCacheStatusWebSocket';
 import { useTaskQueueWebSocket } from '@/hooks/useTaskQueueWebSocket';
+import { useGlobalUploadStatus } from '@/hooks/useUploadStatus';
 
 export default function Home() {
   const [adrs, setAdrs] = useState<ADR[]>([]);
@@ -54,6 +55,22 @@ export default function Home() {
     }, 1000);
     return () => clearInterval(interval);
   }, []);
+
+  // Global listener for upload_status messages from WebSocket (for refinements, uploads, etc.)
+  useGlobalUploadStatus((adrId, info) => {
+    if (info.status === 'completed') {
+      setToastMessage(info.message || 'Operation completed successfully');
+      setToastType('success');
+      setShowToast(true);
+
+      // Reload ADRs to get the updated version
+      loadADRs();
+    } else if (info.status === 'failed') {
+      setToastMessage(info.message || 'Operation failed');
+      setToastType('error');
+      setShowToast(true);
+    }
+  });
 
   const loadADRs = async () => {
     try {
@@ -193,7 +210,25 @@ export default function Home() {
     }
   };
 
-  const pollTaskStatus = async (taskId: string, type: 'analysis' | 'generation') => {
+  const handleRefineQueued = (taskId: string) => {
+    const startTime = Date.now();
+    setIsGenerating(true);
+    setGenerationStartTime(startTime);
+
+    setTasks(prev => ({
+      ...prev,
+      [taskId]: {
+        status: 'queued',
+        message: 'Refining persona perspectives...',
+        startTime: startTime
+      }
+    }));
+
+    // Start polling for task status
+    pollTaskStatus(taskId, 'refinement');
+  };
+
+  const pollTaskStatus = async (taskId: string, type: 'analysis' | 'generation' | 'refinement') => {
     const poll = async () => {
       try {
         const status = type === 'analysis'
@@ -210,8 +245,8 @@ export default function Home() {
         }));
 
         if (status.status === 'completed') {
-          // Reload ADRs when generation completes
-          if (type === 'generation') {
+          // Reload ADRs when generation or refinement completes
+          if (type === 'generation' || type === 'refinement') {
             await loadADRs();
             setIsGenerating(false);
             setGenerationStartTime(undefined);
@@ -225,7 +260,7 @@ export default function Home() {
 
         if (status.status === 'failed') {
           // Clear generation state on failure
-          if (type === 'generation') {
+          if (type === 'generation' || type === 'refinement') {
             setIsGenerating(false);
             setGenerationStartTime(undefined);
           }
@@ -235,7 +270,7 @@ export default function Home() {
 
         if (status.status === 'revoked') {
           // Task was cancelled - clear generation state
-          if (type === 'generation') {
+          if (type === 'generation' || type === 'refinement') {
             setIsGenerating(false);
             setGenerationStartTime(undefined);
           }
@@ -670,6 +705,7 @@ export default function Home() {
                 isSelected={selectedADRs.has(adr.metadata.id)}
                 onToggleSelection={toggleADRSelection}
                 isNewlyImported={newlyImportedADRs.has(adr.metadata.id)}
+                onRefineQueued={handleRefineQueued}
               />
             ))}
           </div>

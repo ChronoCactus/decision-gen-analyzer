@@ -52,6 +52,20 @@ class GenerateADRRequest(BaseModel):
     provider_id: Optional[str] = None  # Optional LLM provider ID
 
 
+class PersonaRefinementItem(BaseModel):
+    """Individual persona refinement."""
+
+    persona: str
+    refinement_prompt: str
+
+
+class RefinePersonasRequest(BaseModel):
+    """Request model for refining personas in an existing ADR."""
+
+    refinements: List[PersonaRefinementItem]
+    provider_id: Optional[str] = None
+
+
 class TaskResponse(BaseModel):
     """Response model for queued tasks."""
 
@@ -441,6 +455,35 @@ async def delete_adr(adr_id: str):
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to delete ADR: {str(e)}")
+
+
+@adr_router.post("/{adr_id}/refine-personas", response_model=TaskResponse)
+async def refine_personas(adr_id: str, request: RefinePersonasRequest):
+    """Refine specific personas in an existing ADR and re-synthesize."""
+    try:
+        from src.celery_app import refine_personas_task
+
+        # Convert refinements list to dict
+        persona_refinements = {
+            item.persona: item.refinement_prompt for item in request.refinements
+        }
+
+        # Queue the refinement task
+        task = refine_personas_task.delay(
+            adr_id=adr_id,
+            persona_refinements=persona_refinements,
+            provider_id=request.provider_id,
+        )
+
+        return TaskResponse(
+            task_id=task.id,
+            status="queued",
+            message=f"Persona refinement queued for {len(persona_refinements)} persona(s)",
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"Failed to queue persona refinement: {str(e)}"
+        )
 
 
 class UpdateStatusRequest(BaseModel):
