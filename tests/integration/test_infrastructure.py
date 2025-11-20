@@ -13,18 +13,28 @@ class TestSettings:
         """Test default settings values."""
         # Clear environment variables to test actual defaults
         env_vars_to_clear = [
-            "LLM_BASE_URL", "LLM_BASE_URL_1", "LLM_EMBEDDING_BASE_URL",
-            "LLM_PROVIDER", "LLM_MODEL", "LLM_TIMEOUT", "LLM_TEMPERATURE",
-            "LIGHTRAG_URL", "LIGHTRAG_TIMEOUT", "LOG_LEVEL", "LOG_FORMAT",
-            "DEBUG", "ENABLE_LAN_DISCOVERY", "HOST_IP"
+            "LLM_BASE_URL",
+            "LLM_BASE_URL_1",
+            "LLM_EMBEDDING_BASE_URL",
+            "LLM_PROVIDER",
+            "LLM_MODEL",
+            "LLM_TIMEOUT",
+            "LLM_TEMPERATURE",
+            "LIGHTRAG_URL",
+            "LIGHTRAG_TIMEOUT",
+            "LOG_LEVEL",
+            "LOG_FORMAT",
+            "DEBUG",
+            "ENABLE_LAN_DISCOVERY",
+            "HOST_IP",
         ]
         # Save original values
         original_env = {key: os.environ.get(key) for key in env_vars_to_clear}
-        
+
         # Temporarily remove these keys from environment
         for key in env_vars_to_clear:
             os.environ.pop(key, None)
-        
+
         try:
             settings = Settings()
             assert settings.llm_base_url == "http://localhost:11434/v1"
