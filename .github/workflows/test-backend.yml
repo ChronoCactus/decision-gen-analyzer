@@ -50,7 +50,7 @@ jobs:
           pytest src/tests/ -v --cov=src --cov-report=xml --cov-report=term
         env:
           # Mock external services for tests
-          LLM_BASE_URL: http://mock-llm:11434
+          LLM_BASE_URL: http://mock-llm:11434/v1
           LIGHTRAG_URL: http://mock-lightrag:9621
           REDIS_URL: redis://mock-redis:6379
       
@@ -68,6 +68,6 @@ jobs:
         run: |
           pytest tests/integration/ -v
         env:
-          LLM_BASE_URL: http://mock-llm:11434
+          LLM_BASE_URL: http://mock-llm:11434/v1
           LIGHTRAG_URL: http://mock-lightrag:9621
           REDIS_URL: redis://mock-redis:6379
