@@ -1,7 +1,7 @@
 repos:
   # Python formatting and linting
   - repo: https://github.com/psf/black
-    rev: 24.10.0
+    rev: 25.11.0
     hooks:
       - id: black
         name: Check formatting with Black
@@ -9,7 +9,7 @@ repos:
         files: ^(src|tests)/.*\.py$
   
   - repo: https://github.com/pycqa/isort
-    rev: 5.13.2
+    rev: 7.0.0
     hooks:
       - id: isort
         name: Check import sorting with isort
@@ -17,11 +17,10 @@ repos:
         files: ^(src|tests)/.*\.py$
   
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.7.4
+    rev: v0.14.5
     hooks:
       - id: ruff
         name: Lint with Ruff
-        args: [check]
         files: ^(src|tests)/.*\.py$
   
   # Commit message linting

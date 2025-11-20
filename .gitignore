@@ -10,3 +10,7 @@ config/personas/*.json
 # Docker override files
 docker-compose.override.yml
 buildkitd.toml
+
+# Node.js/npm files (commitlint only)
+package-lock.json
+node_modules/

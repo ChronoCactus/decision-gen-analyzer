@@ -299,6 +299,7 @@ pip install pre-commit
 
 # Install hooks
 pre-commit install
+pre-commit install --hook-type commit-msg
 
 # Run manually
 pre-commit run --all-files
