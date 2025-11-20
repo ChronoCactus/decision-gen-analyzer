@@ -1,0 +1,73 @@
+name: Backend Tests
+
+on:
+  pull_request:
+    branches:
+      - main
+      - develop
+    paths:
+      - 'src/**'
+      - 'tests/**'
+      - 'pyproject.toml'
+      - 'requirements.txt'
+      - '.github/workflows/test-backend.yml'
+  push:
+    branches:
+      - main
+      - develop
+    paths:
+      - 'src/**'
+      - 'tests/**'
+      - 'pyproject.toml'
+      - 'requirements.txt'
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    
+    strategy:
+      matrix:
+        python-version: ['3.12']
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: 'pip'
+      
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .
+          pip install pytest pytest-cov pytest-asyncio
+      
+      - name: Run unit tests
+        run: |
+          pytest src/tests/ -v --cov=src --cov-report=xml --cov-report=term
+        env:
+          # Mock external services for tests
+          LLM_BASE_URL: http://mock-llm:11434
+          LIGHTRAG_URL: http://mock-lightrag:9621
+          REDIS_URL: redis://mock-redis:6379
+      
+      - name: Upload coverage reports
+        uses: codecov/codecov-action@v4
+        if: matrix.python-version == '3.12'
+        with:
+          file: ./coverage.xml
+          flags: backend
+          name: backend-coverage
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+      
+      - name: Run integration tests
+        run: |
+          pytest tests/integration/ -v
+        env:
+          LLM_BASE_URL: http://mock-llm:11434
+          LIGHTRAG_URL: http://mock-lightrag:9621
+          REDIS_URL: redis://mock-redis:6379
