@@ -207,11 +207,20 @@ docker compose up --build  # Starts redis, backend API, celery worker, frontend
 
 ### Running Backend Only
 ```bash
-./scripts/run_backend.sh  # Starts uvicorn with correct PYTHONPATH
+source venv/bin/activate       # Activate virtual environment first
+./scripts/run_backend.sh       # Starts uvicorn with correct PYTHONPATH
+```
+
+**Local Python Commands**: Always activate the virtual environment before running Python or pytest commands:
+```bash
+source venv/bin/activate       # Required for all local Python commands
+python -m pytest               # Run tests
+python src/celery_app.py       # Run scripts
 ```
 
 ### Testing
 ```bash
+source venv/bin/activate       # Activate virtual environment first
 make test                      # Run all tests (backend + frontend)
 make test-backend              # Run all backend tests
 make test-backend-unit         # Backend unit tests only
