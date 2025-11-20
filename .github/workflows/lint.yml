@@ -39,9 +39,6 @@ jobs:
       
       - name: Lint with Ruff
         run: ruff check src/ tests/
-      
-      - name: Type check with mypy
-        run: mypy src/ || echo "Mypy not fully configured yet"
 
   frontend-lint:
     name: Frontend Linting

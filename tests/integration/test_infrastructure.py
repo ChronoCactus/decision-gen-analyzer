@@ -1,9 +1,6 @@
 """Tests for infrastructure components."""
 
-import pytest
-from unittest.mock import AsyncMock, MagicMock
-
-from src.config import Settings, get_settings
+from src.config import Settings
 from src.models import ADR, ADRStatus
 
 
@@ -46,7 +43,7 @@ class TestADRModel:
             decision_outcome="Use microservices",
             consequences="Better scalability",
             author="Test Author",
-            tags=["architecture", "microservices"]
+            tags=["architecture", "microservices"],
         )
 
         assert adr.metadata.title == "Test Decision"
@@ -63,7 +60,7 @@ class TestADRModel:
             title="Test ADR",
             context_and_problem="Context here",
             decision_outcome="Decision here",
-            consequences="Consequences here"
+            consequences="Consequences here",
         )
 
         markdown = adr.to_markdown()
@@ -79,7 +76,7 @@ class TestADRModel:
             title="Test",
             context_and_problem="Context",
             decision_outcome="Decision",
-            consequences="Consequences"
+            consequences="Consequences",
         )
 
         adr.add_tag("test")

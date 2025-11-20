@@ -1,6 +1,5 @@
 """Tests for configuration management."""
 
-import pytest
 import os
 from unittest.mock import patch
 
@@ -144,6 +143,7 @@ class TestGetSettings:
         ):
             # Create a new Settings instance to test env var reading
             from src.config import Settings
+
             settings = Settings()
 
             assert settings.llm_base_url == "http://custom-url:1234"

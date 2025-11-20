@@ -1,16 +1,13 @@
 """Web search service for collecting external data for ADR re-analysis."""
 
-import asyncio
-import json
-from datetime import datetime, UTC
-from typing import Dict, List, Optional, Any
+from datetime import UTC, datetime
+from typing import Any, Dict, List, Optional
 from urllib.parse import urlparse
 
 import httpx
 import structlog
 
 from src.config import Settings
-
 
 logger = structlog.get_logger(__name__)
 
@@ -187,12 +184,14 @@ class WebSearchService:
             query_parts.append(context)
 
         # Add terms to find recent developments and alternatives
-        query_parts.extend([
-            "alternatives",
-            "comparison",
-            "trends",
-            "updates",
-        ])
+        query_parts.extend(
+            [
+                "alternatives",
+                "comparison",
+                "trends",
+                "updates",
+            ]
+        )
 
         query = " ".join(query_parts)
 
@@ -324,7 +323,9 @@ class DataProcessingPipeline:
         if result.published_date:
             try:
                 # Simple heuristic: boost recent results
-                published = datetime.fromisoformat(result.published_date.replace('Z', '+00:00'))
+                published = datetime.fromisoformat(
+                    result.published_date.replace("Z", "+00:00")
+                )
                 days_old = (datetime.now(UTC) - published).days
 
                 if days_old < 30:
@@ -384,5 +385,5 @@ class DataProcessingPipeline:
             List of key points (sentences or phrases)
         """
         # Simple extraction: split by sentences and take first few
-        sentences = [s.strip() for s in text.split('.') if s.strip()]
+        sentences = [s.strip() for s in text.split(".") if s.strip()]
         return sentences[:3]  # Return up to 3 key points

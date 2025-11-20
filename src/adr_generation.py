@@ -2,27 +2,26 @@
 
 import asyncio
 import json
-from typing import Dict, List, Optional, Any, Union
-from datetime import datetime, UTC
+from typing import Any, Dict, List, Optional, Union
 
-from src.models import (
-    ADR,
-    ADRMetadata,
-    ADRContent,
-    ADRGenerationPrompt,
-    ADRGenerationResult,
-    ADRGenerationOptions,
-    PersonaSynthesisInput,
-)
-from src.persona_manager import PersonaManager, PersonaConfig
+from src.lightrag_client import LightRAGClient
 from src.llama_client import (
     LlamaCppClient,
     LlamaCppClientPool,
     create_client_from_persona_config,
     create_client_from_provider_id,
 )
-from src.lightrag_client import LightRAGClient
 from src.logger import get_logger
+from src.models import (
+    ADR,
+    ADRContent,
+    ADRGenerationOptions,
+    ADRGenerationPrompt,
+    ADRGenerationResult,
+    ADRMetadata,
+    PersonaSynthesisInput,
+)
+from src.persona_manager import PersonaConfig, PersonaManager
 
 logger = get_logger(__name__)
 
@@ -106,7 +105,7 @@ class ADRGenerationService:
             "ADR generation completed",
             title=result.generated_title,
             confidence=result.confidence_score,
-            personas_used=result.personas_used
+            personas_used=result.personas_used,
         )
 
         return result
@@ -348,7 +347,7 @@ class ADRGenerationService:
                     persona_client = create_client_from_persona_config(
                         persona_config, demo_mode=False
                     )
-                
+
                 persona_clients.append(persona_client)
             else:
                 logger.warning(f"Skipping unknown persona: {persona_value}")
@@ -468,7 +467,7 @@ class ADRGenerationService:
         self,
         persona_config: PersonaConfig,
         prompt: ADRGenerationPrompt,
-        related_context: List[str]
+        related_context: List[str],
     ) -> str:
         """Create a generation prompt for a specific persona.
 
@@ -480,10 +479,22 @@ class ADRGenerationService:
         Returns:
             Formatted prompt string
         """
-        context_str = "\n".join([f"- {ctx}" for ctx in related_context]) if related_context else "No related context available."
+        context_str = (
+            "\n".join([f"- {ctx}" for ctx in related_context])
+            if related_context
+            else "No related context available."
+        )
 
-        constraints_str = "\n".join([f"- {c}" for c in (prompt.constraints or [])]) if prompt.constraints else "None specified."
-        stakeholders_str = "\n".join([f"- {s}" for s in (prompt.stakeholders or [])]) if prompt.stakeholders else "None specified."
+        constraints_str = (
+            "\n".join([f"- {c}" for c in (prompt.constraints or [])])
+            if prompt.constraints
+            else "None specified."
+        )
+        stakeholders_str = (
+            "\n".join([f"- {s}" for s in (prompt.stakeholders or [])])
+            if prompt.stakeholders
+            else "None specified."
+        )
 
         return f"""You are a {persona_config.name} analyzing a decision that needs to be made.
 
@@ -529,15 +540,17 @@ Ensure your response is practical, considers the constraints, and reflects your 
         """
         try:
             # Try to extract JSON from response
-            start_idx = response.find('{')
-            end_idx = response.rfind('}') + 1
+            start_idx = response.find("{")
+            end_idx = response.rfind("}") + 1
             if start_idx != -1 and end_idx > start_idx:
                 json_str = response[start_idx:end_idx]
                 return json.loads(json_str)
         except (json.JSONDecodeError, ValueError):
             pass
 
-        logger.warning("Failed to parse persona response as JSON", response_preview=response[:200])
+        logger.warning(
+            "Failed to parse persona response as JSON", response_preview=response[:200]
+        )
         return None
 
     async def _synthesize_adr(
@@ -561,7 +574,9 @@ Ensure your response is practical, considers the constraints, and reflects your 
             Complete ADR generation result
         """
         # Create synthesis prompt
-        synthesis_prompt = self._create_synthesis_prompt(prompt, synthesis_inputs, related_context)
+        synthesis_prompt = self._create_synthesis_prompt(
+            prompt, synthesis_inputs, related_context
+        )
 
         try:
             # Generate synthesized ADR
@@ -744,7 +759,7 @@ Ensure your response is practical, considers the constraints, and reflects your 
         self,
         prompt: ADRGenerationPrompt,
         synthesis_inputs: List[PersonaSynthesisInput],
-        related_context: List[str]
+        related_context: List[str],
     ) -> str:
         """Create synthesis prompt for combining persona perspectives.
 
@@ -756,15 +771,17 @@ Ensure your response is practical, considers the constraints, and reflects your 
         Returns:
             Synthesis prompt string
         """
-        perspectives_str = "\n\n".join([
-            f"**{p.persona.replace('_', ' ').title()}**:\n"
-            f"Perspective: {p.perspective}\n"
-            f"Recommended Option: {p.recommended_option or 'None'}\n"
-            f"Reasoning: {p.reasoning}\n"
-            f"Concerns: {', '.join(p.concerns)}\n"
-            f"Requirements: {', '.join(p.requirements)}"
-            for p in synthesis_inputs
-        ])
+        perspectives_str = "\n\n".join(
+            [
+                f"**{p.persona.replace('_', ' ').title()}**:\n"
+                f"Perspective: {p.perspective}\n"
+                f"Recommended Option: {p.recommended_option or 'None'}\n"
+                f"Reasoning: {p.reasoning}\n"
+                f"Concerns: {', '.join(p.concerns)}\n"
+                f"Requirements: {', '.join(p.requirements)}"
+                for p in synthesis_inputs
+            ]
+        )
 
         return f"""You are synthesizing multiple expert perspectives into a comprehensive Architectural Decision Record (ADR).
 
@@ -937,8 +954,8 @@ Ensure the ADR is well-structured, balanced, and considers all perspectives."""
         """
         try:
             # Try to extract JSON from response
-            start_idx = response.find('{')
-            end_idx = response.rfind('}') + 1
+            start_idx = response.find("{")
+            end_idx = response.rfind("}") + 1
             if start_idx != -1 and end_idx > start_idx:
                 json_str = response[start_idx:end_idx]
                 data = json.loads(json_str)
@@ -957,12 +974,14 @@ Ensure the ADR is well-structured, balanced, and considers all perspectives."""
                             options.append(ADRGenerationOptions(**opt))
                         else:
                             # Handle string options
-                            options.append(ADRGenerationOptions(
-                                option_name=str(opt),
-                                description=str(opt),
-                                pros=[],
-                                cons=[]
-                            ))
+                            options.append(
+                                ADRGenerationOptions(
+                                    option_name=str(opt),
+                                    description=str(opt),
+                                    pros=[],
+                                    cons=[],
+                                )
+                            )
                     data["considered_options"] = options
 
                 # Handle consequences if it's a dict with positive/negative keys
@@ -990,7 +1009,11 @@ Ensure the ADR is well-structured, balanced, and considers all perspectives."""
                     if negative:
                         consequences_parts.append("Negative: " + ", ".join(negative))
 
-                    data["consequences"] = "\n".join(consequences_parts) if consequences_parts else "No consequences identified."
+                    data["consequences"] = (
+                        "\n".join(consequences_parts)
+                        if consequences_parts
+                        else "No consequences identified."
+                    )
                 elif "consequences" in data and isinstance(data["consequences"], str):
                     # If it's already a string, keep it as is (fallback for old format)
                     # Don't create consequences_structured in this case
@@ -1181,19 +1204,23 @@ Ensure the ADR is well-structured, balanced, and considers all perspectives."""
         options = []
         if recommended_options:
             for i, opt in enumerate(set(recommended_options)):
-                options.append(ADRGenerationOptions(
-                    option_name=f"Option {i+1}: {opt}",
-                    description=f"Recommended by experts: {opt}",
-                    pros=["Recommended by domain experts"],
-                    cons=["May have unconsidered drawbacks"]
-                ))
+                options.append(
+                    ADRGenerationOptions(
+                        option_name=f"Option {i+1}: {opt}",
+                        description=f"Recommended by experts: {opt}",
+                        pros=["Recommended by domain experts"],
+                        cons=["May have unconsidered drawbacks"],
+                    )
+                )
         else:
-            options.append(ADRGenerationOptions(
-                option_name="Recommended Approach",
-                description="To be determined based on expert analysis",
-                pros=["Based on expert input"],
-                cons=["Requires further analysis"]
-            ))
+            options.append(
+                ADRGenerationOptions(
+                    option_name="Recommended Approach",
+                    description="To be determined based on expert analysis",
+                    pros=["Based on expert input"],
+                    cons=["Requires further analysis"],
+                )
+            )
 
         # Combine concerns and requirements
         all_concerns = []
@@ -1203,7 +1230,9 @@ Ensure the ADR is well-structured, balanced, and considers all perspectives."""
             all_requirements.extend(p.requirements)
 
         consequences = f"Positive: Addresses key requirements including {', '.join(all_requirements[:3])}\n"
-        consequences += f"Negative: Must address concerns including {', '.join(all_concerns[:3])}"
+        consequences += (
+            f"Negative: Must address concerns including {', '.join(all_concerns[:3])}"
+        )
 
         return ADRGenerationResult(
             prompt=prompt,
@@ -1219,7 +1248,9 @@ Ensure the ADR is well-structured, balanced, and considers all perspectives."""
             personas_used=[p.persona for p in synthesis_inputs],
         )
 
-    def convert_to_adr(self, generation_result: ADRGenerationResult, author: Optional[str] = None) -> ADR:
+    def convert_to_adr(
+        self, generation_result: ADRGenerationResult, author: Optional[str] = None
+    ) -> ADR:
         """Convert a generation result to a complete ADR object.
 
         Args:
@@ -1261,7 +1292,7 @@ Ensure the ADR is well-structured, balanced, and considers all perspectives."""
         metadata = ADRMetadata(
             title=generation_result.generated_title,
             author=author,
-            tags=generation_result.prompt.tags or []
+            tags=generation_result.prompt.tags or [],
         )
 
         return ADR(metadata=metadata, content=content)
@@ -1279,7 +1310,7 @@ Ensure the ADR is well-structured, balanced, and considers all perspectives."""
             "overall_score": 0.0,
             "issues": [],
             "warnings": [],
-            "strengths": []
+            "strengths": [],
         }
 
         # Check title quality
@@ -1297,7 +1328,9 @@ Ensure the ADR is well-structured, balanced, and considers all perspectives."""
         elif len(result.context_and_problem.strip()) > 1000:
             validation["warnings"].append("Context and problem statement is very long")
         else:
-            validation["strengths"].append("Context and problem statement length is appropriate")
+            validation["strengths"].append(
+                "Context and problem statement length is appropriate"
+            )
             validation["overall_score"] += 0.2
 
         # Check decision outcome
@@ -1332,7 +1365,9 @@ Ensure the ADR is well-structured, balanced, and considers all perspectives."""
         if not result.personas_used or len(result.personas_used) == 0:
             validation["issues"].append("No personas were involved in generation")
         elif len(result.personas_used) >= 3:
-            validation["strengths"].append("Multiple personas contributed to the analysis")
+            validation["strengths"].append(
+                "Multiple personas contributed to the analysis"
+            )
             validation["overall_score"] += 0.1
 
         # Check confidence score

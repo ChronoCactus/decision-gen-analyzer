@@ -1,6 +1,5 @@
 """Configuration management for Decision Analyzer."""
 
-import os
 from typing import Optional
 
 from pydantic import Field
@@ -136,11 +135,17 @@ class Settings(BaseSettings):
     )
 
     # Web Search Configuration
-    serpapi_key: Optional[str] = Field(default=None, description="SerpAPI key for web search")
+    serpapi_key: Optional[str] = Field(
+        default=None, description="SerpAPI key for web search"
+    )
 
     # Job Scheduling Configuration
-    job_check_interval: int = Field(default=3600, description="Interval to check for scheduled jobs in seconds")
-    max_concurrent_jobs: int = Field(default=3, description="Maximum number of concurrent jobs")
+    job_check_interval: int = Field(
+        default=3600, description="Interval to check for scheduled jobs in seconds"
+    )
+    max_concurrent_jobs: int = Field(
+        default=3, description="Maximum number of concurrent jobs"
+    )
 
     # Persona Configuration
     include_default_personas: bool = Field(
@@ -163,6 +168,7 @@ class Settings(BaseSettings):
 
     class Config:
         """Pydantic configuration."""
+
         model_config = SettingsConfigDict(
             env_file=".env",
             env_file_encoding="utf-8",

@@ -1,31 +1,23 @@
 """Tests for ADR import/export functionality with versioned schema support."""
 
-import pytest
-from unittest.mock import AsyncMock, MagicMock, mock_open, patch
 import json
+from datetime import datetime
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from datetime import datetime
-from uuid import uuid4, UUID
 from typing import List
+from uuid import uuid4
+
+import pytest
 
 from src.adr_import_export import (
-    ADRImportExport,
     CURRENT_SCHEMA_VERSION,
     SUPPORTED_SCHEMA_VERSIONS,
-    SingleADRExport,
+    ADRImportExport,
     BulkADRExport,
     ExportSchemaMetadata,
-    ADRExportV1,
+    SingleADRExport,
 )
-from src.models import (
-    ADR,
-    ADRMetadata,
-    ADRContent,
-    ADRStatus,
-    ConsequencesStructured,
-    OptionDetails,
-)
+from src.models import ADR
 
 
 class TestVersionedSchemaModels:
@@ -217,7 +209,7 @@ class TestLegacyFormatSupport:
 
             # Verify file was created and contains correct data
             assert output_path.exists()
-            with open(output_path, 'r') as f:
+            with open(output_path, "r") as f:
                 data = json.load(f)
             assert data["metadata"]["title"] == "Test ADR"
 

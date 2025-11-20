@@ -1,30 +1,23 @@
 """FastAPI backend for Decision Analyzer."""
 
+import asyncio
 from contextlib import asynccontextmanager
 from typing import AsyncGenerator
-import asyncio
-from fastapi import FastAPI, HTTPException, BackgroundTasks
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
-import structlog
 
-from src.models import ADR
-from src.adr_validation import ADRAnalysisService
-from src.adr_generation import ADRGenerationService
-from src.lightrag_client import LightRAGClient
-from src.llama_client import LlamaCppClient
-from src.celery_app import celery_app
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+
 from src.api.routes import (
     adr_router,
     analysis_router,
-    generation_router,
     config_router,
-    queue_router,
+    generation_router,
     provider_router,
+    queue_router,
 )
-from src.logger import get_logger
 from src.config import get_settings
 from src.lightrag_sync import sync_lightrag_cache_task
+from src.logger import get_logger
 
 logger = get_logger(__name__)
 
@@ -149,7 +142,9 @@ def create_application() -> FastAPI:
     # Include routers
     app.include_router(adr_router, prefix="/api/v1/adrs", tags=["ADRs"])
     app.include_router(analysis_router, prefix="/api/v1/analysis", tags=["Analysis"])
-    app.include_router(generation_router, prefix="/api/v1/generation", tags=["Generation"])
+    app.include_router(
+        generation_router, prefix="/api/v1/generation", tags=["Generation"]
+    )
     app.include_router(config_router, prefix="/api/v1", tags=["Configuration"])
     app.include_router(queue_router, prefix="/api/v1/queue", tags=["Queue"])
     app.include_router(
@@ -167,7 +162,7 @@ def create_application() -> FastAPI:
         return {
             "message": "Decision Analyzer API",
             "docs": "/docs",
-            "health": "/health"
+            "health": "/health",
         }
 
     return app
@@ -179,10 +174,7 @@ app = create_application()
 
 if __name__ == "__main__":
     import uvicorn
+
     uvicorn.run(
-        "src.api.main:app",
-        host="0.0.0.0",
-        port=8000,
-        reload=True,
-        log_level="info"
+        "src.api.main:app", host="0.0.0.0", port=8000, reload=True, log_level="info"
     )

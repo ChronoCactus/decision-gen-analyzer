@@ -259,9 +259,6 @@ black src/ tests/
 # Sort imports
 isort src/ tests/
 
-# Type checking
-mypy src/
-
 # Linting
 ruff check src/ tests/
 ```

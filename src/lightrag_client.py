@@ -58,10 +58,7 @@ class LightRAGClient:
             await self._client.aclose()
 
     async def store_document(
-        self,
-        doc_id: str,
-        content: str,
-        metadata: Optional[Dict[str, Any]] = None
+        self, doc_id: str, content: str, metadata: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
         """Store a document in LightRAG using the /documents/text endpoint."""
         # Demo mode: simulate successful storage
@@ -472,7 +469,7 @@ class LightRAGClient:
         self,
         doc_id: str,
         content: Optional[str] = None,
-        metadata: Optional[Dict[str, Any]] = None
+        metadata: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """Update an existing document."""
         if not self._client:

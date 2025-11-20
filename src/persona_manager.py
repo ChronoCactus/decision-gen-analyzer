@@ -1,10 +1,9 @@
 """Persona configuration management for ADR analysis."""
 
 import json
-import os
-from pathlib import Path
-from typing import Dict, List, Optional, Any
 from dataclasses import dataclass
+from pathlib import Path
+from typing import Any, Dict, List, Optional
 
 
 @dataclass
@@ -47,6 +46,7 @@ class ModelConfig:
 @dataclass
 class PersonaConfig:
     """Configuration for an analysis persona."""
+
     name: str
     description: str
     instructions: str
@@ -57,7 +57,7 @@ class PersonaConfig:
     )
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> 'PersonaConfig':
+    def from_dict(cls, data: Dict[str, Any]) -> "PersonaConfig":
         """Create a PersonaConfig from a dictionary."""
         model_config = None
         # Support both 'llm_config' (new) and 'model_config' (legacy) for backward compatibility

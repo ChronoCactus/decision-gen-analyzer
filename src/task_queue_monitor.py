@@ -7,12 +7,13 @@ This provides instant (<10ms) access to queue metrics.
 
 import os
 import time
-from typing import List, Dict, Optional, Any
 from dataclasses import dataclass
-from datetime import datetime
+from typing import Any, Dict, List, Optional
+
 import redis
 from celery import Celery
 from celery.result import AsyncResult
+
 from src.logger import get_logger
 
 logger = get_logger(__name__)
@@ -21,7 +22,7 @@ logger = get_logger(__name__)
 @dataclass
 class TaskInfo:
     """Information about a task in the queue."""
-    
+
     task_id: str
     task_name: str
     status: str  # pending, active, success, failure
@@ -36,7 +37,7 @@ class TaskInfo:
 @dataclass
 class QueueStatus:
     """Overall queue status."""
-    
+
     total_tasks: int
     active_tasks: int
     pending_tasks: int
@@ -52,7 +53,7 @@ class TaskQueueMonitor:
 
     def __init__(self, celery_app: Optional[Celery] = None):
         """Initialize the task queue monitor.
-        
+
         Args:
             celery_app: Optional Celery app instance. If None, creates a new one.
         """
@@ -72,7 +73,7 @@ class TaskQueueMonitor:
 
     def get_queue_status(self) -> QueueStatus:
         """Get overall queue status using fast Redis queries.
-        
+
         Returns:
             QueueStatus with counts of tasks in various states
         """
@@ -88,14 +89,16 @@ class TaskQueueMonitor:
             # Total tasks = active + pending
             total_tasks = active_count + pending_count
 
-            logger.debug(f"⚡ Queue status from Redis: {time.time() - start:.3f}s (active={active_count}, pending={pending_count})")
+            logger.debug(
+                f"⚡ Queue status from Redis: {time.time() - start:.3f}s (active={active_count}, pending={pending_count})"
+            )
 
             return QueueStatus(
                 total_tasks=total_tasks,
                 active_tasks=active_count,
                 pending_tasks=pending_count,
                 reserved_tasks=0,  # Not needed
-                workers_online=1  # Assume 1 worker (could query Redis for this too)
+                workers_online=1,  # Assume 1 worker (could query Redis for this too)
             )
 
         except Exception as e:
@@ -105,12 +108,14 @@ class TaskQueueMonitor:
                 active_tasks=0,
                 pending_tasks=0,
                 reserved_tasks=0,
-                workers_online=0
+                workers_online=0,
             )
 
-    async def track_task_started(self, task_id: str, task_name: str, args: tuple = (), kwargs: dict = None):
+    async def track_task_started(
+        self, task_id: str, task_name: str, args: tuple = (), kwargs: dict = None
+    ):
         """Track that a task has started (stores in Redis and broadcasts update).
-        
+
         Args:
             task_id: Celery task ID
             task_name: Task name
@@ -118,26 +123,29 @@ class TaskQueueMonitor:
             kwargs: Task keyword arguments
         """
         import json
+
         task_info = TaskInfo(
             task_id=task_id,
             task_name=task_name,
-            status='active',
+            status="active",
             args=args,
             kwargs=kwargs or {},
-            started_at=time.time()
+            started_at=time.time(),
         )
         # Store as JSON in Redis hash
         self.redis_client.hset(
             self.ACTIVE_TASKS_KEY,
             task_id,
-            json.dumps({
-                'task_id': task_id,
-                'task_name': task_name,
-                'status': 'active',
-                'args': list(args),
-                'kwargs': kwargs or {},
-                'started_at': task_info.started_at
-            })
+            json.dumps(
+                {
+                    "task_id": task_id,
+                    "task_name": task_name,
+                    "status": "active",
+                    "args": list(args),
+                    "kwargs": kwargs or {},
+                    "started_at": task_info.started_at,
+                }
+            ),
         )
         logger.debug(f"📝 Tracking active task in Redis: {task_id}")
 
@@ -146,7 +154,7 @@ class TaskQueueMonitor:
 
     async def track_task_completed(self, task_id: str):
         """Track that a task has completed (removes from Redis and broadcasts update).
-        
+
         Args:
             task_id: Celery task ID
         """
@@ -167,32 +175,35 @@ class TaskQueueMonitor:
                 total_tasks=queue_status.total_tasks,
                 active_tasks=queue_status.active_tasks,
                 pending_tasks=queue_status.pending_tasks,
-                workers_online=queue_status.workers_online
+                workers_online=queue_status.workers_online,
             )
         except Exception as e:
             logger.error("Failed to broadcast queue status", error=str(e))
 
     def get_all_tasks(self) -> List[TaskInfo]:
         """Get all active tasks (fast - reads from Redis hash).
-        
+
         Returns:
             List of TaskInfo objects for active tasks only
         """
         import json
+
         tasks = []
         try:
             task_data = self.redis_client.hgetall(self.ACTIVE_TASKS_KEY)
             for task_id, task_json in task_data.items():
                 try:
                     data = json.loads(task_json)
-                    tasks.append(TaskInfo(
-                        task_id=data['task_id'],
-                        task_name=data['task_name'],
-                        status=data['status'],
-                        args=tuple(data.get('args', [])),
-                        kwargs=data.get('kwargs', {}),
-                        started_at=data.get('started_at')
-                    ))
+                    tasks.append(
+                        TaskInfo(
+                            task_id=data["task_id"],
+                            task_name=data["task_name"],
+                            status=data["status"],
+                            args=tuple(data.get("args", [])),
+                            kwargs=data.get("kwargs", {}),
+                            started_at=data.get("started_at"),
+                        )
+                    )
                 except (json.JSONDecodeError, KeyError) as e:
                     logger.warning(f"Failed to parse task data for {task_id}: {e}")
         except Exception as e:
@@ -202,50 +213,51 @@ class TaskQueueMonitor:
 
     def get_task_info(self, task_id: str) -> Optional[TaskInfo]:
         """Get information about a specific task.
-        
+
         Args:
             task_id: The Celery task ID
-            
+
         Returns:
             TaskInfo if found, None otherwise
         """
         import json
+
         # Check active tasks in Redis first
         task_json = self.redis_client.hget(self.ACTIVE_TASKS_KEY, task_id)
         if task_json:
             try:
                 data = json.loads(task_json)
                 return TaskInfo(
-                    task_id=data['task_id'],
-                    task_name=data['task_name'],
-                    status=data['status'],
-                    args=tuple(data.get('args', [])),
-                    kwargs=data.get('kwargs', {}),
-                    started_at=data.get('started_at')
+                    task_id=data["task_id"],
+                    task_name=data["task_name"],
+                    status=data["status"],
+                    args=tuple(data.get("args", [])),
+                    kwargs=data.get("kwargs", {}),
+                    started_at=data.get("started_at"),
                 )
             except (json.JSONDecodeError, KeyError) as e:
                 logger.warning(f"Failed to parse task data for {task_id}: {e}")
 
         # Task not active, check AsyncResult for completion status
         result = AsyncResult(task_id, app=self.celery_app)
-        if result.state in ['SUCCESS', 'FAILURE', 'REVOKED']:
+        if result.state in ["SUCCESS", "FAILURE", "REVOKED"]:
             return TaskInfo(
                 task_id=task_id,
-                task_name='',
+                task_name="",
                 status=result.state.lower(),
                 args=(),
-                kwargs={}
+                kwargs={},
             )
 
         return None
 
     def revoke_task(self, task_id: str, terminate: bool = False) -> bool:
         """Revoke (cancel) a task.
-        
+
         Args:
             task_id: The Celery task ID
             terminate: If True, terminate the task if it's already running
-            
+
         Returns:
             True if revoke command was sent successfully
         """
@@ -345,7 +357,6 @@ class TaskQueueMonitor:
         Returns:
             Dict with clearing statistics
         """
-        revoked_pending = []
         revoked_active = []
         errors = []
 
@@ -405,12 +416,13 @@ _monitor: Optional[TaskQueueMonitor] = None
 
 def get_task_queue_monitor() -> TaskQueueMonitor:
     """Get the singleton TaskQueueMonitor instance.
-    
+
     Returns:
         TaskQueueMonitor instance
     """
     global _monitor
     if _monitor is None:
         from src.celery_app import celery_app
+
         _monitor = TaskQueueMonitor(celery_app)
     return _monitor
