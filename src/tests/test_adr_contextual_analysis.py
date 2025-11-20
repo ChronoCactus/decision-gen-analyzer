@@ -1,16 +1,11 @@
 """Tests for ADR contextual analysis."""
 
+from unittest.mock import AsyncMock, Mock
+
 import pytest
-from unittest.mock import AsyncMock, Mock, MagicMock
-from datetime import datetime, UTC
-from uuid import uuid4
 
 from src.adr_contextual_analysis import ContextualAnalysisService
-from src.models import (
-    ADR, ADRMetadata, ADRContent, ADRStatus,
-    ADRConflict, ConflictType, ContinuityAssessment,
-    ContextualAnalysisResult
-)
+from src.models import ADR
 
 
 class TestContextualAnalyzer:
@@ -35,8 +30,7 @@ class TestContextualAnalyzer:
         """Mock persona manager."""
         manager = Mock()
         manager.get_persona.return_value = Mock(
-            name="technical_lead",
-            role="Technical Lead"
+            name="technical_lead", role="Technical Lead"
         )
         return manager
 
@@ -58,15 +52,19 @@ class TestContextualAnalyzer:
 
     @pytest.mark.asyncio
     async def test_analyze_conflicts(
-        self, mock_llama_client, mock_lightrag_client,
-        mock_persona_manager, mock_analysis_service, sample_adr
+        self,
+        mock_llama_client,
+        mock_lightrag_client,
+        mock_persona_manager,
+        mock_analysis_service,
+        sample_adr,
     ):
         """Test conflict analysis."""
         analyzer = ContextualAnalysisService(
             mock_llama_client,
             mock_lightrag_client,
             mock_persona_manager,
-            mock_analysis_service
+            mock_analysis_service,
         )
 
         # Mock the method to return a list
@@ -78,15 +76,19 @@ class TestContextualAnalyzer:
 
     @pytest.mark.asyncio
     async def test_analyze_continuity(
-        self, mock_llama_client, mock_lightrag_client,
-        mock_persona_manager, mock_analysis_service, sample_adr
+        self,
+        mock_llama_client,
+        mock_lightrag_client,
+        mock_persona_manager,
+        mock_analysis_service,
+        sample_adr,
     ):
         """Test continuity analysis."""
         analyzer = ContextualAnalysisService(
             mock_llama_client,
             mock_lightrag_client,
             mock_persona_manager,
-            mock_analysis_service
+            mock_analysis_service,
         )
 
         # Mock the method to return continuity assessment
@@ -98,15 +100,19 @@ class TestContextualAnalyzer:
 
     @pytest.mark.asyncio
     async def test_find_related_adrs(
-        self, mock_llama_client, mock_lightrag_client,
-        mock_persona_manager, mock_analysis_service, sample_adr
+        self,
+        mock_llama_client,
+        mock_lightrag_client,
+        mock_persona_manager,
+        mock_analysis_service,
+        sample_adr,
     ):
         """Test finding related ADRs."""
         analyzer = ContextualAnalysisService(
             mock_llama_client,
             mock_lightrag_client,
             mock_persona_manager,
-            mock_analysis_service
+            mock_analysis_service,
         )
 
         # Mock the method to return list

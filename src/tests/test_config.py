@@ -1,6 +1,5 @@
 """Tests for configuration management."""
 
-import pytest
 import os
 from unittest.mock import patch
 
@@ -12,21 +11,53 @@ class TestSettings:
 
     def test_settings_with_defaults(self):
         """Test settings are created with default values."""
-        settings = Settings()
+        # Clear environment variables to test actual defaults
+        env_vars_to_clear = [
+            "LLM_BASE_URL",
+            "LLM_BASE_URL_1",
+            "LLM_EMBEDDING_BASE_URL",
+            "LLM_PROVIDER",
+            "LLM_MODEL",
+            "LLM_TIMEOUT",
+            "LLM_TEMPERATURE",
+            "LIGHTRAG_URL",
+            "LIGHTRAG_TIMEOUT",
+            "LOG_LEVEL",
+            "LOG_FORMAT",
+            "DEBUG",
+            "ENABLE_LAN_DISCOVERY",
+            "HOST_IP",
+        ]
+        # Save original values
+        original_env = {key: os.environ.get(key) for key in env_vars_to_clear}
 
-        assert settings.llm_base_url == "http://localhost:11434/v1"
-        assert settings.llm_base_url_1 is None
-        assert settings.llm_embedding_base_url is None
-        assert settings.llm_timeout == 300
-        assert settings.llm_provider == "ollama"
-        assert settings.llm_model == "gpt-oss:20b"
-        assert settings.lightrag_url == "http://localhost:9621"
-        assert settings.lightrag_timeout == 180
-        assert settings.log_level == "INFO"
-        assert settings.log_format == "json"
-        assert settings.debug is False
-        assert settings.enable_lan_discovery is False
-        assert settings.host_ip is None
+        # Temporarily remove these keys from environment
+        for key in env_vars_to_clear:
+            os.environ.pop(key, None)
+
+        try:
+            settings = Settings()
+
+            assert settings.llm_base_url == "http://localhost:11434/v1"
+            assert settings.llm_base_url_1 is None
+            assert settings.llm_embedding_base_url is None
+            assert settings.llm_timeout == 300
+            assert settings.llm_provider == "ollama"
+            assert settings.llm_model == "gpt-oss:20b"
+            assert settings.lightrag_url == "http://localhost:9621"
+            assert settings.lightrag_timeout == 180
+            assert settings.log_level == "INFO"
+            assert settings.log_format == "json"
+            assert settings.debug is False
+            assert settings.enable_lan_discovery is False
+            assert settings.host_ip is None
+        finally:
+            # Restore original environment
+            for key, value in original_env.items():
+                if value is not None:
+                    os.environ[key] = value
+                else:
+                    os.environ.pop(key, None)
 
     def test_settings_from_environment(self):
         """Test settings are loaded from environment variables."""
@@ -144,6 +175,7 @@ class TestGetSettings:
         ):
             # Create a new Settings instance to test env var reading
             from src.config import Settings
+
             settings = Settings()
 
             assert settings.llm_base_url == "http://custom-url:1234"

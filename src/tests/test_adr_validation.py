@@ -1,7 +1,8 @@
 """Tests for ADR validation service."""
 
+from unittest.mock import AsyncMock
+
 import pytest
-from unittest.mock import AsyncMock, MagicMock
 
 from src.adr_validation import ADRAnalysisService
 from src.models import ADR

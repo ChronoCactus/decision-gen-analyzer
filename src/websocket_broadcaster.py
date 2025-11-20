@@ -4,11 +4,13 @@ This module enables Celery workers (running in separate processes) to
 broadcast WebSocket messages to clients connected to the FastAPI process.
 """
 
-import os
-import json
 import asyncio
+import json
+import os
 from typing import Optional
+
 import redis.asyncio as redis
+
 from src.logger import get_logger
 
 logger = get_logger(__name__)
@@ -28,10 +30,7 @@ class WebSocketBroadcaster:
         """Connect to Redis for pub/sub."""
         if self.redis_client is None:
             redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
-            self.redis_client = redis.from_url(
-                redis_url,
-                decode_responses=True
-            )
+            self.redis_client = redis.from_url(redis_url, decode_responses=True)
             logger.info("WebSocket broadcaster connected to Redis", redis_url=redis_url)
 
     async def disconnect(self):
@@ -45,11 +44,13 @@ class WebSocketBroadcaster:
             self.listener_task.cancel()
         logger.info("WebSocket broadcaster disconnected from Redis")
 
-    async def publish_upload_status(self, adr_id: str, status: str, message: str = None):
+    async def publish_upload_status(
+        self, adr_id: str, status: str, message: str = None
+    ):
         """Publish an upload status message to Redis.
-        
+
         This is called by Celery workers to broadcast upload status updates.
-        
+
         Args:
             adr_id: The ADR ID
             status: Upload status: "processing", "completed", "failed"
@@ -61,29 +62,22 @@ class WebSocketBroadcaster:
             "type": "upload_status",
             "adr_id": adr_id,
             "status": status,
-            "message": message
+            "message": message,
         }
 
         try:
-            await self.redis_client.publish(
-                self.CHANNEL,
-                json.dumps(payload)
-            )
+            await self.redis_client.publish(self.CHANNEL, json.dumps(payload))
             logger.debug(
-                "📡 Published upload status to Redis",
-                adr_id=adr_id,
-                status=status
+                "📡 Published upload status to Redis", adr_id=adr_id, status=status
             )
         except Exception as e:
-            logger.error(
-                "Failed to publish upload status",
-                error=str(e),
-                adr_id=adr_id
-            )
+            logger.error("Failed to publish upload status", error=str(e), adr_id=adr_id)
 
-    async def publish_cache_status(self, is_rebuilding: bool, last_sync_time: float = None):
+    async def publish_cache_status(
+        self, is_rebuilding: bool, last_sync_time: float = None
+    ):
         """Publish a cache status message to Redis.
-        
+
         Args:
             is_rebuilding: Whether the cache is currently rebuilding
             last_sync_time: Unix timestamp of last successful sync
@@ -93,23 +87,16 @@ class WebSocketBroadcaster:
         payload = {
             "type": "cache_status",
             "is_rebuilding": is_rebuilding,
-            "last_sync_time": last_sync_time
+            "last_sync_time": last_sync_time,
         }
 
         try:
-            await self.redis_client.publish(
-                self.CHANNEL,
-                json.dumps(payload)
-            )
+            await self.redis_client.publish(self.CHANNEL, json.dumps(payload))
             logger.debug(
-                "📡 Published cache status to Redis",
-                is_rebuilding=is_rebuilding
+                "📡 Published cache status to Redis", is_rebuilding=is_rebuilding
             )
         except Exception as e:
-            logger.error(
-                "Failed to publish cache status",
-                error=str(e)
-            )
+            logger.error("Failed to publish cache status", error=str(e))
 
     async def publish_queue_status(
         self,
@@ -187,9 +174,9 @@ class WebSocketBroadcaster:
 
     async def start_listening(self, websocket_manager):
         """Start listening for Redis pub/sub messages and forward to WebSocket clients.
-        
+
         This is called by the FastAPI process on startup.
-        
+
         Args:
             websocket_manager: The WebSocketManager instance to broadcast to
         """
@@ -206,18 +193,20 @@ class WebSocketBroadcaster:
                     if message["type"] == "message":
                         try:
                             payload = json.loads(message["data"])
-                            logger.debug("📩 Received broadcast from Redis", payload=payload)
+                            logger.debug(
+                                "📩 Received broadcast from Redis", payload=payload
+                            )
 
                             if payload["type"] == "upload_status":
                                 await websocket_manager.broadcast_upload_status(
                                     adr_id=payload["adr_id"],
                                     status=payload["status"],
-                                    message=payload.get("message")
+                                    message=payload.get("message"),
                                 )
                             elif payload["type"] == "cache_status":
                                 await websocket_manager.broadcast_cache_status(
                                     is_rebuilding=payload["is_rebuilding"],
-                                    last_sync_time=payload.get("last_sync_time")
+                                    last_sync_time=payload.get("last_sync_time"),
                                 )
                             elif payload["type"] == "queue_status":
                                 await websocket_manager.broadcast_queue_status(
@@ -238,7 +227,7 @@ class WebSocketBroadcaster:
                             logger.error(
                                 "Failed to process Redis broadcast",
                                 error=str(e),
-                                message=message
+                                message=message,
                             )
             except asyncio.CancelledError:
                 logger.info("Redis listener task cancelled")

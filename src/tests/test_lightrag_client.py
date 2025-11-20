@@ -1,8 +1,9 @@
 """Tests for LightRAG client."""
 
-import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
+
 import httpx
+import pytest
 
 from src.lightrag_client import LightRAGClient
 
@@ -172,7 +173,9 @@ class TestLightRAGClient:
     async def test_client_handles_errors(self):
         """Test client handles HTTP errors in non-demo mode."""
         async with LightRAGClient(demo_mode=False) as client:
-            client._client.post = AsyncMock(side_effect=httpx.HTTPError("Connection failed"))
+            client._client.post = AsyncMock(
+                side_effect=httpx.HTTPError("Connection failed")
+            )
 
             with pytest.raises(httpx.HTTPError):
                 await client.store_document("test", "content")
@@ -183,9 +186,7 @@ class TestLightRAGClient:
         async with LightRAGClient(demo_mode=True) as client:
             # Use retrieve_documents with metadata_filter parameter
             results = await client.retrieve_documents(
-                "query", 
-                limit=10, 
-                metadata_filter={"tag": "architecture"}
+                "query", limit=10, metadata_filter={"tag": "architecture"}
             )
 
             assert isinstance(results, list)

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { GenerateADRRequest, Persona, LLMProvider } from '@/types/api';
 import { apiClient } from '@/lib/api';
 import { useEscapeKey } from '@/hooks/useEscapeKey';
@@ -23,33 +23,61 @@ export function GenerateADRModal({ onClose, onGenerate, isGenerating, generation
   const [providers, setProviders] = useState<LLMProvider[]>([]);
   const [selectedProviderId, setSelectedProviderId] = useState<string>('');
   const [elapsedTime, setElapsedTime] = useState(0);
-  const [isMac, setIsMac] = useState(false);
-  const [isWin, setIsWin] = useState(false);
+
+  // Detect OS for keyboard shortcut display (computed once on mount)
+  const [isMac] = useState(() => {
+    if (typeof navigator !== 'undefined') {
+      return navigator.platform.toLowerCase().includes('mac');
+    }
+    return false;
+  });
+  const [isWin] = useState(() => {
+    if (typeof navigator !== 'undefined') {
+      return navigator.platform.toLowerCase().includes('win');
+    }
+    return false;
+  });
 
   // Close with ESC key (unless we're generating)
   useEscapeKey(onClose, !isGenerating);
 
-  // Detect OS for keyboard shortcut display
-  useEffect(() => {
-    const platform = navigator.platform.toLowerCase();
-    setIsMac(platform.includes('mac'));
-    setIsWin(platform.includes('win'));
-  }, []);
-
-  // Timer for generation duration
+  // Timer for generation duration - only runs when generating
   useEffect(() => {
     if (!isGenerating || !generationStartTime) {
-      setElapsedTime(0);
       return;
     }
 
-    const interval = setInterval(() => {
+    // Set initial elapsed time
+    const updateElapsed = () => {
       const elapsed = Math.floor((Date.now() - generationStartTime) / 1000);
       setElapsedTime(elapsed);
-    }, 1000);
+    };
 
-    return () => clearInterval(interval);
+    updateElapsed(); // Set immediately
+    const interval = setInterval(updateElapsed, 1000);
+
+    return () => {
+      clearInterval(interval);
+      setElapsedTime(0); // Reset in cleanup when effect unmounts
+    };
   }, [isGenerating, generationStartTime]);
+
+  // Define handleSubmit using useCallback to avoid recreation and allow it to be used in effects
+  const handleSubmit = useCallback((e: React.FormEvent) => {
+    e.preventDefault();
+    if (!prompt.trim()) return;
+
+    const tagArray = tags.split(',').map(tag => tag.trim()).filter(tag => tag.length > 0);
+
+    onGenerate({
+      prompt: prompt.trim(),
+      context: context.trim() || undefined,
+      tags: tagArray.length > 0 ? tagArray : undefined,
+      personas: selectedPersonas.length > 0 ? selectedPersonas : undefined,
+      retrieval_mode: retrievalMode,
+      provider_id: selectedProviderId || undefined,
+    });
+  }, [prompt, context, tags, selectedPersonas, retrievalMode, selectedProviderId, onGenerate]);
 
   // Handle keyboard shortcuts (Cmd/Ctrl + Enter)
   useEffect(() => {
@@ -64,7 +92,7 @@ export function GenerateADRModal({ onClose, onGenerate, isGenerating, generation
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [prompt, context, tags, selectedPersonas, isGenerating]);
+  }, [prompt, isGenerating, handleSubmit]);
 
   useEffect(() => {
     // Load available personas and providers
@@ -117,22 +145,6 @@ export function GenerateADRModal({ onClose, onGenerate, isGenerating, generation
       }
       return 'default';
     }
-  };
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!prompt.trim()) return;
-
-    const tagArray = tags.split(',').map(tag => tag.trim()).filter(tag => tag.length > 0);
-
-    onGenerate({
-      prompt: prompt.trim(),
-      context: context.trim() || undefined,
-      tags: tagArray.length > 0 ? tagArray : undefined,
-      personas: selectedPersonas.length > 0 ? selectedPersonas : undefined,
-      retrieval_mode: retrievalMode,
-      provider_id: selectedProviderId || undefined,
-    });
   };
 
   return (

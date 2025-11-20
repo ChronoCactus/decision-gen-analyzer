@@ -1,9 +1,10 @@
 """Tests for API routes."""
 
-import pytest
-from fastapi.testclient import TestClient
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
+
+import pytest
+from fastapi.testclient import TestClient
 
 from src.api.main import app
 from src.models import ADR

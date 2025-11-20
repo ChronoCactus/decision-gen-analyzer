@@ -1,14 +1,21 @@
 """Tests for AI-powered ADR analysis components."""
 
-import pytest
 import asyncio
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock
-from datetime import datetime, UTC
 
-from src.models import ADR, ADRAnalysisResult, ADRWithAnalysis
-from src.adr_validation import ADRAnalysisService
+import pytest
+
 from src.adr_generation import ADRGenerationService
-from src.models import ADRGenerationPrompt, ADRGenerationResult, ADRGenerationOptions
+from src.adr_validation import ADRAnalysisService
+from src.models import (
+    ADR,
+    ADRAnalysisResult,
+    ADRGenerationOptions,
+    ADRGenerationPrompt,
+    ADRGenerationResult,
+    ADRWithAnalysis,
+)
 from src.persona_manager import PersonaManager
 
 
@@ -43,11 +50,16 @@ class TestADRAnalysisService:
             author="Test Author",
             tags=["database", "architecture"],
             considered_options=["PostgreSQL", "MySQL", "MongoDB"],
-            decision_drivers=["Data consistency requirements", "Complex querying needs"]
+            decision_drivers=[
+                "Data consistency requirements",
+                "Complex querying needs",
+            ],
         )
 
     @pytest.mark.asyncio
-    async def test_analyze_adr_single_persona(self, analysis_service, mock_llama_client, mock_lightrag_client, sample_adr):
+    async def test_analyze_adr_single_persona(
+        self, analysis_service, mock_llama_client, mock_lightrag_client, sample_adr
+    ):
         """Test ADR analysis with a single persona."""
         # Mock context retrieval
         mock_lightrag_client.retrieve_documents.return_value = [
@@ -55,14 +67,14 @@ class TestADRAnalysisService:
         ]
 
         # Mock AI response (JSON format)
-        mock_response = '''{
+        mock_response = """{
   "strengths": "Good technical justification, considers multiple options",
   "weaknesses": "Missing cost analysis, no migration plan",
   "risks": "Vendor lock-in potential, learning curve for team",
   "recommendations": "Add cost-benefit analysis, include migration strategy",
   "overall_assessment": "MODIFY - Good foundation but needs more detail",
   "score": 7
-}'''
+}"""
         mock_llama_client.generate.return_value = mock_response
 
         result = await analysis_service.analyze_adr(sample_adr, "technical_lead")
@@ -79,7 +91,9 @@ class TestADRAnalysisService:
         mock_lightrag_client.retrieve_documents.assert_called()
 
     @pytest.mark.asyncio
-    async def test_analyze_adr_multiple_personas(self, analysis_service, mock_llama_client, mock_lightrag_client, sample_adr):
+    async def test_analyze_adr_multiple_personas(
+        self, analysis_service, mock_llama_client, mock_lightrag_client, sample_adr
+    ):
         """Test ADR analysis with multiple personas."""
         # Mock context retrieval
         mock_lightrag_client.retrieve_documents.return_value = []
@@ -88,18 +102,20 @@ class TestADRAnalysisService:
         def mock_generate(*args, **kwargs):
             prompt = args[0] if args else ""
             if "Technical Lead" in prompt:
-                return '''{"strengths": "Good technical foundation", "weaknesses": "Missing details", "risks": "Technical risks", "recommendations": "Add technical details", "overall_assessment": "MODIFY", "score": 8}'''
+                return """{"strengths": "Good technical foundation", "weaknesses": "Missing details", "risks": "Technical risks", "recommendations": "Add technical details", "overall_assessment": "MODIFY", "score": 8}"""
             elif "Business Analyst" in prompt:
-                return '''{"strengths": "Business value", "weaknesses": "Cost concerns", "risks": "Financial risks", "recommendations": "Add cost analysis", "overall_assessment": "MODIFY", "score": 6}'''
+                return """{"strengths": "Business value", "weaknesses": "Cost concerns", "risks": "Financial risks", "recommendations": "Add cost analysis", "overall_assessment": "MODIFY", "score": 6}"""
             elif "Risk Manager" in prompt:
-                return '''{"strengths": "Risk awareness", "weaknesses": "Incomplete risk assessment", "risks": "High operational risks", "recommendations": "Comprehensive risk analysis", "overall_assessment": "MODIFY", "score": 7}'''
+                return """{"strengths": "Risk awareness", "weaknesses": "Incomplete risk assessment", "risks": "High operational risks", "recommendations": "Comprehensive risk analysis", "overall_assessment": "MODIFY", "score": 7}"""
             else:
-                return '''{"strengths": "Default", "weaknesses": "Default", "risks": "Default", "recommendations": "Default", "overall_assessment": "REVIEW", "score": 5}'''
+                return """{"strengths": "Default", "weaknesses": "Default", "risks": "Default", "recommendations": "Default", "overall_assessment": "REVIEW", "score": 5}"""
 
         mock_llama_client.generate.side_effect = mock_generate
 
         personas = ["technical_lead", "business_analyst", "risk_manager"]
-        result = await analysis_service.analyze_adr_with_multiple_personas(sample_adr, personas)
+        result = await analysis_service.analyze_adr_with_multiple_personas(
+            sample_adr, personas
+        )
 
         assert isinstance(result, ADRWithAnalysis)
         assert len(result.analysis_results) == 3
@@ -116,13 +132,19 @@ class TestADRAnalysisService:
         assert result.consensus_recommendation == "MODIFY"
 
     @pytest.mark.asyncio
-    async def test_context_retrieval_failure(self, analysis_service, mock_llama_client, mock_lightrag_client, sample_adr):
+    async def test_context_retrieval_failure(
+        self, analysis_service, mock_llama_client, mock_lightrag_client, sample_adr
+    ):
         """Test analysis when context retrieval fails."""
         # Mock context retrieval failure
-        mock_lightrag_client.retrieve_documents.side_effect = Exception("Connection failed")
+        mock_lightrag_client.retrieve_documents.side_effect = Exception(
+            "Connection failed"
+        )
 
         # Mock AI response
-        mock_llama_client.generate.return_value = "SCORE: 5\nANALYSIS WITHOUT CONTEXT..."
+        mock_llama_client.generate.return_value = (
+            "SCORE: 5\nANALYSIS WITHOUT CONTEXT..."
+        )
 
         result = await analysis_service.analyze_adr(sample_adr, "technical_lead")
 
@@ -156,10 +178,14 @@ class TestADRAnalysisService:
         assert '"score"' in prompt
 
     @pytest.mark.asyncio
-    async def test_error_handling_and_retries(self, mock_llama_client, mock_lightrag_client, sample_adr):
+    async def test_error_handling_and_retries(
+        self, mock_llama_client, mock_lightrag_client, sample_adr
+    ):
         """Test error handling and retry logic."""
         # Create service with low retry count for testing
-        service = ADRAnalysisService(mock_llama_client, mock_lightrag_client, max_retries=2)
+        service = ADRAnalysisService(
+            mock_llama_client, mock_lightrag_client, max_retries=2
+        )
 
         # Mock context retrieval
         mock_lightrag_client.retrieve_documents.return_value = []
@@ -168,7 +194,7 @@ class TestADRAnalysisService:
         mock_llama_client.generate.side_effect = [
             Exception("Network error"),
             Exception("Timeout"),
-            '''{"strengths": "Good", "weaknesses": "Some", "risks": "Low", "recommendations": "Monitor", "overall_assessment": "ACCEPT", "score": 8}'''
+            """{"strengths": "Good", "weaknesses": "Some", "risks": "Low", "recommendations": "Monitor", "overall_assessment": "ACCEPT", "score": 8}""",
         ]
 
         result = await service.analyze_adr(sample_adr, "technical_lead")
@@ -178,17 +204,21 @@ class TestADRAnalysisService:
         assert mock_llama_client.generate.call_count == 3  # Two failures + one success
 
     @pytest.mark.asyncio
-    async def test_timeout_handling(self, mock_llama_client, mock_lightrag_client, sample_adr):
+    async def test_timeout_handling(
+        self, mock_llama_client, mock_lightrag_client, sample_adr
+    ):
         """Test timeout handling in analysis."""
         # Create service with short timeout
-        service = ADRAnalysisService(mock_llama_client, mock_lightrag_client, analysis_timeout=0.1)
+        service = ADRAnalysisService(
+            mock_llama_client, mock_lightrag_client, analysis_timeout=0.1
+        )
 
         mock_lightrag_client.retrieve_documents.return_value = []
 
         # Mock a slow response that will timeout
         async def slow_response(*args, **kwargs):
             await asyncio.sleep(0.2)  # Longer than timeout
-            return '''{"strengths": "Good", "weaknesses": "Some", "risks": "Low", "recommendations": "Monitor", "overall_assessment": "ACCEPT", "score": 8}'''
+            return """{"strengths": "Good", "weaknesses": "Some", "risks": "Low", "recommendations": "Monitor", "overall_assessment": "ACCEPT", "score": 8}"""
 
         mock_llama_client.generate.side_effect = slow_response
 
@@ -196,16 +226,26 @@ class TestADRAnalysisService:
             await service.analyze_adr(sample_adr, "technical_lead")
 
     @pytest.mark.asyncio
-    async def test_context_relevance_scoring(self, analysis_service, mock_llama_client, mock_lightrag_client, sample_adr):
+    async def test_context_relevance_scoring(
+        self, analysis_service, mock_llama_client, mock_lightrag_client, sample_adr
+    ):
         """Test that context relevance scoring works properly."""
         # Mock different context results with varying relevance
         mock_lightrag_client.retrieve_documents.side_effect = [
-            [{"content": f"PostgreSQL is great for {sample_adr.content.context_and_problem[:50]}..."}],
+            [
+                {
+                    "content": f"PostgreSQL is great for {sample_adr.content.context_and_problem[:50]}..."
+                }
+            ],
             [{"content": "Unrelated content about weather"}],
-            [{"content": f"Database choice impacts {sample_adr.metadata.tags[0]} architecture"}]
+            [
+                {
+                    "content": f"Database choice impacts {sample_adr.metadata.tags[0]} architecture"
+                }
+            ],
         ]
 
-        mock_llama_client.generate.return_value = '''{"strengths": "Good", "weaknesses": "Some", "risks": "Low", "recommendations": "Monitor", "overall_assessment": "ACCEPT", "score": 8}'''
+        mock_llama_client.generate.return_value = """{"strengths": "Good", "weaknesses": "Some", "risks": "Low", "recommendations": "Monitor", "overall_assessment": "ACCEPT", "score": 8}"""
 
         result = await analysis_service.analyze_adr(sample_adr, "technical_lead")
 
@@ -214,12 +254,16 @@ class TestADRAnalysisService:
         assert mock_lightrag_client.retrieve_documents.call_count >= 3
 
     @pytest.mark.asyncio
-    async def test_json_parsing_fallback(self, analysis_service, mock_llama_client, mock_lightrag_client, sample_adr):
+    async def test_json_parsing_fallback(
+        self, analysis_service, mock_llama_client, mock_lightrag_client, sample_adr
+    ):
         """Test fallback to text parsing when JSON parsing fails."""
         mock_lightrag_client.retrieve_documents.return_value = []
 
         # Mock invalid JSON response
-        mock_llama_client.generate.return_value = "INVALID JSON RESPONSE\nSCORE: 6\nSTRENGTHS: Some good points"
+        mock_llama_client.generate.return_value = (
+            "INVALID JSON RESPONSE\nSCORE: 6\nSTRENGTHS: Some good points"
+        )
 
         result = await analysis_service.analyze_adr(sample_adr, "technical_lead")
 
@@ -228,7 +272,9 @@ class TestADRAnalysisService:
         assert result.score == 6  # Should extract from text
 
     @pytest.mark.asyncio
-    async def test_comprehensive_multi_persona_analysis(self, mock_llama_client, mock_lightrag_client):
+    async def test_comprehensive_multi_persona_analysis(
+        self, mock_llama_client, mock_lightrag_client
+    ):
         """Integration test for comprehensive multi-persona analysis."""
         service = ADRAnalysisService(mock_llama_client, mock_lightrag_client)
 
@@ -241,19 +287,23 @@ class TestADRAnalysisService:
             author="Architecture Team",
             tags=["architecture", "microservices", "scalability"],
             considered_options=["Monolithic", "Microservices", "Serverless"],
-            decision_drivers=["Scalability requirements", "Team autonomy", "Technology diversity"]
+            decision_drivers=[
+                "Scalability requirements",
+                "Team autonomy",
+                "Technology diversity",
+            ],
         )
 
         mock_lightrag_client.retrieve_documents.return_value = [
             {"content": "Previous ADR about microservices migration challenges..."},
-            {"content": "Domain-driven design best practices..."}
+            {"content": "Domain-driven design best practices..."},
         ]
 
         # Mock comprehensive responses for all personas
         persona_responses = {
-            "technical_lead": '''{"strengths": "Technical benefits clear", "weaknesses": "Complexity concerns", "risks": "Distributed system challenges", "recommendations": "Start small", "overall_assessment": "ACCEPT with caution", "score": 8}''',
-            "business_analyst": '''{"strengths": "Business value high", "weaknesses": "Cost implications", "risks": "ROI uncertainty", "recommendations": "Detailed cost analysis", "overall_assessment": "MODIFY for cost clarity", "score": 7}''',
-            "architect": '''{"strengths": "Architecturally sound", "weaknesses": "Design complexity", "risks": "Integration challenges", "recommendations": "Strong governance", "overall_assessment": "ACCEPT with governance", "score": 9}''',
+            "technical_lead": """{"strengths": "Technical benefits clear", "weaknesses": "Complexity concerns", "risks": "Distributed system challenges", "recommendations": "Start small", "overall_assessment": "ACCEPT with caution", "score": 8}""",
+            "business_analyst": """{"strengths": "Business value high", "weaknesses": "Cost implications", "risks": "ROI uncertainty", "recommendations": "Detailed cost analysis", "overall_assessment": "MODIFY for cost clarity", "score": 7}""",
+            "architect": """{"strengths": "Architecturally sound", "weaknesses": "Design complexity", "risks": "Integration challenges", "recommendations": "Strong governance", "overall_assessment": "ACCEPT with governance", "score": 9}""",
         }
 
         def mock_generate(*args, **kwargs):
@@ -264,7 +314,7 @@ class TestADRAnalysisService:
                 return persona_responses["business_analyst"]
             elif "Architect" in prompt:
                 return persona_responses["architect"]
-            return '''{"strengths": "Default", "weaknesses": "Default", "risks": "Default", "recommendations": "Default", "overall_assessment": "REVIEW", "score": 5}'''
+            return """{"strengths": "Default", "weaknesses": "Default", "risks": "Default", "recommendations": "Default", "overall_assessment": "REVIEW", "score": 5}"""
 
         mock_llama_client.generate.side_effect = mock_generate
 
@@ -275,7 +325,10 @@ class TestADRAnalysisService:
         assert isinstance(result, ADRWithAnalysis)
         assert len(result.analysis_results) == 3
         assert result.average_score == 8.0  # (8+7+9)/3
-        assert result.consensus_recommendation in ["ACCEPT", "MODIFY"]  # Most common recommendation
+        assert result.consensus_recommendation in [
+            "ACCEPT",
+            "MODIFY",
+        ]  # Most common recommendation
 
 
 class TestADRAnalysisModels:
@@ -292,12 +345,15 @@ class TestADRAnalysisModels:
             author="Test Author",
             tags=["database", "architecture"],
             considered_options=["PostgreSQL", "MySQL", "MongoDB"],
-            decision_drivers=["Data consistency requirements", "Complex querying needs"]
+            decision_drivers=[
+                "Data consistency requirements",
+                "Complex querying needs",
+            ],
         )
 
     def test_analysis_result_creation(self):
         """Test creation of analysis result."""
-        from datetime import datetime, UTC
+
         result = ADRAnalysisResult(
             persona="technical_lead",
             timestamp=datetime.now(UTC).isoformat(),
@@ -306,10 +362,10 @@ class TestADRAnalysisModels:
                 "weaknesses": "Some",
                 "risks": "Low",
                 "recommendations": "Monitor",
-                "overall_assessment": "ACCEPT"
+                "overall_assessment": "ACCEPT",
             },
             score=8,
-            raw_response="AI response here"
+            raw_response="AI response here",
         )
 
         assert result.persona == "technical_lead"
@@ -318,7 +374,7 @@ class TestADRAnalysisModels:
 
     def test_adr_with_analysis_creation(self, sample_adr):
         """Test creation of ADR with analysis."""
-        from datetime import datetime, UTC
+
         analysis = ADRAnalysisResult(
             persona="technical_lead",
             timestamp=datetime.now(UTC).isoformat(),
@@ -327,15 +383,14 @@ class TestADRAnalysisModels:
                 "weaknesses": "Missing details",
                 "risks": "Technical risks",
                 "recommendations": "Add more details",
-                "overall_assessment": "MODIFY"
+                "overall_assessment": "MODIFY",
             },
             score=7,
-            raw_response="Analysis response"
+            raw_response="Analysis response",
         )
 
         adr_with_analysis = ADRWithAnalysis(
-            adr=sample_adr,
-            analysis_results={"technical_lead": analysis}
+            adr=sample_adr, analysis_results={"technical_lead": analysis}
         )
 
         assert adr_with_analysis.adr == sample_adr
@@ -365,9 +420,13 @@ class TestADRGenerationService:
         return manager
 
     @pytest.fixture
-    def generation_service(self, mock_llama_client, mock_lightrag_client, mock_persona_manager):
+    def generation_service(
+        self, mock_llama_client, mock_lightrag_client, mock_persona_manager
+    ):
         """Create ADR generation service with mocked dependencies."""
-        return ADRGenerationService(mock_llama_client, mock_lightrag_client, mock_persona_manager)
+        return ADRGenerationService(
+            mock_llama_client, mock_lightrag_client, mock_persona_manager
+        )
 
     @pytest.fixture
     def sample_generation_prompt(self):
@@ -378,11 +437,18 @@ class TestADRGenerationService:
             problem_statement="Choose appropriate database technology",
             constraints=["Must support ACID", "High availability required"],
             stakeholders=["Development Team", "Operations Team"],
-            tags=["database", "microservices"]
+            tags=["database", "microservices"],
         )
 
     @pytest.mark.asyncio
-    async def test_generate_adr_fallback(self, generation_service, mock_llama_client, mock_lightrag_client, mock_persona_manager, sample_generation_prompt):
+    async def test_generate_adr_fallback(
+        self,
+        generation_service,
+        mock_llama_client,
+        mock_lightrag_client,
+        mock_persona_manager,
+        sample_generation_prompt,
+    ):
         """Test ADR generation with fallback when LLM fails."""
         # Mock failures
         mock_lightrag_client.query.return_value = {"data": []}
@@ -391,7 +457,7 @@ class TestADRGenerationService:
             name="Test Persona",
             description="Test description",
             focus_areas=["test"],
-            evaluation_criteria=["test"]
+            evaluation_criteria=["test"],
         )
 
         result = await generation_service.generate_adr(
@@ -407,9 +473,7 @@ class TestADRGenerationService:
         """Test validation of a high-quality generation result."""
         result = ADRGenerationResult(
             prompt=ADRGenerationPrompt(
-                title="Test ADR",
-                context="Context",
-                problem_statement="Problem"
+                title="Test ADR", context="Context", problem_statement="Problem"
             ),
             generated_title="Comprehensive Database Selection Strategy",
             context_and_problem="Detailed context and problem statement with sufficient length for proper analysis.",
@@ -418,26 +482,30 @@ class TestADRGenerationService:
                     option_name="PostgreSQL",
                     description="Robust RDBMS",
                     pros=["ACID compliance", "Rich features"],
-                    cons=["Complex setup"]
+                    cons=["Complex setup"],
                 ),
                 ADRGenerationOptions(
                     option_name="MySQL",
                     description="Popular RDBMS",
                     pros=["Easy to use"],
-                    cons=["Limited features"]
+                    cons=["Limited features"],
                 ),
                 ADRGenerationOptions(
                     option_name="MongoDB",
                     description="Document database",
                     pros=["Flexible schema"],
-                    cons=["No ACID"]
-                )
+                    cons=["No ACID"],
+                ),
             ],
             decision_outcome="Choose PostgreSQL for its comprehensive feature set and ACID compliance requirements.",
             consequences="Positive: Strong data integrity, advanced features. Negative: Higher complexity.",
-            decision_drivers=["Data consistency", "Complex queries", "ACID requirements"],
+            decision_drivers=[
+                "Data consistency",
+                "Complex queries",
+                "ACID requirements",
+            ],
             confidence_score=0.9,
-            personas_used=["technical_lead", "architect", "security_expert"]
+            personas_used=["technical_lead", "architect", "security_expert"],
         )
 
         validation = generation_service.validate_generation_result(result)
@@ -451,9 +519,7 @@ class TestADRGenerationService:
         """Test validation of a low-quality generation result."""
         result = ADRGenerationResult(
             prompt=ADRGenerationPrompt(
-                title="Test ADR",
-                context="Context",
-                problem_statement="Problem"
+                title="Test ADR", context="Context", problem_statement="Problem"
             ),
             generated_title="X",  # Too short
             context_and_problem="Short",  # Too brief
@@ -462,7 +528,7 @@ class TestADRGenerationService:
             consequences="",  # Empty
             decision_drivers=[],  # No drivers
             confidence_score=None,  # No confidence
-            personas_used=[]  # No personas
+            personas_used=[],  # No personas
         )
 
         validation = generation_service.validate_generation_result(result)
@@ -483,14 +549,14 @@ class TestADRGenerationService:
                     option_name="PostgreSQL",
                     description="Chosen option",
                     pros=["Good"],
-                    cons=["Complex"]
+                    cons=["Complex"],
                 )
             ],
             decision_outcome="Selected PostgreSQL",
             consequences="Benefits outweigh drawbacks",
             decision_drivers=["Performance", "Features"],
             confidence_score=0.8,
-            personas_used=["technical_lead"]
+            personas_used=["technical_lead"],
         )
 
         adr = generation_service.convert_to_adr(result, author="Test Author")

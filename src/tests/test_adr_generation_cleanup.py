@@ -1,7 +1,8 @@
 """Tests for ADR generation cleanup and validation logic."""
 
-import pytest
 from unittest.mock import AsyncMock, MagicMock
+
+import pytest
 
 from src.adr_generation import ADRGenerationService
 from src.models import ADRGenerationOptions
@@ -25,9 +26,9 @@ class TestADRGenerationCleanup:
             "normal item",
             "• bullet1 • bullet2",
         ]
-        
+
         cleaned = service._clean_list_items(items)
-        
+
         # Should split the first and third items
         assert "pro1" in cleaned
         assert "pro2" in cleaned
@@ -46,9 +47,9 @@ class TestADRGenerationCleanup:
             "* item with asterisk",
             "normal item",
         ]
-        
+
         cleaned = service._clean_list_items(items)
-        
+
         # All should have bullets removed
         assert "item with leading dash" in cleaned
         assert "item with bullet" in cleaned
@@ -64,15 +65,15 @@ class TestADRGenerationCleanup:
         items = [
             "valid item",
             " - ",  # Just a bullet with spaces
-            "-",    # Just a bullet
-            "  ",   # Just whitespace
-            "",     # Empty string
-            "• ",   # Just a bullet marker
+            "-",  # Just a bullet
+            "  ",  # Just whitespace
+            "",  # Empty string
+            "• ",  # Just a bullet marker
             "another valid item",
         ]
-        
+
         cleaned = service._clean_list_items(items)
-        
+
         # Should only have valid items
         assert len(cleaned) == 2
         assert "valid item" in cleaned
@@ -96,9 +97,11 @@ class TestADRGenerationCleanup:
             "decision_outcome": "Well formatted text",
             "consequences": "Well formatted text",
         }
-        
-        cleaned_data, sections_to_polish = service._validate_and_cleanup_synthesis_data(data)
-        
+
+        cleaned_data, sections_to_polish = service._validate_and_cleanup_synthesis_data(
+            data
+        )
+
         # Pros/cons should be cleaned
         option = cleaned_data["considered_options"][0]
         assert "pro1" in option.pros
@@ -118,9 +121,9 @@ class TestADRGenerationCleanup:
             "decision_outcome": "Well formatted text",
             "consequences": "Text with  multiple  spaces",
         }
-        
+
         _, sections_to_polish = service._validate_and_cleanup_synthesis_data(data)
-        
+
         # Should detect formatting issues in specific sections
         assert sections_to_polish["context_and_problem"] is True
         assert sections_to_polish["decision_outcome"] is False
@@ -142,9 +145,11 @@ class TestADRGenerationCleanup:
             "decision_outcome": "Well formatted decision text.",
             "consequences": "Well formatted consequences.",
         }
-        
-        cleaned_data, sections_to_polish = service._validate_and_cleanup_synthesis_data(data)
-        
+
+        cleaned_data, sections_to_polish = service._validate_and_cleanup_synthesis_data(
+            data
+        )
+
         # Should not need polishing for any section
         assert not any(sections_to_polish.values())
         # Data should be unchanged
@@ -165,18 +170,18 @@ class TestADRGenerationCleanup:
             "decision_drivers": ["Driver 1"],
             "confidence_score": 0.8
         }"""
-        
+
         parsed = service._parse_synthesis_response(response)
-        
+
         # Should have cleaned up the consequences
         assert parsed is not None
         assert "consequences" in parsed
         consequences = parsed["consequences"]
-        
+
         # Should not contain empty bullets
         assert " - " not in consequences
         assert "•" not in consequences
-        
+
         # Should contain the actual items
         assert "Good thing 1" in consequences
         assert "Good thing 2" in consequences
@@ -193,12 +198,14 @@ class TestADRGenerationCleanup:
             "consequences": "Positive: item with non‑breaking hyphen\nNegative: another item",
             "consequences_structured": {
                 "positive": ["Item 1", "Item 2"],
-                "negative": ["Item 3"]
-            }
+                "negative": ["Item 3"],
+            },
         }
-        
-        cleaned_data, sections_to_polish = service._validate_and_cleanup_synthesis_data(data)
-        
+
+        cleaned_data, sections_to_polish = service._validate_and_cleanup_synthesis_data(
+            data
+        )
+
         # Should NOT need polishing even though consequences text has non-breaking hyphen
         # because consequences_structured exists
         assert sections_to_polish["consequences"] is False

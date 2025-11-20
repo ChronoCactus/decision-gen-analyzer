@@ -1,10 +1,8 @@
 """Tests for Llama client."""
 
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
-from langchain_core.messages import AIMessage
 
-from src.llama_client import LlamaCppClient, LlamaCppClientPool, ClientType
+from src.llama_client import LlamaCppClient, LlamaCppClientPool
 
 
 class TestLlamaCppClient:
@@ -197,7 +195,7 @@ class TestLlamaCppClientPool:
             assert all(isinstance(c, LlamaCppClient) for c in clients)
 
     @pytest.mark.asyncio
-    async def test_pool_parallel_generation(self):
+    async def test_pool_parallel_generation_demo(self):
         """Test pool can handle parallel requests in demo mode."""
         async with LlamaCppClientPool(demo_mode=True) as pool:
             # Generate multiple responses in parallel

@@ -299,3 +299,8 @@ docker-push-local-multiarch-sequential: docker-buildx-setup
 	@echo "Successfully pushed multi-arch images to $(REGISTRY):"
 	@echo "  Backend: $(REGISTRY)/$(BACKEND_IMAGE):$(VERSION_WITH_SHA), :$(VERSION), :latest"
 	@echo "  Frontend: $(REGISTRY)/$(FRONTEND_IMAGE):$(VERSION_WITH_SHA), :$(VERSION), :latest"
+
+lint-backend:
+	black src/ tests/
+	isort src/ tests/
+	ruff check src/ tests/ --fix

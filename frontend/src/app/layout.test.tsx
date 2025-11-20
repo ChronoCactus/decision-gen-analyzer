@@ -34,7 +34,7 @@ describe('RootLayout', () => {
   });
 
   it('should apply layout classes', () => {
-    const { container } = render(
+    const { } = render(
       <RootLayout>
         <div data-testid="content">Test</div>
       </RootLayout>

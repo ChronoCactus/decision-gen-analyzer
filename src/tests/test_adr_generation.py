@@ -1,10 +1,11 @@
 """Tests for ADR generation service."""
 
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
+
 from src.adr_generation import ADRGenerationService
-from src.models import ADRGenerationPrompt, ADRGenerationOptions
+from src.models import ADRGenerationPrompt
 
 
 class TestADRGenerationService:
@@ -39,7 +40,7 @@ class TestADRGenerationService:
             description="Focuses on technical aspects",
             instructions="Analyze technical feasibility",
             focus_areas=["architecture", "scalability"],
-            evaluation_criteria=["technical feasibility", "maintainability"]
+            evaluation_criteria=["technical feasibility", "maintainability"],
         )
         manager.get_persona_config.return_value = persona_config
         manager.list_persona_values.return_value = ["technical_lead"]
@@ -54,21 +55,33 @@ class TestADRGenerationService:
             problem_statement="We need to choose a database technology that supports ACID transactions and complex queries",
             constraints=["Must support ACID transactions", "Need good performance"],
             stakeholders=["Engineering Team", "Product Team"],
-            tags=["database", "postgresql"]
+            tags=["database", "postgresql"],
         )
 
     @pytest.mark.asyncio
     async def test_generate_adr_basic(
-        self, mock_llama_client, mock_lightrag_client, mock_persona_manager, generation_prompt
+        self,
+        mock_llama_client,
+        mock_lightrag_client,
+        mock_persona_manager,
+        generation_prompt,
     ):
         """Test basic ADR generation."""
         # Mock the client factory functions to return our mock client
-        with patch("src.adr_generation.create_client_from_persona_config") as mock_factory, \
-             patch("src.adr_generation.create_client_from_provider_id") as mock_provider_factory:
+        with (
+            patch(
+                "src.adr_generation.create_client_from_persona_config"
+            ) as mock_factory,
+            patch(
+                "src.adr_generation.create_client_from_provider_id"
+            ) as mock_provider_factory,
+        ):
             mock_factory.return_value = mock_llama_client
             mock_provider_factory.return_value = mock_llama_client
-            
-            service = ADRGenerationService(mock_llama_client, mock_lightrag_client, mock_persona_manager)
+
+            service = ADRGenerationService(
+                mock_llama_client, mock_lightrag_client, mock_persona_manager
+            )
 
             result = await service.generate_adr(generation_prompt)
 
@@ -79,7 +92,11 @@ class TestADRGenerationService:
 
     @pytest.mark.asyncio
     async def test_generate_adr_with_personas(
-        self, mock_llama_client, mock_lightrag_client, mock_persona_manager, generation_prompt
+        self,
+        mock_llama_client,
+        mock_lightrag_client,
+        mock_persona_manager,
+        generation_prompt,
     ):
         """Test ADR generation with personas."""
         # Mock the client factory to return our mock client
@@ -104,7 +121,11 @@ class TestADRGenerationService:
 
     @pytest.mark.asyncio
     async def test_generate_adr_with_related_context(
-        self, mock_llama_client, mock_lightrag_client, mock_persona_manager, generation_prompt
+        self,
+        mock_llama_client,
+        mock_lightrag_client,
+        mock_persona_manager,
+        generation_prompt,
     ):
         """Test ADR generation with related context."""
         mock_lightrag_client.retrieve_documents.return_value = [
@@ -112,12 +133,20 @@ class TestADRGenerationService:
         ]
 
         # Mock the client factory functions to return our mock client
-        with patch("src.adr_generation.create_client_from_persona_config") as mock_factory, \
-             patch("src.adr_generation.create_client_from_provider_id") as mock_provider_factory:
+        with (
+            patch(
+                "src.adr_generation.create_client_from_persona_config"
+            ) as mock_factory,
+            patch(
+                "src.adr_generation.create_client_from_provider_id"
+            ) as mock_provider_factory,
+        ):
             mock_factory.return_value = mock_llama_client
             mock_provider_factory.return_value = mock_llama_client
-            
-            service = ADRGenerationService(mock_llama_client, mock_lightrag_client, mock_persona_manager)
+
+            service = ADRGenerationService(
+                mock_llama_client, mock_lightrag_client, mock_persona_manager
+            )
 
             result = await service.generate_adr(generation_prompt, include_context=True)
 
@@ -126,24 +155,36 @@ class TestADRGenerationService:
 
     @pytest.mark.asyncio
     async def test_generate_adr_handles_llm_error(
-        self, mock_llama_client, mock_lightrag_client, mock_persona_manager, generation_prompt
+        self,
+        mock_llama_client,
+        mock_lightrag_client,
+        mock_persona_manager,
+        generation_prompt,
     ):
         """Test generation handles LLM errors gracefully."""
         # Make generate raise an exception
         mock_llama_client.generate = AsyncMock(side_effect=Exception("LLM Error"))
 
         # Mock the client factory functions to return our mock client
-        with patch("src.adr_generation.create_client_from_persona_config") as mock_factory, \
-             patch("src.adr_generation.create_client_from_provider_id") as mock_provider_factory:
+        with (
+            patch(
+                "src.adr_generation.create_client_from_persona_config"
+            ) as mock_factory,
+            patch(
+                "src.adr_generation.create_client_from_provider_id"
+            ) as mock_provider_factory,
+        ):
             mock_factory.return_value = mock_llama_client
             mock_provider_factory.return_value = mock_llama_client
-            
-            service = ADRGenerationService(mock_llama_client, mock_lightrag_client, mock_persona_manager)
+
+            service = ADRGenerationService(
+                mock_llama_client, mock_lightrag_client, mock_persona_manager
+            )
 
             # The service might catch and handle the error gracefully
             # So we just test that it doesn't crash completely
             try:
-                result = await service.generate_adr(generation_prompt)
+                await service.generate_adr(generation_prompt)
                 # If no exception, that's fine - error was handled gracefully
             except Exception as e:
                 # If exception raised, that's also acceptable

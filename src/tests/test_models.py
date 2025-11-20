@@ -1,14 +1,15 @@
 """Tests for data models."""
 
-import pytest
-from datetime import datetime, UTC
+from datetime import UTC, datetime
 from uuid import UUID, uuid4
+
+import pytest
 from pydantic import ValidationError
 
 from src.models import (
     ADR,
-    ADRMetadata,
     ADRContent,
+    ADRMetadata,
     ADRStatus,
     AnalysisPersona,
     ConsequencesStructured,
@@ -401,4 +402,6 @@ class TestADR:
 
         assert restored_adr.metadata.title == adr.metadata.title
         assert restored_adr.metadata.id == adr.metadata.id
-        assert restored_adr.content.context_and_problem == adr.content.context_and_problem
+        assert (
+            restored_adr.content.context_and_problem == adr.content.context_and_problem
+        )

@@ -1,14 +1,11 @@
 """Celery task definitions for async job processing."""
 
-import os
 import asyncio
-from typing import Optional, List, Dict, Any
+import os
+
 from celery import Celery
 from celery.schedules import crontab
-from uuid import UUID
 
-from src.config import settings
-from src.adr_generation import ADRGenerationService
 from src.logger import get_logger
 
 logger = get_logger(__name__)
@@ -18,7 +15,7 @@ celery_app = Celery(
     "decision_analyzer",
     broker=os.getenv("REDIS_URL", "redis://localhost:6379/0"),
     backend=os.getenv("REDIS_URL", "redis://localhost:6379/0"),
-    include=["src.tasks"]
+    include=["src.tasks"],
 )
 
 # Celery configuration
@@ -54,6 +51,7 @@ def analyze_adr_task(self, adr_id: str, persona: str = None):
     """Celery task for ADR analysis."""
     try:
         import asyncio
+
         from src.websocket_broadcaster import get_broadcaster
 
         # Publish task started status
@@ -69,7 +67,9 @@ def analyze_adr_task(self, adr_id: str, persona: str = None):
 
         asyncio.run(_publish_status("active", f"Analyzing ADR {adr_id}"))
 
-        self.update_state(state="PROGRESS", meta={"message": "Initializing analysis service"})
+        self.update_state(
+            state="PROGRESS", meta={"message": "Initializing analysis service"}
+        )
 
         # For demo purposes, simulate analysis without external dependencies
         # In production, this would connect to actual Llama.cpp and LightRAG services
@@ -89,10 +89,10 @@ def analyze_adr_task(self, adr_id: str, persona: str = None):
                 "weaknesses": "Missing implementation details and testing strategy",
                 "risks": "Potential scalability issues with current architecture",
                 "recommendations": "Add comprehensive testing and consider scalability requirements",
-                "overall_assessment": "MODIFY - Solid foundation but needs refinement"
+                "overall_assessment": "MODIFY - Solid foundation but needs refinement",
             },
             "score": 7,
-            "raw_response": "Simulated analysis response for demo purposes"
+            "raw_response": "Simulated analysis response for demo purposes",
         }
 
         self.update_state(state="PROGRESS", meta={"message": "Analysis completed"})
@@ -105,10 +105,11 @@ def analyze_adr_task(self, adr_id: str, persona: str = None):
 
     except Exception as e:
         import asyncio
+
         from src.websocket_broadcaster import get_broadcaster
 
         # Publish task failed status
-        async def _publish_failed():
+        async def _publish_failed(e: Exception):
             broadcaster = get_broadcaster()
             await broadcaster.publish_task_status(
                 task_id=self.request.id,
@@ -118,7 +119,7 @@ def analyze_adr_task(self, adr_id: str, persona: str = None):
                 message=f"Error: {str(e)}",
             )
 
-        asyncio.run(_publish_failed())
+        asyncio.run(_publish_failed(e))
 
         self.update_state(state="FAILURE", meta={"error": str(e)})
         raise
@@ -137,13 +138,20 @@ def generate_adr_task(
     """Celery task for ADR generation."""
     try:
         import asyncio
-        from src.adr_generation import ADRGenerationService
-        from src.llama_client import LlamaCppClient, create_client_from_provider_id
-        from src.lightrag_client import LightRAGClient
-        from src.persona_manager import PersonaManager
-        from src.models import ADRGenerationPrompt, ADR, ADRMetadata, ADRContent, ADRStatus
+        from datetime import UTC, datetime
+
         from src.adr_file_storage import get_adr_storage
-        from datetime import datetime, UTC
+        from src.adr_generation import ADRGenerationService
+        from src.lightrag_client import LightRAGClient
+        from src.llama_client import LlamaCppClient, create_client_from_provider_id
+        from src.models import (
+            ADR,
+            ADRContent,
+            ADRGenerationPrompt,
+            ADRMetadata,
+            ADRStatus,
+        )
+        from src.persona_manager import PersonaManager
         from src.websocket_broadcaster import get_broadcaster
 
         # Publish task started status
@@ -174,12 +182,14 @@ def generate_adr_task(
 
         asyncio.run(_publish_task_started())
 
-        self.update_state(state="PROGRESS", meta={"message": "Initializing ADR generation service"})
+        self.update_state(
+            state="PROGRESS", meta={"message": "Initializing ADR generation service"}
+        )
 
         async def _generate():
             # Initialize clients with demo_mode=False to use real LLM
-            from src.llama_client import LlamaCppClientPool
             from src.config import get_settings
+            from src.llama_client import LlamaCppClientPool
 
             settings = get_settings()
 
@@ -203,7 +213,7 @@ def generate_adr_task(
             generation_service = ADRGenerationService(
                 llama_client=llama_client,
                 lightrag_client=lightrag_client,
-                persona_manager=persona_manager
+                persona_manager=persona_manager,
             )
 
             # Create the generation prompt with required fields
@@ -236,7 +246,10 @@ def generate_adr_task(
                 if not persona_list:
                     persona_list = ["technical_lead", "architect", "business_analyst"]
 
-            self.update_state(state="PROGRESS", meta={"message": f"Generating ADR with {len(persona_list)} personas"})
+            self.update_state(
+                state="PROGRESS",
+                meta={"message": f"Generating ADR with {len(persona_list)} personas"},
+            )
 
             # Create progress callback
             def update_progress(message: str):
@@ -264,7 +277,7 @@ def generate_adr_task(
                 ]
 
             # Convert options to OptionDetails
-            from src.models import OptionDetails, ConsequencesStructured
+            from src.models import ConsequencesStructured, OptionDetails
 
             options_details = None
             if result.considered_options:
@@ -349,7 +362,7 @@ def generate_adr_task(
                         consequences_structured = ConsequencesStructured(
                             positive=positive_items, negative=negative_items
                         )
-                except Exception as e:
+                except Exception:
                     # If parsing fails, just leave consequences_structured as None
                     pass
 
@@ -388,7 +401,10 @@ def generate_adr_task(
             storage = get_adr_storage()
             storage.save_adr(adr)
 
-            self.update_state(state="PROGRESS", meta={"message": f"ADR saved with ID {adr.metadata.id}"})
+            self.update_state(
+                state="PROGRESS",
+                meta={"message": f"ADR saved with ID {adr.metadata.id}"},
+            )
 
             # Push to LightRAG for future reference
             try:
@@ -519,7 +535,7 @@ Considered Options:
 
     except Exception as e:
         # Publish task failed status
-        async def _publish_task_failed():
+        async def _publish_task_failed(e: Exception):
             broadcaster = get_broadcaster()
             await broadcaster.publish_task_status(
                 task_id=self.request.id,
@@ -529,7 +545,7 @@ Considered Options:
                 message=f"Error: {str(e)}",
             )
 
-        asyncio.run(_publish_task_failed())
+        asyncio.run(_publish_task_failed(e))
 
         # Properly handle exceptions for Celery serialization
         error_msg = str(e)
@@ -552,10 +568,11 @@ def monitor_upload_status_task(self, adr_id: str, track_id: str):
     """
 
     async def _monitor():
+        import asyncio
+
         from src.lightrag_client import LightRAGClient
         from src.lightrag_doc_cache import LightRAGDocumentCache
         from src.websocket_broadcaster import get_broadcaster
-        import asyncio
 
         max_attempts = 60  # Poll for up to 5 minutes (60 * 5s = 300s)
         attempt = 0

@@ -2,10 +2,6 @@ import { useEffect, useState, useRef } from 'react';
 import { apiClient } from '@/lib/api';
 import { emitUploadStatus } from './useUploadStatus';
 
-interface CacheStatus {
-  is_rebuilding: boolean;
-  last_sync_time: number | null;
-}
 
 interface CacheStatusMessage {
   type: 'cache_status';
@@ -142,7 +138,7 @@ export function useCacheStatusWebSocket() {
         console.error('WebSocket error:', error);
       };
 
-      ws.onclose = (event) => {
+      ws.onclose = () => {
         if (!isMountedRef.current) return;
 
         setIsConnected(false);

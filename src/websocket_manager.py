@@ -1,7 +1,9 @@
 """WebSocket manager for broadcasting cache status updates."""
 
 from typing import Set
+
 from fastapi import WebSocket
+
 from src.logger import get_logger
 
 logger = get_logger(__name__)
@@ -17,16 +19,23 @@ class WebSocketManager:
         """Accept and register a new WebSocket connection."""
         await websocket.accept()
         self.active_connections.add(websocket)
-        logger.info("WebSocket client connected", total_connections=len(self.active_connections))
+        logger.info(
+            "WebSocket client connected", total_connections=len(self.active_connections)
+        )
 
     def disconnect(self, websocket: WebSocket):
         """Remove a WebSocket connection."""
         self.active_connections.discard(websocket)
-        logger.info("WebSocket client disconnected", total_connections=len(self.active_connections))
+        logger.info(
+            "WebSocket client disconnected",
+            total_connections=len(self.active_connections),
+        )
 
-    async def broadcast_cache_status(self, is_rebuilding: bool, last_sync_time: float = None):
+    async def broadcast_cache_status(
+        self, is_rebuilding: bool, last_sync_time: float = None
+    ):
         """Broadcast cache status to all connected clients.
-        
+
         Args:
             is_rebuilding: Whether the cache is currently rebuilding
             last_sync_time: Unix timestamp of last successful sync (None if never synced)
@@ -34,7 +43,7 @@ class WebSocketManager:
         message = {
             "type": "cache_status",
             "is_rebuilding": is_rebuilding,
-            "last_sync_time": last_sync_time
+            "last_sync_time": last_sync_time,
         }
 
         disconnected = set()
@@ -45,7 +54,7 @@ class WebSocketManager:
                 logger.warning(
                     "Failed to send message to WebSocket client",
                     error=str(e),
-                    error_type=type(e).__name__
+                    error_type=type(e).__name__,
                 )
                 disconnected.add(connection)
 
@@ -57,7 +66,7 @@ class WebSocketManager:
             logger.debug(
                 "Broadcasted cache status",
                 is_rebuilding=is_rebuilding,
-                recipients=len(self.active_connections)
+                recipients=len(self.active_connections),
             )
 
     async def broadcast_upload_status(

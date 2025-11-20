@@ -405,7 +405,7 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
                     </div>
                   ) : providers.length === 0 ? (
                     <div className="text-center py-8 text-gray-500 dark:text-gray-400">
-                      No providers configured. Click "Add Provider" to get started.
+                          No providers configured. Click &quot;Add Provider&quot; to get started.
                     </div>
                   ) : (
                     providers.map((provider) => (
