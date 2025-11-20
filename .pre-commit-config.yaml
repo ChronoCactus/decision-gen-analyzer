@@ -1,0 +1,36 @@
+repos:
+  # Python formatting and linting
+  - repo: https://github.com/psf/black
+    rev: 24.10.0
+    hooks:
+      - id: black
+        name: Check formatting with Black
+        args: [--check]
+        files: ^(src|tests)/.*\.py$
+  
+  - repo: https://github.com/pycqa/isort
+    rev: 5.13.2
+    hooks:
+      - id: isort
+        name: Check import sorting with isort
+        args: [--check-only]
+        files: ^(src|tests)/.*\.py$
+  
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.7.4
+    hooks:
+      - id: ruff
+        name: Lint with Ruff
+        args: [check]
+        files: ^(src|tests)/.*\.py$
+  
+  # Commit message linting
+  - repo: local
+    hooks:
+      - id: commitlint
+        name: Validate commit message with commitlint
+        entry: scripts/commitlint-check.sh
+        language: script
+        stages: [commit-msg]
+        always_run: true
+        pass_filenames: false
