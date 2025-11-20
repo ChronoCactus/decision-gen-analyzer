@@ -108,9 +108,9 @@ class ApiClient {
         console.warn('⚠️ Failed to fetch API config (HTTP %d), using inferred URL:', response.status, inferredBackendUrl);
         this.apiBaseUrl = inferredBackendUrl;
       }
-    } catch (error) {
+    } catch (error) { 
       // If config fetch fails, use inferred URL as fallback
-      console.warn('⚠️ Failed to fetch API config, using inferred URL:', inferredBackendUrl);
+      console.warn('⚠️ Failed to fetch API config, using inferred URL:', inferredBackendUrl, error);
       this.apiBaseUrl = inferredBackendUrl;
     }
   }

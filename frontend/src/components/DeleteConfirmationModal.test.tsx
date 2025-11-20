@@ -64,7 +64,6 @@ describe('DeleteConfirmationModal', () => {
 
     expect(screen.getByText('Deleting...')).toBeInTheDocument();
     // "Delete ADR" still appears in the heading even when deleting
-    const deleteADRElements = screen.queryAllByText('Delete ADR');
     const deleteButton = screen.queryByRole('button', { name: /Delete ADR/i });
     expect(deleteButton).not.toBeInTheDocument(); // Button text changes to "Deleting..."
   });
