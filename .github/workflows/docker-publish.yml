@@ -7,7 +7,7 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_PREFIX: ${{ github.repository }}
+  IMAGE_PREFIX: ${{ github.repository_owner }}/${{ github.event.repository.name }}
 
 jobs:
   calculate-version:
@@ -74,11 +74,17 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
       
+      - name: Lowercase image name
+        id: image_name
+        run: |
+          IMAGE_NAME=$(echo "${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-${{ matrix.name }}" | tr '[:upper:]' '[:lower:]')
+          echo "image_name=$IMAGE_NAME" >> $GITHUB_OUTPUT
+      
       - name: Extract metadata for Docker
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-${{ matrix.name }}
+          images: ${{ steps.image_name.outputs.image_name }}
           tags: |
             type=raw,value=${{ needs.calculate-version.outputs.version }}
             type=raw,value=latest
@@ -116,6 +122,14 @@ jobs:
           git tag -a "v$VERSION" -m "Release version $VERSION"
           git push origin "v$VERSION"
       
+      - name: Lowercase image names for release notes
+        id: lowercase_images
+        run: |
+          BACKEND_IMAGE=$(echo "${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-backend:${{ needs.calculate-version.outputs.version }}" | tr '[:upper:]' '[:lower:]')
+          FRONTEND_IMAGE=$(echo "${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-frontend:${{ needs.calculate-version.outputs.version }}" | tr '[:upper:]' '[:lower:]')
+          echo "backend_image=$BACKEND_IMAGE" >> $GITHUB_OUTPUT
+          echo "frontend_image=$FRONTEND_IMAGE" >> $GITHUB_OUTPUT
+      
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
         with:
@@ -125,14 +139,14 @@ jobs:
             ## Docker Images
             
             Images published to GitHub Container Registry:
-            - `${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-backend:${{ needs.calculate-version.outputs.version }}`
-            - `${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-frontend:${{ needs.calculate-version.outputs.version }}`
+            - `${{ steps.lowercase_images.outputs.backend_image }}`
+            - `${{ steps.lowercase_images.outputs.frontend_image }}`
             
             Also tagged as `latest`.
             
             ### Pull images
             ```bash
-            docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-backend:${{ needs.calculate-version.outputs.version }}
-            docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-frontend:${{ needs.calculate-version.outputs.version }}
+            docker pull ${{ steps.lowercase_images.outputs.backend_image }}
+            docker pull ${{ steps.lowercase_images.outputs.frontend_image }}
             ```
           generate_release_notes: true
