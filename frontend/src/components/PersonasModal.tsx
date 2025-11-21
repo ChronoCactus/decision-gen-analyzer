@@ -11,7 +11,7 @@ interface PersonasModalProps {
   onRefine?: (refinements: PersonaRefinementItem[]) => void;
 }
 
-export function PersonasModal({ personas, adrId, onClose, onRefine }: PersonasModalProps) {
+export function PersonasModal({ personas, onClose, onRefine }: PersonasModalProps) {
   // Close this modal with ESC key
   useEscapeKey(onClose);
 
@@ -54,7 +54,7 @@ export function PersonasModal({ personas, adrId, onClose, onRefine }: PersonasMo
 
     // Collect all refinements with non-empty prompts
     const refinements: PersonaRefinementItem[] = Object.entries(refinementPrompts)
-      .filter(([_, prompt]) => prompt.trim().length > 0)
+      .filter(([prompt]) => prompt.trim().length > 0)
       .map(([persona, prompt]) => ({
         persona,
         refinement_prompt: prompt
@@ -194,7 +194,7 @@ export function PersonasModal({ personas, adrId, onClose, onRefine }: PersonasMo
                     rows={4}
                   />
                   <p className="mt-2 text-sm text-gray-600 dark:text-gray-400">
-                    This prompt will be combined with the original request to regenerate this persona's perspective.
+                    This prompt will be combined with the original request to regenerate this persona&apos;s perspective.
                   </p>
                 </div>
               )}
