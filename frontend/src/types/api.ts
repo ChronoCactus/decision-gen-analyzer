@@ -84,6 +84,16 @@ export interface GenerateADRRequest {
   provider_id?: string;
 }
 
+export interface PersonaRefinementItem {
+  persona: string;
+  refinement_prompt: string;
+}
+
+export interface RefinePersonasRequest {
+  refinements: PersonaRefinementItem[];
+  provider_id?: string;
+}
+
 export interface ModelConfig {
   name: string;
   provider?: string;

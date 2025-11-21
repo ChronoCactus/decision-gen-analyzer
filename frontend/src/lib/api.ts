@@ -1,4 +1,4 @@
-import { ADR, ADRListResponse, AnalyzeADRRequest, GenerateADRRequest, TaskResponse, TaskStatus, Persona, DefaultModelConfig } from '@/types/api';
+import { ADR, ADRListResponse, AnalyzeADRRequest, GenerateADRRequest, RefinePersonasRequest, TaskResponse, TaskStatus, Persona, DefaultModelConfig } from '@/types/api';
 
 const DEFAULT_API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
@@ -165,6 +165,13 @@ class ApiClient {
   async deleteADR(adrId: string): Promise<{ message: string }> {
     return this.request<{ message: string }>(`/api/v1/adrs/${adrId}`, {
       method: 'DELETE',
+    });
+  }
+
+  async refinePersonas(adrId: string, request: RefinePersonasRequest): Promise<TaskResponse> {
+    return this.request<TaskResponse>(`/api/v1/adrs/${adrId}/refine-personas`, {
+      method: 'POST',
+      body: JSON.stringify(request),
     });
   }
 

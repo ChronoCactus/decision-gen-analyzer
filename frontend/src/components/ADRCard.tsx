@@ -19,9 +19,10 @@ interface ADRCardProps {
   isSelected?: boolean;
   onToggleSelection?: (adrId: string) => void;
   isNewlyImported?: boolean;
+  onRefineQueued?: (taskId: string) => void;
 }
 
-export function ADRCard({ adr, onAnalyze, onDelete, onPushToRAG, onExport, cacheRebuilding, selectionMode = false, isSelected = false, onToggleSelection, isNewlyImported = false }: ADRCardProps) {
+export function ADRCard({ adr, onAnalyze, onDelete, onPushToRAG, onExport, cacheRebuilding, selectionMode = false, isSelected = false, onToggleSelection, isNewlyImported = false, onRefineQueued }: ADRCardProps) {
   const [showModal, setShowModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
@@ -313,6 +314,7 @@ export function ADRCard({ adr, onAnalyze, onDelete, onPushToRAG, onExport, cache
           onAnalyze={handleAnalyze}
           isAnalyzing={isAnalyzing}
           onADRUpdate={handleADRUpdate}
+          onRefineQueued={onRefineQueued}
         />
       )}
 

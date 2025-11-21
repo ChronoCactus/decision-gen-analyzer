@@ -554,6 +554,167 @@ Considered Options:
         raise Exception(error_msg)
 
 
+@celery_app.task(bind=True)
+def refine_personas_task(
+    self,
+    adr_id: str,
+    persona_refinements: dict,  # Dict[str, str] mapping persona name to refinement prompt
+    provider_id: str = None,
+):
+    """Celery task for refining persona perspectives in an existing ADR."""
+    try:
+        import asyncio
+
+        from src.adr_file_storage import get_adr_storage
+        from src.adr_generation import ADRGenerationService
+        from src.lightrag_client import LightRAGClient
+        from src.llama_client import LlamaCppClient, create_client_from_provider_id
+        from src.persona_manager import PersonaManager
+        from src.websocket_broadcaster import get_broadcaster
+
+        # Publish task started status
+        async def _publish_task_started():
+            broadcaster = get_broadcaster()
+            await broadcaster.publish_task_status(
+                task_id=self.request.id,
+                task_name="refine_personas_task",
+                status="active",
+                position=None,
+                message="Starting persona refinement",
+            )
+
+            # Track task in monitor for fast queue status
+            from src.task_queue_monitor import get_task_queue_monitor
+
+            monitor = get_task_queue_monitor()
+            await monitor.track_task_started(
+                task_id=self.request.id,
+                task_name="refine_personas_task",
+                args=(adr_id,),
+                kwargs={
+                    "persona_refinements": persona_refinements,
+                    "provider_id": provider_id,
+                },
+            )
+
+        asyncio.run(_publish_task_started())
+
+        self.update_state(state="PROGRESS", meta={"message": "Loading ADR"})
+
+        async def _refine():
+            from src.config import get_settings
+            from src.llama_client import LlamaCppClientPool
+
+            settings = get_settings()
+
+            # If a specific provider_id was requested, use that provider
+            if provider_id:
+                logger.info(f"Creating LLM client from provider_id: {provider_id}")
+                llama_client = await create_client_from_provider_id(provider_id)
+            else:
+                # Use default behavior: pool if secondary backend configured, otherwise single client
+                if settings.llm_base_url_1 or settings.llm_embedding_base_url:
+                    logger.info("Using LlamaCppClientPool for parallel generation")
+                    llama_client = LlamaCppClientPool(demo_mode=False)
+                else:
+                    logger.info("Using single LlamaCppClient")
+                    llama_client = LlamaCppClient(demo_mode=False)
+
+            lightrag_client = LightRAGClient(demo_mode=False)
+            persona_manager = PersonaManager()
+
+            # Initialize the service
+            generation_service = ADRGenerationService(
+                llama_client=llama_client,
+                lightrag_client=lightrag_client,
+                persona_manager=persona_manager,
+            )
+
+            # Load the existing ADR (use asyncio.to_thread for blocking I/O)
+            storage = get_adr_storage()
+            adr = await asyncio.to_thread(storage.get_adr, adr_id)
+
+            if not adr:
+                raise ValueError(f"ADR not found: {adr_id}")
+
+            self.update_state(
+                state="PROGRESS",
+                meta={"message": f"Refining {len(persona_refinements)} persona(s)"},
+            )
+
+            # Create progress callback
+            def update_progress(message: str):
+                self.update_state(state="PROGRESS", meta={"message": message})
+
+            # Refine the personas - wrap in async context manager for client pool
+            async with llama_client:
+                refined_adr = await generation_service.refine_personas(
+                    adr,
+                    persona_refinements,
+                    progress_callback=update_progress,
+                    provider_id=provider_id,
+                )
+
+            self.update_state(
+                state="PROGRESS",
+                meta={"message": "Saving refined ADR"},
+            )
+
+            # Save the updated ADR (use asyncio.to_thread for blocking I/O)
+            await asyncio.to_thread(storage.save_adr, refined_adr)
+
+            # Broadcast completion
+            broadcaster = get_broadcaster()
+            await broadcaster.publish_upload_status(
+                adr_id=adr_id,
+                status="completed",
+                message="Persona refinement completed",
+            )
+
+            # Track task completion
+            from src.task_queue_monitor import get_task_queue_monitor
+
+            monitor = get_task_queue_monitor()
+            await monitor.track_task_completed(self.request.id)
+
+            return {
+                "adr_id": adr_id,
+                "title": refined_adr.metadata.title,
+                "refined_personas": list(persona_refinements.keys()),
+                "updated_at": refined_adr.metadata.updated_at.isoformat(),
+            }
+
+        # Run the async refinement
+        result = asyncio.run(_refine())
+        return result
+
+    except Exception as e:
+        # Publish task failed status
+        async def _publish_task_failed(error: Exception):
+            broadcaster = get_broadcaster()
+            await broadcaster.publish_task_status(
+                task_id=self.request.id,
+                task_name="refine_personas_task",
+                status="failed",
+                position=None,
+                message=f"Error: {str(error)}",
+            )
+
+            # Track task completion even on failure
+            from src.task_queue_monitor import get_task_queue_monitor
+
+            monitor = get_task_queue_monitor()
+            await monitor.track_task_completed(self.request.id)
+
+        asyncio.run(_publish_task_failed(e))
+
+        # Properly handle exceptions for Celery serialization
+        error_msg = str(e)
+        self.update_state(state="FAILURE", meta={"error": error_msg})
+        # Re-raise with a simple exception that can be serialized
+        raise Exception(error_msg)
+
+
 @celery_app.task(bind=True, name="monitor_upload_status")
 def monitor_upload_status_task(self, adr_id: str, track_id: str):
     """Monitor LightRAG upload status and update cache when complete.
