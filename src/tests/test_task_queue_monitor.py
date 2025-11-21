@@ -1,10 +1,10 @@
 """Tests for task queue monitor cleanup and management features."""
 
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
-from celery.result import AsyncResult
 
-from src.task_queue_monitor import TaskQueueMonitor, TaskInfo, QueueStatus
+import pytest
+
+from src.task_queue_monitor import TaskInfo, TaskQueueMonitor
 
 
 class TestTaskQueueMonitorCleanup:
@@ -42,31 +42,34 @@ class TestTaskQueueMonitorCleanup:
         # Setup: Redis has 2 tasks, one is orphaned (SUCCESS state)
         mock_redis.hgetall.return_value = {
             "task-1": '{"task_id": "task-1", "task_name": "generate_adr", "status": "active", "args": [], "kwargs": {}}',
-            "task-2": '{"task_id": "task-2", "task_name": "analyze_adr", "status": "active", "args": [], "kwargs": {}}'
+            "task-2": '{"task_id": "task-2", "task_name": "analyze_adr", "status": "active", "args": [], "kwargs": {}}',
         }
 
         # Mock AsyncResult to return SUCCESS for task-1 (orphaned), PENDING for task-2 (still running)
-        with patch('src.task_queue_monitor.AsyncResult') as mock_async_result:
+        with patch("src.task_queue_monitor.AsyncResult") as mock_async_result:
+
             def create_result(task_id, **kwargs):
                 result = MagicMock()
-                result.state = 'SUCCESS' if task_id == 'task-1' else 'PENDING'
+                result.state = "SUCCESS" if task_id == "task-1" else "PENDING"
                 return result
 
             mock_async_result.side_effect = create_result
 
             # Mock the broadcast method
-            with patch.object(monitor, '_broadcast_queue_status', new_callable=AsyncMock) as mock_broadcast:
+            with patch.object(
+                monitor, "_broadcast_queue_status", new_callable=AsyncMock
+            ) as mock_broadcast:
                 result = await monitor.cleanup_orphaned_tasks()
 
         # Verify
-        assert result['cleaned_count'] == 1
-        assert result['error_count'] == 0
-        assert len(result['cleaned_tasks']) == 1
-        assert result['cleaned_tasks'][0]['task_id'] == 'task-1'
-        assert result['cleaned_tasks'][0]['state'] == 'SUCCESS'
+        assert result["cleaned_count"] == 1
+        assert result["error_count"] == 0
+        assert len(result["cleaned_tasks"]) == 1
+        assert result["cleaned_tasks"][0]["task_id"] == "task-1"
+        assert result["cleaned_tasks"][0]["state"] == "SUCCESS"
 
         # Verify Redis hdel was called for orphaned task
-        mock_redis.hdel.assert_called_once_with(monitor.ACTIVE_TASKS_KEY, 'task-1')
+        mock_redis.hdel.assert_called_once_with(monitor.ACTIVE_TASKS_KEY, "task-1")
 
         # Verify broadcast was called
         mock_broadcast.assert_called_once()
@@ -79,18 +82,20 @@ class TestTaskQueueMonitorCleanup:
             "task-1": '{"task_id": "task-1", "task_name": "generate_adr", "status": "active", "args": [], "kwargs": {}}'
         }
 
-        with patch('src.task_queue_monitor.AsyncResult') as mock_async_result:
+        with patch("src.task_queue_monitor.AsyncResult") as mock_async_result:
             result_mock = MagicMock()
-            result_mock.state = 'PENDING'
+            result_mock.state = "PENDING"
             mock_async_result.return_value = result_mock
 
-            with patch.object(monitor, '_broadcast_queue_status', new_callable=AsyncMock):
+            with patch.object(
+                monitor, "_broadcast_queue_status", new_callable=AsyncMock
+            ):
                 result = await monitor.cleanup_orphaned_tasks()
 
         # Verify
-        assert result['cleaned_count'] == 0
-        assert result['error_count'] == 0
-        assert len(result['cleaned_tasks']) == 0
+        assert result["cleaned_count"] == 0
+        assert result["error_count"] == 0
+        assert len(result["cleaned_tasks"]) == 0
 
         # Verify Redis hdel was NOT called
         mock_redis.hdel.assert_not_called()
@@ -103,25 +108,33 @@ class TestTaskQueueMonitorCleanup:
             "task-1": '{"task_id": "task-1", "task_name": "task1", "status": "active", "args": [], "kwargs": {}}',
             "task-2": '{"task_id": "task-2", "task_name": "task2", "status": "active", "args": [], "kwargs": {}}',
             "task-3": '{"task_id": "task-3", "task_name": "task3", "status": "active", "args": [], "kwargs": {}}',
-            "task-4": '{"task_id": "task-4", "task_name": "task4", "status": "active", "args": [], "kwargs": {}}'
+            "task-4": '{"task_id": "task-4", "task_name": "task4", "status": "active", "args": [], "kwargs": {}}',
         }
 
-        states = {'task-1': 'SUCCESS', 'task-2': 'FAILURE', 'task-3': 'REVOKED', 'task-4': 'REJECTED'}
+        states = {
+            "task-1": "SUCCESS",
+            "task-2": "FAILURE",
+            "task-3": "REVOKED",
+            "task-4": "REJECTED",
+        }
 
-        with patch('src.task_queue_monitor.AsyncResult') as mock_async_result:
+        with patch("src.task_queue_monitor.AsyncResult") as mock_async_result:
+
             def create_result(task_id, **kwargs):
                 result = MagicMock()
-                result.state = states.get(task_id, 'PENDING')
+                result.state = states.get(task_id, "PENDING")
                 return result
 
             mock_async_result.side_effect = create_result
 
-            with patch.object(monitor, '_broadcast_queue_status', new_callable=AsyncMock):
+            with patch.object(
+                monitor, "_broadcast_queue_status", new_callable=AsyncMock
+            ):
                 result = await monitor.cleanup_orphaned_tasks()
 
         # Verify all terminal states were cleaned
-        assert result['cleaned_count'] == 4
-        assert result['error_count'] == 0
+        assert result["cleaned_count"] == 4
+        assert result["error_count"] == 0
 
     @pytest.mark.asyncio
     async def test_cleanup_orphaned_tasks_with_errors(self, monitor, mock_redis):
@@ -129,53 +142,72 @@ class TestTaskQueueMonitorCleanup:
         # Setup: Redis has tasks but one throws an error
         mock_redis.hgetall.return_value = {
             "task-1": '{"task_id": "task-1", "task_name": "task1", "status": "active", "args": [], "kwargs": {}}',
-            "task-2": '{"task_id": "task-2", "task_name": "task2", "status": "active", "args": [], "kwargs": {}}'
+            "task-2": '{"task_id": "task-2", "task_name": "task2", "status": "active", "args": [], "kwargs": {}}',
         }
 
-        with patch('src.task_queue_monitor.AsyncResult') as mock_async_result:
+        with patch("src.task_queue_monitor.AsyncResult") as mock_async_result:
+
             def create_result(task_id, **kwargs):
-                if task_id == 'task-1':
+                if task_id == "task-1":
                     raise Exception("Redis connection error")
                 result = MagicMock()
-                result.state = 'SUCCESS'
+                result.state = "SUCCESS"
                 return result
 
             mock_async_result.side_effect = create_result
 
-            with patch.object(monitor, '_broadcast_queue_status', new_callable=AsyncMock):
+            with patch.object(
+                monitor, "_broadcast_queue_status", new_callable=AsyncMock
+            ):
                 result = await monitor.cleanup_orphaned_tasks()
 
         # Verify: task-2 cleaned, task-1 recorded error
-        assert result['cleaned_count'] == 1
-        assert result['error_count'] == 1
-        assert len(result['errors']) == 1
-        assert 'task-1' in result['errors'][0]
+        assert result["cleaned_count"] == 1
+        assert result["error_count"] == 1
+        assert len(result["errors"]) == 1
+        assert "task-1" in result["errors"][0]
 
     @pytest.mark.asyncio
     async def test_clear_all_tasks_success(self, monitor, mock_redis, mock_celery_app):
         """Test successful clearing of all tasks."""
         # Setup: Monitor has 2 active tasks
-        monitor.get_all_tasks = MagicMock(return_value=[
-            TaskInfo(task_id='task-1', task_name='generate_adr', status='active', args=(), kwargs={}),
-            TaskInfo(task_id='task-2', task_name='analyze_adr', status='active', args=(), kwargs={})
-        ])
+        monitor.get_all_tasks = MagicMock(
+            return_value=[
+                TaskInfo(
+                    task_id="task-1",
+                    task_name="generate_adr",
+                    status="active",
+                    args=(),
+                    kwargs={},
+                ),
+                TaskInfo(
+                    task_id="task-2",
+                    task_name="analyze_adr",
+                    status="active",
+                    args=(),
+                    kwargs={},
+                ),
+            ]
+        )
 
         mock_celery_app.control.purge.return_value = 3  # 3 pending tasks purged
 
-        with patch.object(monitor, '_broadcast_queue_status', new_callable=AsyncMock) as mock_broadcast:
+        with patch.object(
+            monitor, "_broadcast_queue_status", new_callable=AsyncMock
+        ) as mock_broadcast:
             result = await monitor.clear_all_tasks(force=False)
 
         # Verify
-        assert result['revoked_active'] == 2
-        assert result['purged_pending'] == 3
-        assert result['cleared_redis_records'] == 1
-        assert result['error_count'] == 0
-        assert len(result['revoked_tasks']) == 2
+        assert result["revoked_active"] == 2
+        assert result["purged_pending"] == 3
+        assert result["cleared_redis_records"] == 1
+        assert result["error_count"] == 0
+        assert len(result["revoked_tasks"]) == 2
 
         # Verify Celery control.revoke was called for each task
         assert mock_celery_app.control.revoke.call_count == 2
-        mock_celery_app.control.revoke.assert_any_call('task-1', terminate=False)
-        mock_celery_app.control.revoke.assert_any_call('task-2', terminate=False)
+        mock_celery_app.control.revoke.assert_any_call("task-1", terminate=False)
+        mock_celery_app.control.revoke.assert_any_call("task-2", terminate=False)
 
         # Verify purge was called
         mock_celery_app.control.purge.assert_called_once()
@@ -187,54 +219,82 @@ class TestTaskQueueMonitorCleanup:
         mock_broadcast.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_clear_all_tasks_with_force(self, monitor, mock_redis, mock_celery_app):
+    async def test_clear_all_tasks_with_force(
+        self, monitor, mock_redis, mock_celery_app
+    ):
         """Test clearing all tasks with force terminate."""
-        monitor.get_all_tasks = MagicMock(return_value=[
-            TaskInfo(task_id='task-1', task_name='generate_adr', status='active', args=(), kwargs={})
-        ])
+        monitor.get_all_tasks = MagicMock(
+            return_value=[
+                TaskInfo(
+                    task_id="task-1",
+                    task_name="generate_adr",
+                    status="active",
+                    args=(),
+                    kwargs={},
+                )
+            ]
+        )
 
-        with patch.object(monitor, '_broadcast_queue_status', new_callable=AsyncMock):
-            result = await monitor.clear_all_tasks(force=True)
+        with patch.object(monitor, "_broadcast_queue_status", new_callable=AsyncMock):
+            await monitor.clear_all_tasks(force=True)
 
         # Verify terminate=True was passed
-        mock_celery_app.control.revoke.assert_called_once_with('task-1', terminate=True)
+        mock_celery_app.control.revoke.assert_called_once_with("task-1", terminate=True)
 
     @pytest.mark.asyncio
-    async def test_clear_all_tasks_empty_queue(self, monitor, mock_redis, mock_celery_app):
+    async def test_clear_all_tasks_empty_queue(
+        self, monitor, mock_redis, mock_celery_app
+    ):
         """Test clearing when queue is empty."""
         monitor.get_all_tasks = MagicMock(return_value=[])
         mock_celery_app.control.purge.return_value = 0
 
-        with patch.object(monitor, '_broadcast_queue_status', new_callable=AsyncMock):
+        with patch.object(monitor, "_broadcast_queue_status", new_callable=AsyncMock):
             result = await monitor.clear_all_tasks(force=False)
 
         # Verify
-        assert result['revoked_active'] == 0
-        assert result['purged_pending'] == 0
-        assert result['error_count'] == 0
+        assert result["revoked_active"] == 0
+        assert result["purged_pending"] == 0
+        assert result["error_count"] == 0
 
     @pytest.mark.asyncio
-    async def test_clear_all_tasks_with_errors(self, monitor, mock_redis, mock_celery_app):
+    async def test_clear_all_tasks_with_errors(
+        self, monitor, mock_redis, mock_celery_app
+    ):
         """Test clear_all_tasks handles errors gracefully."""
-        monitor.get_all_tasks = MagicMock(return_value=[
-            TaskInfo(task_id='task-1', task_name='task1', status='active', args=(), kwargs={}),
-            TaskInfo(task_id='task-2', task_name='task2', status='active', args=(), kwargs={})
-        ])
+        monitor.get_all_tasks = MagicMock(
+            return_value=[
+                TaskInfo(
+                    task_id="task-1",
+                    task_name="task1",
+                    status="active",
+                    args=(),
+                    kwargs={},
+                ),
+                TaskInfo(
+                    task_id="task-2",
+                    task_name="task2",
+                    status="active",
+                    args=(),
+                    kwargs={},
+                ),
+            ]
+        )
 
         # First revoke succeeds, second fails
         def revoke_side_effect(task_id, **kwargs):
-            if task_id == 'task-2':
+            if task_id == "task-2":
                 raise Exception("Revoke failed")
 
         mock_celery_app.control.revoke.side_effect = revoke_side_effect
 
-        with patch.object(monitor, '_broadcast_queue_status', new_callable=AsyncMock):
+        with patch.object(monitor, "_broadcast_queue_status", new_callable=AsyncMock):
             result = await monitor.clear_all_tasks(force=False)
 
         # Verify: one success, one error
-        assert result['revoked_active'] == 1
-        assert result['error_count'] == 1
-        assert 'task-2' in result['errors'][0]
+        assert result["revoked_active"] == 1
+        assert result["error_count"] == 1
+        assert "task-2" in result["errors"][0]
 
     def test_revoke_task_removes_from_redis(self, monitor, mock_redis, mock_celery_app):
         """Test that revoking a task also removes it from Redis tracking."""
@@ -259,6 +319,6 @@ class TestTaskQueueMonitorCleanup:
         """Test revoke_task handles errors gracefully."""
         mock_celery_app.control.revoke.side_effect = Exception("Connection error")
 
-        success = monitor.revoke_task('task-1', terminate=False)
+        success = monitor.revoke_task("task-1", terminate=False)
 
         assert success is False

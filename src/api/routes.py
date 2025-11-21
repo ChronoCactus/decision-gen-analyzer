@@ -1,34 +1,49 @@
 """API routes for Decision Analyzer."""
 
 import asyncio
-from fastapi import APIRouter, HTTPException, BackgroundTasks, File, UploadFile, WebSocket, WebSocketDisconnect
-from fastapi.responses import JSONResponse, StreamingResponse
-from typing import List, Optional, Literal
-from pydantic import BaseModel
-import json
 import io
+import json
+from typing import List, Optional
 
-from src.models import ADR
-from src.lightrag_client import LightRAGClient
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    File,
+    HTTPException,
+    UploadFile,
+    WebSocket,
+    WebSocketDisconnect,
+)
+from fastapi.responses import StreamingResponse
+from pydantic import BaseModel
+
 from src.celery_app import analyze_adr_task, generate_adr_task
-from src.logger import get_logger
 from src.config import get_settings
+from src.lightrag_client import LightRAGClient
+from src.logger import get_logger
+from src.models import ADR
 
 logger = get_logger(__name__)
+
 
 # Pydantic models for API requests/responses
 class ADRListResponse(BaseModel):
     """Response model for ADR listing."""
+
     adrs: List[ADR]
     total: int
 
+
 class AnalyzeADRRequest(BaseModel):
     """Request model for ADR analysis."""
+
     adr_id: str
     persona: Optional[str] = None
 
+
 class GenerateADRRequest(BaseModel):
     """Request model for ADR generation."""
+
     prompt: str
     context: Optional[str] = None
     tags: Optional[List[str]] = None
@@ -36,8 +51,24 @@ class GenerateADRRequest(BaseModel):
     retrieval_mode: Optional[str] = "naive"  # RAG retrieval mode
     provider_id: Optional[str] = None  # Optional LLM provider ID
 
+
+class PersonaRefinementItem(BaseModel):
+    """Individual persona refinement."""
+
+    persona: str
+    refinement_prompt: str
+
+
+class RefinePersonasRequest(BaseModel):
+    """Request model for refining personas in an existing ADR."""
+
+    refinements: List[PersonaRefinementItem]
+    provider_id: Optional[str] = None
+
+
 class TaskResponse(BaseModel):
     """Response model for queued tasks."""
+
     task_id: str
     status: str
     message: str
@@ -55,6 +86,7 @@ class ModelConfigInfo(BaseModel):
 
 class PersonaInfo(BaseModel):
     """Information about an analysis persona."""
+
     value: str
     label: str
     description: str
@@ -134,11 +166,11 @@ provider_router = APIRouter()
 @adr_router.websocket("/ws/cache-status")
 async def websocket_cache_status(websocket: WebSocket):
     """WebSocket endpoint for real-time cache status updates.
-    
+
     Clients connect to this endpoint to receive immediate notifications when:
     - Cache rebuild starts (is_rebuilding: true)
     - Cache rebuild completes (is_rebuilding: false, last_sync_time updated)
-    
+
     Message format:
     {
         "type": "cache_status",
@@ -146,8 +178,8 @@ async def websocket_cache_status(websocket: WebSocket):
         "last_sync_time": float | null  // Unix timestamp in seconds
     }
     """
-    from src.websocket_manager import get_websocket_manager
     from src.lightrag_doc_cache import LightRAGDocumentCache
+    from src.websocket_manager import get_websocket_manager
 
     logger.info(
         "🔌 WebSocket connection attempt",
@@ -285,7 +317,7 @@ async def list_adrs(limit: int = 50, offset: int = 0):
 
         # If no ADRs in storage, return demo ADRs
         if total == 0:
-            from src.models import ADR, ADRMetadata, ADRContent, ADRStatus
+            from src.models import ADR, ADRContent, ADRMetadata, ADRStatus
 
             sample_adrs = [
                 ADR(
@@ -293,43 +325,65 @@ async def list_adrs(limit: int = 50, offset: int = 0):
                         title="Database Selection for User Management System",
                         status=ADRStatus.ACCEPTED,
                         author="Architecture Team",
-                        tags=["database", "postgresql", "scalability"]
+                        tags=["database", "postgresql", "scalability"],
                     ),
                     content=ADRContent(
                         context_and_problem="We need to choose a database technology for our new microservice architecture that handles user management, requiring ACID transactions and complex querying capabilities.",
                         decision_outcome="Adopt PostgreSQL as the primary database technology",
                         consequences="Benefits: ACID compliance, rich querying features, JSON support. Drawbacks: Higher resource usage compared to simpler alternatives.",
                         considered_options=["PostgreSQL", "MySQL", "MongoDB"],
-                        decision_drivers=["ACID requirements", "Complex querying needs", "Team familiarity"],
+                        decision_drivers=[
+                            "ACID requirements",
+                            "Complex querying needs",
+                            "Team familiarity",
+                        ],
                         pros_and_cons={
-                            "PostgreSQL": ["Mature ecosystem", "Excellent documentation", "ACID compliance"],
+                            "PostgreSQL": [
+                                "Mature ecosystem",
+                                "Excellent documentation",
+                                "ACID compliance",
+                            ],
                             "MySQL": ["Good performance", "Wide adoption"],
-                            "MongoDB": ["Flexible schema", "Good for unstructured data"]
+                            "MongoDB": [
+                                "Flexible schema",
+                                "Good for unstructured data",
+                            ],
                         },
-                        more_information="Migration plan: Phase 1 - Schema design, Phase 2 - Data migration, Phase 3 - Application updates"
-                    )
+                        more_information="Migration plan: Phase 1 - Schema design, Phase 2 - Data migration, Phase 3 - Application updates",
+                    ),
                 ),
                 ADR(
                     metadata=ADRMetadata(
                         title="API Gateway Implementation Strategy",
                         status=ADRStatus.PROPOSED,
                         author="DevOps Team",
-                        tags=["api", "gateway", "microservices"]
+                        tags=["api", "gateway", "microservices"],
                     ),
                     content=ADRContent(
                         context_and_problem="With our move to microservices, we need a centralized entry point for API management, security, and monitoring.",
                         decision_outcome="Implement Kong API Gateway with custom plugins",
                         consequences="Centralized control over API traffic, improved security, but added complexity in deployment.",
                         considered_options=["Kong", "NGINX", "AWS API Gateway"],
-                        decision_drivers=["Microservices architecture", "Security requirements", "Monitoring needs"],
+                        decision_drivers=[
+                            "Microservices architecture",
+                            "Security requirements",
+                            "Monitoring needs",
+                        ],
                         pros_and_cons={
-                            "Kong": ["Highly extensible", "Good performance", "Active community"],
+                            "Kong": [
+                                "Highly extensible",
+                                "Good performance",
+                                "Active community",
+                            ],
                             "NGINX": ["High performance", "Mature technology"],
-                            "AWS API Gateway": ["Managed service", "Easy integration with AWS"]
+                            "AWS API Gateway": [
+                                "Managed service",
+                                "Easy integration with AWS",
+                            ],
                         },
-                        more_information="Plugin development required for custom authentication and rate limiting."
-                    )
-                )
+                        more_information="Plugin development required for custom authentication and rate limiting.",
+                    ),
+                ),
             ]
             return ADRListResponse(adrs=sample_adrs, total=len(sample_adrs))
 
@@ -355,9 +409,9 @@ async def delete_adr(adr_id: str):
     """Delete an ADR by ID."""
     try:
         from src.adr_file_storage import get_adr_storage
+        from src.config import settings
         from src.lightrag_client import LightRAGClient
         from src.lightrag_doc_cache import LightRAGDocumentCache
-        from src.config import settings
 
         storage = get_adr_storage()
 
@@ -385,8 +439,7 @@ async def delete_adr(adr_id: str):
 
             # Delete from LightRAG using the cached doc ID if available
             async with LightRAGClient(
-                base_url=settings.lightrag_url,
-                demo_mode=False
+                base_url=settings.lightrag_url, demo_mode=False
             ) as rag_client:
                 deleted = await rag_client.delete_document(adr_id, lightrag_doc_id)
                 if deleted:
@@ -404,8 +457,38 @@ async def delete_adr(adr_id: str):
         raise HTTPException(status_code=500, detail=f"Failed to delete ADR: {str(e)}")
 
 
+@adr_router.post("/{adr_id}/refine-personas", response_model=TaskResponse)
+async def refine_personas(adr_id: str, request: RefinePersonasRequest):
+    """Refine specific personas in an existing ADR and re-synthesize."""
+    try:
+        from src.celery_app import refine_personas_task
+
+        # Convert refinements list to dict
+        persona_refinements = {
+            item.persona: item.refinement_prompt for item in request.refinements
+        }
+
+        # Queue the refinement task
+        task = refine_personas_task.delay(
+            adr_id=adr_id,
+            persona_refinements=persona_refinements,
+            provider_id=request.provider_id,
+        )
+
+        return TaskResponse(
+            task_id=task.id,
+            status="queued",
+            message=f"Persona refinement queued for {len(persona_refinements)} persona(s)",
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"Failed to queue persona refinement: {str(e)}"
+        )
+
+
 class UpdateStatusRequest(BaseModel):
     """Request model for updating ADR status."""
+
     status: str
 
 
@@ -413,9 +496,10 @@ class UpdateStatusRequest(BaseModel):
 async def update_adr_status(adr_id: str, request: UpdateStatusRequest):
     """Update the status of an ADR."""
     try:
+        from datetime import UTC, datetime
+
         from src.adr_file_storage import get_adr_storage
         from src.models import ADRStatus
-        from datetime import datetime, UTC
 
         # Validate status value
         try:
@@ -424,7 +508,7 @@ async def update_adr_status(adr_id: str, request: UpdateStatusRequest):
             valid_statuses = [status.value for status in ADRStatus]
             raise HTTPException(
                 status_code=400,
-                detail=f"Invalid status. Must be one of: {', '.join(valid_statuses)}"
+                detail=f"Invalid status. Must be one of: {', '.join(valid_statuses)}",
             )
 
         storage = get_adr_storage()
@@ -444,15 +528,14 @@ async def update_adr_status(adr_id: str, request: UpdateStatusRequest):
 
         logger.info(f"Updated ADR {adr_id} status to {new_status.value}")
 
-        return {
-            "message": f"ADR status updated to {new_status.value}",
-            "adr": adr
-        }
+        return {"message": f"ADR status updated to {new_status.value}", "adr": adr}
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Failed to update ADR status: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to update ADR status: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to update ADR status: {str(e)}"
+        )
 
 
 async def _push_adr_to_rag_internal(adr: "ADR") -> dict:
@@ -467,7 +550,6 @@ async def _push_adr_to_rag_internal(adr: "ADR") -> dict:
     Raises:
         Exception: If push to RAG fails
     """
-    from src.lightrag_client import LightRAGClient
     from src.config import settings
 
     # Format ADR content for LightRAG
@@ -515,8 +597,8 @@ Considered Options:
 
         if track_id:
             # Store upload status and start monitoring task
-            from src.lightrag_doc_cache import LightRAGDocumentCache
             from src.celery_app import monitor_upload_status_task
+            from src.lightrag_doc_cache import LightRAGDocumentCache
 
             async with LightRAGDocumentCache() as cache:
                 await cache.set_upload_status(
@@ -623,23 +705,16 @@ async def get_cache_status():
             is_rebuilding = await cache.is_rebuilding()
             last_sync_time = await cache.get_last_sync_time()
 
-        return {
-            "is_rebuilding": is_rebuilding,
-            "last_sync_time": last_sync_time
-        }
+        return {"is_rebuilding": is_rebuilding, "last_sync_time": last_sync_time}
     except Exception as e:
         logger.error(f"Failed to check cache status: {str(e)}")
-        return {
-            "is_rebuilding": False,
-            "last_sync_time": None,
-            "error": str(e)
-        }
+        return {"is_rebuilding": False, "last_sync_time": None, "error": str(e)}
 
 
 @adr_router.get("/cache/rebuild-status")
 async def get_cache_rebuild_status():
     """Check if the LightRAG cache is currently being rebuilt.
-    
+
     DEPRECATED: Use /cache/status instead for more complete information.
     """
     try:
@@ -698,18 +773,15 @@ async def analyze_adr(request: AnalyzeADRRequest, background_tasks: BackgroundTa
     """Queue an ADR for analysis."""
     try:
         # Queue the analysis task
-        task = analyze_adr_task.delay(
-            adr_id=request.adr_id,
-            persona=request.persona
-        )
+        task = analyze_adr_task.delay(adr_id=request.adr_id, persona=request.persona)
 
         return TaskResponse(
-            task_id=task.id,
-            status="queued",
-            message="ADR analysis queued successfully"
+            task_id=task.id, status="queued", message="ADR analysis queued successfully"
         )
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to queue analysis: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to queue analysis: {str(e)}"
+        )
 
 
 @generation_router.post("/generate", response_model=TaskResponse)
@@ -729,10 +801,12 @@ async def generate_adr(request: GenerateADRRequest, background_tasks: Background
         return TaskResponse(
             task_id=task.id,
             status="queued",
-            message="ADR generation queued successfully"
+            message="ADR generation queued successfully",
         )
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to queue generation: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to queue generation: {str(e)}"
+        )
 
 
 @analysis_router.get("/task/{task_id}")
@@ -740,20 +814,34 @@ async def get_analysis_task_status(task_id: str):
     """Get the status of an analysis task."""
     try:
         from src.celery_app import celery_app
+
         task_result = celery_app.AsyncResult(task_id)
 
         if task_result.state == "PENDING":
             response = {"status": "pending", "message": "Task is waiting in queue"}
         elif task_result.state == "PROGRESS":
-            response = {"status": "progress", "message": task_result.info.get("message", "Processing...")}
+            response = {
+                "status": "progress",
+                "message": task_result.info.get("message", "Processing..."),
+            }
         elif task_result.state == "SUCCESS":
-            response = {"status": "completed", "message": "Analysis completed successfully", "result": task_result.result}
+            response = {
+                "status": "completed",
+                "message": "Analysis completed successfully",
+                "result": task_result.result,
+            }
         else:
-            response = {"status": "failed", "message": "Analysis failed", "error": str(task_result.info)}
+            response = {
+                "status": "failed",
+                "message": "Analysis failed",
+                "error": str(task_result.info),
+            }
 
         return response
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to get task status: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to get task status: {str(e)}"
+        )
 
 
 @generation_router.get("/task/{task_id}")
@@ -774,7 +862,10 @@ async def get_generation_task_status(task_id: str):
         if task_result.state == "PENDING":
             response = {"status": "pending", "message": "Task is waiting in queue"}
         elif task_result.state == "PROGRESS":
-            response = {"status": "progress", "message": task_result.info.get("message", "Generating ADR...")}
+            response = {
+                "status": "progress",
+                "message": task_result.info.get("message", "Generating ADR..."),
+            }
         elif task_result.state == "SUCCESS":
             # Extract title from result for a more informative message
             title = (
@@ -817,7 +908,9 @@ async def get_generation_task_status(task_id: str):
 
         return response
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to get task status: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to get task status: {str(e)}"
+        )
 
 
 # ==================== Export/Import Endpoints ====================
@@ -1027,7 +1120,6 @@ async def import_adrs_from_file(
     Accepts a file upload containing versioned schema data.
     """
     try:
-        from src.adr_import_export import ADRImportExport
 
         # Read file content
         content = await file.read()
@@ -1476,7 +1568,7 @@ async def create_provider(request: dict):
         ProviderResponse
     """
     try:
-        from src.llm_provider_storage import get_provider_storage, CreateProviderRequest
+        from src.llm_provider_storage import CreateProviderRequest, get_provider_storage
 
         storage = get_provider_storage()
         create_request = CreateProviderRequest(**request)
@@ -1514,7 +1606,7 @@ async def update_provider(provider_id: str, request: dict):
         ProviderResponse or 404 if not found
     """
     try:
-        from src.llm_provider_storage import get_provider_storage, UpdateProviderRequest
+        from src.llm_provider_storage import UpdateProviderRequest, get_provider_storage
 
         storage = get_provider_storage()
         update_request = UpdateProviderRequest(**request)

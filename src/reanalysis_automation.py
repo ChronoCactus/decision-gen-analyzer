@@ -1,16 +1,15 @@
 """Re-analysis automation for periodic ADR review based on new data."""
 
 import asyncio
-from datetime import datetime, UTC, timedelta
-from typing import Dict, List, Optional, Any, Tuple
+from datetime import UTC, datetime, timedelta
+from typing import Any, Dict, List, Optional, Tuple
 
 import structlog
 
-from src.config import Settings
-from src.models import ADR, ADRConflict, ContinuityAssessment
-from src.web_search import WebSearchService, DataProcessingPipeline, SearchResult
 from src.adr_contextual_analysis import ContextualAnalysisService
-
+from src.config import Settings
+from src.models import ADR
+from src.web_search import DataProcessingPipeline, SearchResult, WebSearchService
 
 logger = structlog.get_logger(__name__)
 
@@ -85,7 +84,9 @@ class ReanalysisAutomationService:
         # Check if we should skip recent analysis
         if not force_refresh:
             last_analyzed = self.last_analysis.get(adr_id)
-            if last_analyzed and (datetime.now(UTC) - last_analyzed) < timedelta(days=7):
+            if last_analyzed and (datetime.now(UTC) - last_analyzed) < timedelta(
+                days=7
+            ):
                 self.logger.debug(
                     "Skipping recent ADR analysis",
                     adr_id=adr_id,
@@ -203,17 +204,49 @@ class ReanalysisAutomationService:
         # Add key terms from context
         context_words = adr.content.context_and_problem.split()
         # Filter for meaningful terms (length > 4, not common words)
-        common_words = {"that", "with", "have", "this", "will", "your", "from", "they", "know", "want", "been", "good", "much", "some", "time", "very", "when", "come", "here", "just", "like", "long", "make", "many", "over", "such", "take", "than", "them", "well", "were"}
+        common_words = {
+            "that",
+            "with",
+            "have",
+            "this",
+            "will",
+            "your",
+            "from",
+            "they",
+            "know",
+            "want",
+            "been",
+            "good",
+            "much",
+            "some",
+            "time",
+            "very",
+            "when",
+            "come",
+            "here",
+            "just",
+            "like",
+            "long",
+            "make",
+            "many",
+            "over",
+            "such",
+            "take",
+            "than",
+            "them",
+            "well",
+            "were",
+        }
         meaningful_words = [
-            word for word in context_words
+            word
+            for word in context_words
             if len(word) > 4 and word.lower() not in common_words
         ]
         terms.extend(meaningful_words[:10])  # Top 10 meaningful words
 
         # Add decision outcome terms
         decision_words = [
-            word for word in adr.content.decision_outcome.split()
-            if len(word) > 3
+            word for word in adr.content.decision_outcome.split() if len(word) > 3
         ]
         terms.extend(decision_words[:5])
 
@@ -245,7 +278,9 @@ class ReanalysisAutomationService:
     ) -> Optional[ChangeDetectionResult]:
         """Detect potential changes in ADR validity based on external data."""
         # Extract insights from relevant data
-        insights = self.data_pipeline.extract_key_insights(relevant_data, max_insights=10)
+        insights = self.data_pipeline.extract_key_insights(
+            relevant_data, max_insights=10
+        )
 
         if not insights:
             return None
@@ -282,12 +317,38 @@ class ReanalysisAutomationService:
 
         # Keywords that might indicate changes
         change_keywords = {
-            "deprecated": ["deprecated", "obsolete", "replaced", "superseded", "legacy"],
-            "alternative_better": ["better alternative", "superior option", "recommended instead", "prefer"],
-            "security_issue": ["security vulnerability", "security risk", "breach", "exploit"],
-            "performance_issue": ["performance problem", "slow", "bottleneck", "inefficient"],
+            "deprecated": [
+                "deprecated",
+                "obsolete",
+                "replaced",
+                "superseded",
+                "legacy",
+            ],
+            "alternative_better": [
+                "better alternative",
+                "superior option",
+                "recommended instead",
+                "prefer",
+            ],
+            "security_issue": [
+                "security vulnerability",
+                "security risk",
+                "breach",
+                "exploit",
+            ],
+            "performance_issue": [
+                "performance problem",
+                "slow",
+                "bottleneck",
+                "inefficient",
+            ],
             "new_feature": ["new feature", "enhancement", "improvement", "update"],
-            "cost_issue": ["expensive", "cost increase", "budget impact", "cheaper alternative"],
+            "cost_issue": [
+                "expensive",
+                "cost increase",
+                "budget impact",
+                "cheaper alternative",
+            ],
         }
 
         for insight in insights:
@@ -296,12 +357,16 @@ class ReanalysisAutomationService:
             for change_type, keywords in change_keywords.items():
                 matches = [kw for kw in keywords if kw in text]
                 if matches:
-                    confidence = min(len(matches) * 0.2, 0.8)  # Scale confidence by matches
+                    confidence = min(
+                        len(matches) * 0.2, 0.8
+                    )  # Scale confidence by matches
 
                     # Adjust confidence based on recency
-                    if insight.get('published_date'):
+                    if insight.get("published_date"):
                         try:
-                            published = datetime.fromisoformat(insight['published_date'].replace('Z', '+00:00'))
+                            published = datetime.fromisoformat(
+                                insight["published_date"].replace("Z", "+00:00")
+                            )
                             days_old = (datetime.now(UTC) - published).days
                             if days_old < 30:
                                 confidence += 0.1
@@ -318,12 +383,14 @@ class ReanalysisAutomationService:
 
                     recommendations = self._generate_recommendations(change_type, adr)
 
-                    change_indicators.append((
-                        change_type,
-                        confidence,
-                        evidence,
-                        recommendations,
-                    ))
+                    change_indicators.append(
+                        (
+                            change_type,
+                            confidence,
+                            evidence,
+                            recommendations,
+                        )
+                    )
 
         return change_indicators
 
@@ -445,7 +512,9 @@ class ReanalysisAutomationService:
         change_types = {}
         for changes in self.change_history.values():
             for change in changes:
-                change_types[change.change_type] = change_types.get(change.change_type, 0) + 1
+                change_types[change.change_type] = (
+                    change_types.get(change.change_type, 0) + 1
+                )
 
         return {
             "total_adrs_analyzed": len(self.last_analysis),

@@ -1,11 +1,11 @@
 """Tests for ADR file storage."""
 
-import pytest
-from unittest.mock import AsyncMock, MagicMock, patch, mock_open
+import json
 from pathlib import Path
 from tempfile import TemporaryDirectory
-import json
 from uuid import uuid4
+
+import pytest
 
 from src.adr_file_storage import ADRFileStorage
 from src.models import ADR
@@ -43,7 +43,7 @@ class TestADRFileStorage:
         with TemporaryDirectory() as tmpdir:
             storage_path = Path(tmpdir) / "adrs"
 
-            storage = ADRFileStorage(storage_path=str(storage_path))
+            ADRFileStorage(storage_path=str(storage_path))
 
             assert storage_path.exists()
 

@@ -8,9 +8,10 @@ interface ToastProps {
   onClose: () => void;
   duration?: number;
   position?: 'top' | 'bottom';
+  positionType?: 'fixed' | 'absolute';
 }
 
-export function Toast({ message, type = 'info', onClose, duration = 5000, position = 'bottom' }: ToastProps) {
+export function Toast({ message, type = 'info', onClose, duration = 5000, position = 'bottom', positionType = 'fixed' }: ToastProps) {
   const onCloseRef = useRef(onClose);
   
   // Keep the ref updated
@@ -38,7 +39,7 @@ export function Toast({ message, type = 'info', onClose, duration = 5000, positi
     : 'bottom-4 right-4 animate-slide-up';
 
   return (
-    <div className={`fixed ${positionClasses} z-50`}>
+    <div className={`${positionType} ${positionClasses} z-50`}>
       <div className={`${bgColor} text-white px-6 py-3 rounded-lg shadow-lg flex items-center gap-3`}>
         <span>{message}</span>
         <button

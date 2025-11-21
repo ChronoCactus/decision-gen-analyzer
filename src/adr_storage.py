@@ -1,12 +1,11 @@
 """ADR storage and retrieval service using LightRAG."""
 
-import json
-from typing import Dict, List, Optional, Any
+from typing import Any, Dict, List, Optional
 from uuid import UUID
 
 from src.lightrag_client import LightRAGClient
-from src.models import ADR, ADRStatus
 from src.logger import get_logger
+from src.models import ADR, ADRStatus
 
 logger = get_logger(__name__)
 
@@ -30,12 +29,12 @@ class ADRStorageService:
         doc_id = str(adr.metadata.id)
 
         try:
-            result = await self.lightrag_client.store_document(
-                doc_id=doc_id,
-                content=content,
-                metadata=metadata
+            await self.lightrag_client.store_document(
+                doc_id=doc_id, content=content, metadata=metadata
             )
-            logger.info("ADR stored successfully", adr_id=doc_id, title=adr.metadata.title)
+            logger.info(
+                "ADR stored successfully", adr_id=doc_id, title=adr.metadata.title
+            )
             return doc_id
         except Exception as e:
             logger.error("Failed to store ADR", adr_id=doc_id, error=str(e))
@@ -67,11 +66,11 @@ class ADRStorageService:
 
         try:
             await self.lightrag_client.update_document(
-                doc_id=doc_id,
-                content=content,
-                metadata=metadata
+                doc_id=doc_id, content=content, metadata=metadata
             )
-            logger.info("ADR updated successfully", adr_id=doc_id, title=adr.metadata.title)
+            logger.info(
+                "ADR updated successfully", adr_id=doc_id, title=adr.metadata.title
+            )
         except Exception as e:
             logger.error("Failed to update ADR", adr_id=doc_id, error=str(e))
             raise
@@ -98,7 +97,7 @@ class ADRStorageService:
         limit: int = 10,
         status_filter: Optional[ADRStatus] = None,
         tag_filter: Optional[List[str]] = None,
-        author_filter: Optional[str] = None
+        author_filter: Optional[str] = None,
     ) -> List[ADR]:
         """Search for ADRs using semantic search."""
         if not self.lightrag_client:
@@ -117,7 +116,7 @@ class ADRStorageService:
             documents = await self.lightrag_client.retrieve_documents(
                 query=query,
                 limit=limit,
-                metadata_filter=metadata_filter if metadata_filter else None
+                metadata_filter=metadata_filter if metadata_filter else None,
             )
 
             adrs = []
@@ -126,7 +125,11 @@ class ADRStorageService:
                     adr = self._document_to_adr(doc)
                     adrs.append(adr)
                 except Exception as e:
-                    logger.warning("Failed to parse ADR document", doc_id=doc.get("id"), error=str(e))
+                    logger.warning(
+                        "Failed to parse ADR document",
+                        doc_id=doc.get("id"),
+                        error=str(e),
+                    )
                     continue
 
             logger.info("ADR search completed", query=query, results=len(adrs))
@@ -165,10 +168,14 @@ class ADRStorageService:
         ]
 
         if adr.content.considered_options:
-            content_parts.append(f"Considered Options: {'; '.join(adr.content.considered_options)}")
+            content_parts.append(
+                f"Considered Options: {'; '.join(adr.content.considered_options)}"
+            )
 
         if adr.content.decision_drivers:
-            content_parts.append(f"Decision Drivers: {'; '.join(adr.content.decision_drivers)}")
+            content_parts.append(
+                f"Decision Drivers: {'; '.join(adr.content.decision_drivers)}"
+            )
 
         if adr.content.confirmation:
             content_parts.append(f"Confirmation: {adr.content.confirmation}")
@@ -203,7 +210,7 @@ class ADRStorageService:
         content_str = document.get("content", "")
 
         # Parse metadata
-        from models import ADRMetadata, ADRContent
+        from models import ADRContent, ADRMetadata
 
         metadata_obj = ADRMetadata(
             id=UUID(metadata["id"]),

@@ -1,9 +1,8 @@
 """Tests for infrastructure components."""
 
-import pytest
-from unittest.mock import AsyncMock, MagicMock
+import os
 
-from src.config import Settings, get_settings
+from src.config import Settings
 from src.models import ADR, ADRStatus
 
 
@@ -12,12 +11,44 @@ class TestSettings:
 
     def test_default_settings(self):
         """Test default settings values."""
-        settings = Settings()
-        assert settings.llm_base_url == "http://localhost:11434/v1"
-        # Accept either localhost or LAN IP for lightrag_url
-        assert "9621" in settings.lightrag_url
-        assert settings.log_level == "INFO"
-        assert settings.debug is False
+        # Clear environment variables to test actual defaults
+        env_vars_to_clear = [
+            "LLM_BASE_URL",
+            "LLM_BASE_URL_1",
+            "LLM_EMBEDDING_BASE_URL",
+            "LLM_PROVIDER",
+            "LLM_MODEL",
+            "LLM_TIMEOUT",
+            "LLM_TEMPERATURE",
+            "LIGHTRAG_URL",
+            "LIGHTRAG_TIMEOUT",
+            "LOG_LEVEL",
+            "LOG_FORMAT",
+            "DEBUG",
+            "ENABLE_LAN_DISCOVERY",
+            "HOST_IP",
+        ]
+        # Save original values
+        original_env = {key: os.environ.get(key) for key in env_vars_to_clear}
+
+        # Temporarily remove these keys from environment
+        for key in env_vars_to_clear:
+            os.environ.pop(key, None)
+
+        try:
+            settings = Settings()
+            assert settings.llm_base_url == "http://localhost:11434/v1"
+            # Accept either localhost or LAN IP for lightrag_url
+            assert "9621" in settings.lightrag_url
+            assert settings.log_level == "INFO"
+            assert settings.debug is False
+        finally:
+            # Restore original environment
+            for key, value in original_env.items():
+                if value is not None:
+                    os.environ[key] = value
+                else:
+                    os.environ.pop(key, None)
 
     def test_custom_settings(self, monkeypatch):
         """Test custom settings values via environment variables."""
@@ -46,7 +77,7 @@ class TestADRModel:
             decision_outcome="Use microservices",
             consequences="Better scalability",
             author="Test Author",
-            tags=["architecture", "microservices"]
+            tags=["architecture", "microservices"],
         )
 
         assert adr.metadata.title == "Test Decision"
@@ -63,7 +94,7 @@ class TestADRModel:
             title="Test ADR",
             context_and_problem="Context here",
             decision_outcome="Decision here",
-            consequences="Consequences here"
+            consequences="Consequences here",
         )
 
         markdown = adr.to_markdown()
@@ -79,7 +110,7 @@ class TestADRModel:
             title="Test",
             context_and_problem="Context",
             decision_outcome="Decision",
-            consequences="Consequences"
+            consequences="Consequences",
         )
 
         adr.add_tag("test")

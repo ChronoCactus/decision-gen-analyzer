@@ -213,6 +213,17 @@ components/ADRCard.tsx → components/ADRCard.test.tsx
 
 See [docs/TESTING.md](docs/TESTING.md) for comprehensive testing guidelines.
 
+## CI/CD Workflows
+
+GitHub Actions workflows are configured for automated testing and releases:
+
+- **Backend Tests** (`test-backend.yml`) - Python/pytest tests (stub)
+- **Frontend Tests** (`test-frontend.yml`) - Vitest/React tests (stub)
+- **Linting** (`lint.yml`) - Code quality and commit message validation (stub)
+- **Docker Publishing** (`docker-publish.yml`) - Automated releases to ghcr.io (active)
+
+Stub workflows are ready to activate when needed. See [.github/workflows/README.md](.github/workflows/README.md) for details.
+
 ## Docker Image Publishing
 
 The project supports automated Docker image building and publishing with semantic versioning based on conventional commits.
@@ -240,11 +251,15 @@ make docker-push-local-multiarch REGISTRY=192.168.0.118:5000
 
 ### Production (GitHub Container Registry)
 
-Images are automatically published to `ghcr.io` when code is merged to `master`/`main`. Version is calculated from conventional commits:
-- `feat:` → Minor version bump (0.1.0 → 0.2.0)
-- `fix:`, `docs:`, etc. → Patch version bump (0.1.0 → 0.1.1)
-- `feat!:`, `fix!:`, etc. → Major version bump (0.1.0 → 1.0.0)
+Images are automatically published to `ghcr.io` when **release PRs are merged from `develop` to `main`**. Version is calculated from all conventional commits since the last tag:
 
+- Any `feat!:` or `BREAKING CHANGE:` → **Major** version bump (0.1.0 → 1.0.0)
+- Any `feat:` → **Minor** version bump (0.1.0 → 0.2.0)
+- Only `fix:`, `docs:`, etc. → **Patch** version bump (0.1.0 → 0.1.1)
+
+This bundled release approach means multiple features and fixes are versioned together (e.g., 5 features + 3 fixes = one v0.2.0 release).
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for branching strategy and release process.
 See [docs/DOCKER_PUBLISHING.md](docs/DOCKER_PUBLISHING.md) for detailed information.
 See [docs/MULTI_ARCH_BUILDS.md](docs/MULTI_ARCH_BUILDS.md) for multi-architecture build guide.
 See [docs/LOAD_BALANCER_DEPLOYMENT.md](docs/LOAD_BALANCER_DEPLOYMENT.md) for deploying behind a load balancer.
@@ -373,12 +388,15 @@ docker compose up --build
 
 ## Contributing
 
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Add tests
-5. Run the test suite
-6. Submit a pull request
+We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) for details on our development workflow and branching strategy.
+
+**Quick Overview:**
+- Feature branches → `develop` → `main` (for releases)
+- Use conventional commits for semantic versioning
+- All PRs require tests and code quality checks
+- Multiple features are bundled into single releases
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for complete guidelines.
 
 ## License
 

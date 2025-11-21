@@ -2,27 +2,26 @@
 
 import asyncio
 import json
-from typing import Dict, List, Optional, Any, Union
-from datetime import datetime, UTC
+from typing import Any, Dict, List, Optional, Union
 
-from src.models import (
-    ADR,
-    ADRMetadata,
-    ADRContent,
-    ADRGenerationPrompt,
-    ADRGenerationResult,
-    ADRGenerationOptions,
-    PersonaSynthesisInput,
-)
-from src.persona_manager import PersonaManager, PersonaConfig
+from src.lightrag_client import LightRAGClient
 from src.llama_client import (
     LlamaCppClient,
     LlamaCppClientPool,
     create_client_from_persona_config,
     create_client_from_provider_id,
 )
-from src.lightrag_client import LightRAGClient
 from src.logger import get_logger
+from src.models import (
+    ADR,
+    ADRContent,
+    ADRGenerationOptions,
+    ADRGenerationPrompt,
+    ADRGenerationResult,
+    ADRMetadata,
+    PersonaSynthesisInput,
+)
+from src.persona_manager import PersonaConfig, PersonaManager
 
 logger = get_logger(__name__)
 
@@ -106,10 +105,253 @@ class ADRGenerationService:
             "ADR generation completed",
             title=result.generated_title,
             confidence=result.confidence_score,
-            personas_used=result.personas_used
+            personas_used=result.personas_used,
         )
 
         return result
+
+    async def refine_personas(
+        self,
+        adr: ADR,
+        persona_refinements: Dict[str, str],
+        progress_callback: Optional[callable] = None,
+        provider_id: Optional[str] = None,
+    ) -> ADR:
+        """Refine specific personas in an existing ADR and re-synthesize.
+
+        Args:
+            adr: The existing ADR with persona responses
+            persona_refinements: Dict mapping persona names to refinement prompts
+            progress_callback: Optional callback function for progress updates
+            provider_id: Optional provider ID to use for personas without custom model_config
+
+        Returns:
+            Updated ADR with refined persona perspectives
+        """
+        logger.info(
+            "Starting persona refinement",
+            adr_id=str(adr.metadata.id),
+            personas_to_refine=list(persona_refinements.keys()),
+        )
+
+        if not adr.persona_responses:
+            raise ValueError("ADR has no persona responses to refine")
+
+        # Get the original prompt from ADR content
+        # Reconstruct the prompt from stored data
+        from src.models import ADRGenerationPrompt
+
+        original_prompt = ADRGenerationPrompt(
+            title=adr.metadata.title,
+            context=(
+                adr.content.context_and_problem.split("\n\n")[0]
+                if "\n\n" in adr.content.context_and_problem
+                else adr.content.context_and_problem
+            ),
+            problem_statement=(
+                adr.content.context_and_problem.split("\n\n")[1]
+                if "\n\n" in adr.content.context_and_problem
+                else adr.content.context_and_problem
+            ),
+            tags=adr.metadata.tags,
+        )
+
+        # Convert persona_responses to PersonaSynthesisInput objects if they're dicts
+        from src.models import PersonaSynthesisInput
+
+        existing_persona_responses = []
+        for pr in adr.persona_responses:
+            if isinstance(pr, dict):
+                existing_persona_responses.append(PersonaSynthesisInput(**pr))
+            else:
+                existing_persona_responses.append(pr)
+
+        # Regenerate only the personas that need refinement
+        if progress_callback:
+            progress_callback(
+                f"Refining {len(persona_refinements)} persona perspective(s)..."
+            )
+
+        refined_responses = []
+        for persona_name, refinement_prompt in persona_refinements.items():
+            # Find the original persona response
+            original_response = next(
+                (pr for pr in existing_persona_responses if pr.persona == persona_name),
+                None,
+            )
+
+            if not original_response:
+                logger.warning(
+                    f"Cannot refine persona {persona_name}: persona not found in ADR"
+                )
+                continue
+
+            # If original_prompt_text is missing (old ADR), regenerate it from the persona config
+            if not original_response.original_prompt_text:
+                logger.info(
+                    f"Persona {persona_name} missing original prompt, regenerating from config"
+                )
+                persona_config = self.persona_manager.get_persona_config(persona_name)
+                if not persona_config:
+                    logger.warning(
+                        f"Cannot refine persona {persona_name}: config not found"
+                    )
+                    continue
+
+                # Recreate the original prompt
+                original_prompt_text = self._create_persona_generation_prompt(
+                    persona_config,
+                    original_prompt,
+                    [],  # No related context for old ADRs
+                )
+            else:
+                original_prompt_text = original_response.original_prompt_text
+                persona_config = self.persona_manager.get_persona_config(persona_name)
+                if not persona_config:
+                    logger.warning(
+                        f"Cannot refine persona {persona_name}: config not found"
+                    )
+                    continue
+
+            # Create refined prompt by appending refinement to original
+            refined_prompt_text = (
+                original_prompt_text
+                + f"\n\n**Additional Refinement Request**:\n{refinement_prompt}"
+            )
+
+            if progress_callback:
+                progress_callback(
+                    f"Regenerating {persona_name.replace('_', ' ').title()}..."
+                )
+
+            # Create client for this persona
+            if persona_config.model_config:
+                persona_client = create_client_from_persona_config(
+                    persona_config, demo_mode=False
+                )
+            elif provider_id:
+                persona_client = await create_client_from_provider_id(
+                    provider_id, demo_mode=False
+                )
+            else:
+                persona_client = create_client_from_persona_config(
+                    persona_config, demo_mode=False
+                )
+
+            # Generate refined response
+            try:
+                async with persona_client:
+                    response = await persona_client.generate(
+                        prompt=refined_prompt_text, temperature=0.7, num_predict=2000
+                    )
+
+                logger.info(
+                    "Received response for persona refinement",
+                    persona=persona_name,
+                    response_length=len(response),
+                    response_preview=response[:200],
+                )
+
+                # Parse the response
+                perspective_data = self._parse_persona_response(response)
+                if perspective_data:
+                    refined_response = PersonaSynthesisInput(
+                        persona=persona_name,
+                        original_prompt_text=refined_prompt_text,
+                        **perspective_data,
+                    )
+                    refined_responses.append(refined_response)
+                    logger.info(
+                        "Successfully parsed persona refinement", persona=persona_name
+                    )
+                else:
+                    logger.error(
+                        "Failed to parse persona refinement response",
+                        persona=persona_name,
+                        response_preview=response[:500],
+                    )
+            except Exception as e:
+                logger.error(
+                    "Exception during persona refinement",
+                    persona=persona_name,
+                    error=str(e),
+                    error_type=type(e).__name__,
+                )
+
+        # Check if any personas were successfully refined
+        if not refined_responses:
+            error_msg = f"Failed to refine any of the requested personas: {list(persona_refinements.keys())}"
+            logger.error(error_msg)
+            raise ValueError(error_msg)
+
+        logger.info(
+            "Successfully refined personas",
+            requested=list(persona_refinements.keys()),
+            refined=[pr.persona for pr in refined_responses],
+        )
+
+        # Merge refined responses with existing ones
+        updated_responses = []
+        refined_persona_names = {pr.persona for pr in refined_responses}
+
+        for original in existing_persona_responses:
+            if original.persona in refined_persona_names:
+                # Use the refined version
+                refined = next(
+                    pr for pr in refined_responses if pr.persona == original.persona
+                )
+                updated_responses.append(refined)
+            else:
+                # Keep the original
+                updated_responses.append(original)
+
+        # Re-synthesize the ADR with updated persona responses
+        if progress_callback:
+            progress_callback("Re-synthesizing ADR with refined perspectives...")
+
+        logger.info(
+            "Starting ADR re-synthesis", updated_persona_count=len(updated_responses)
+        )
+
+        # Get related context from original ADR
+        related_context = []
+        referenced_adr_info = adr.content.referenced_adrs or []
+
+        # Synthesize with updated responses
+        result = await self._synthesize_adr(
+            original_prompt,
+            updated_responses,
+            related_context,
+            referenced_adr_info,
+            progress_callback,
+        )
+
+        logger.info("ADR re-synthesis completed successfully")
+
+        # Update the ADR with new content
+        adr.content.context_and_problem = result.context_and_problem
+        adr.content.decision_outcome = result.decision_outcome
+        adr.content.consequences = result.consequences
+        adr.content.considered_options = [
+            opt.option_name for opt in result.considered_options
+        ]
+        adr.content.decision_drivers = result.decision_drivers
+
+        # Update persona responses
+        adr.persona_responses = [pr.model_dump() for pr in updated_responses]
+
+        # Update timestamp
+        from datetime import UTC, datetime
+
+        adr.metadata.updated_at = datetime.now(UTC)
+
+        logger.info(
+            "Persona refinement completed",
+            adr_id=str(adr.metadata.id),
+            personas_refined=list(persona_refinements.keys()),
+        )
+
+        return adr
 
     async def _get_related_context(
         self, prompt: ADRGenerationPrompt
@@ -348,7 +590,7 @@ class ADRGenerationService:
                     persona_client = create_client_from_persona_config(
                         persona_config, demo_mode=False
                     )
-                
+
                 persona_clients.append(persona_client)
             else:
                 logger.warning(f"Skipping unknown persona: {persona_value}")
@@ -442,9 +684,11 @@ class ADRGenerationService:
                     )
                     responses.append("")
 
-        # Parse all responses
+        # Parse all responses and store original prompt
         synthesis_inputs = []
-        for (persona_value, _), response in zip(persona_configs, responses):
+        for (persona_value, persona_config), response, system_prompt in zip(
+            persona_configs, responses, persona_prompts
+        ):
             if not response:
                 continue
 
@@ -452,7 +696,9 @@ class ADRGenerationService:
                 perspective_data = self._parse_persona_response(response)
                 if perspective_data:
                     synthesis_input = PersonaSynthesisInput(
-                        persona=persona_value, **perspective_data
+                        persona=persona_value,
+                        original_prompt_text=system_prompt,  # Store the full prompt used
+                        **perspective_data,
                     )
                     synthesis_inputs.append(synthesis_input)
             except Exception as e:
@@ -468,7 +714,7 @@ class ADRGenerationService:
         self,
         persona_config: PersonaConfig,
         prompt: ADRGenerationPrompt,
-        related_context: List[str]
+        related_context: List[str],
     ) -> str:
         """Create a generation prompt for a specific persona.
 
@@ -480,10 +726,22 @@ class ADRGenerationService:
         Returns:
             Formatted prompt string
         """
-        context_str = "\n".join([f"- {ctx}" for ctx in related_context]) if related_context else "No related context available."
+        context_str = (
+            "\n".join([f"- {ctx}" for ctx in related_context])
+            if related_context
+            else "No related context available."
+        )
 
-        constraints_str = "\n".join([f"- {c}" for c in (prompt.constraints or [])]) if prompt.constraints else "None specified."
-        stakeholders_str = "\n".join([f"- {s}" for s in (prompt.stakeholders or [])]) if prompt.stakeholders else "None specified."
+        constraints_str = (
+            "\n".join([f"- {c}" for c in (prompt.constraints or [])])
+            if prompt.constraints
+            else "None specified."
+        )
+        stakeholders_str = (
+            "\n".join([f"- {s}" for s in (prompt.stakeholders or [])])
+            if prompt.stakeholders
+            else "None specified."
+        )
 
         return f"""You are a {persona_config.name} analyzing a decision that needs to be made.
 
@@ -529,15 +787,47 @@ Ensure your response is practical, considers the constraints, and reflects your 
         """
         try:
             # Try to extract JSON from response
-            start_idx = response.find('{')
-            end_idx = response.rfind('}') + 1
+            start_idx = response.find("{")
+            end_idx = response.rfind("}") + 1
             if start_idx != -1 and end_idx > start_idx:
                 json_str = response[start_idx:end_idx]
-                return json.loads(json_str)
-        except (json.JSONDecodeError, ValueError):
-            pass
+                parsed = json.loads(json_str)
 
-        logger.warning("Failed to parse persona response as JSON", response_preview=response[:200])
+                # Validate required fields
+                required_fields = [
+                    "perspective",
+                    "reasoning",
+                    "concerns",
+                    "requirements",
+                ]
+                missing_fields = [f for f in required_fields if f not in parsed]
+
+                if missing_fields:
+                    logger.warning(
+                        "Parsed JSON missing required fields",
+                        missing_fields=missing_fields,
+                        available_fields=list(parsed.keys()),
+                    )
+                    return None
+
+                return parsed
+        except json.JSONDecodeError as e:
+            logger.warning(
+                "JSON decode error in persona response",
+                error=str(e),
+                response_preview=response[:500],
+            )
+        except (ValueError, TypeError) as e:
+            logger.warning(
+                "Error parsing persona response",
+                error_type=type(e).__name__,
+                error=str(e),
+                response_preview=response[:200],
+            )
+
+        logger.warning(
+            "Failed to parse persona response as JSON", response_preview=response[:500]
+        )
         return None
 
     async def _synthesize_adr(
@@ -561,7 +851,9 @@ Ensure your response is practical, considers the constraints, and reflects your 
             Complete ADR generation result
         """
         # Create synthesis prompt
-        synthesis_prompt = self._create_synthesis_prompt(prompt, synthesis_inputs, related_context)
+        synthesis_prompt = self._create_synthesis_prompt(
+            prompt, synthesis_inputs, related_context
+        )
 
         try:
             # Generate synthesized ADR
@@ -721,6 +1013,7 @@ Ensure your response is practical, considers the constraints, and reflects your 
                     referenced_adrs=referenced_adr_info,
                     personas_used=[p.persona for p in synthesis_inputs],
                     persona_responses=synthesis_inputs,
+                    original_prompt_text=prompt.problem_statement,  # Store for refinement
                 )
                 return result
             else:
@@ -744,7 +1037,7 @@ Ensure your response is practical, considers the constraints, and reflects your 
         self,
         prompt: ADRGenerationPrompt,
         synthesis_inputs: List[PersonaSynthesisInput],
-        related_context: List[str]
+        related_context: List[str],
     ) -> str:
         """Create synthesis prompt for combining persona perspectives.
 
@@ -756,15 +1049,17 @@ Ensure your response is practical, considers the constraints, and reflects your 
         Returns:
             Synthesis prompt string
         """
-        perspectives_str = "\n\n".join([
-            f"**{p.persona.replace('_', ' ').title()}**:\n"
-            f"Perspective: {p.perspective}\n"
-            f"Recommended Option: {p.recommended_option or 'None'}\n"
-            f"Reasoning: {p.reasoning}\n"
-            f"Concerns: {', '.join(p.concerns)}\n"
-            f"Requirements: {', '.join(p.requirements)}"
-            for p in synthesis_inputs
-        ])
+        perspectives_str = "\n\n".join(
+            [
+                f"**{p.persona.replace('_', ' ').title()}**:\n"
+                f"Perspective: {p.perspective}\n"
+                f"Recommended Option: {p.recommended_option or 'None'}\n"
+                f"Reasoning: {p.reasoning}\n"
+                f"Concerns: {', '.join(p.concerns)}\n"
+                f"Requirements: {', '.join(p.requirements)}"
+                for p in synthesis_inputs
+            ]
+        )
 
         return f"""You are synthesizing multiple expert perspectives into a comprehensive Architectural Decision Record (ADR).
 
@@ -937,8 +1232,8 @@ Ensure the ADR is well-structured, balanced, and considers all perspectives."""
         """
         try:
             # Try to extract JSON from response
-            start_idx = response.find('{')
-            end_idx = response.rfind('}') + 1
+            start_idx = response.find("{")
+            end_idx = response.rfind("}") + 1
             if start_idx != -1 and end_idx > start_idx:
                 json_str = response[start_idx:end_idx]
                 data = json.loads(json_str)
@@ -957,12 +1252,14 @@ Ensure the ADR is well-structured, balanced, and considers all perspectives."""
                             options.append(ADRGenerationOptions(**opt))
                         else:
                             # Handle string options
-                            options.append(ADRGenerationOptions(
-                                option_name=str(opt),
-                                description=str(opt),
-                                pros=[],
-                                cons=[]
-                            ))
+                            options.append(
+                                ADRGenerationOptions(
+                                    option_name=str(opt),
+                                    description=str(opt),
+                                    pros=[],
+                                    cons=[],
+                                )
+                            )
                     data["considered_options"] = options
 
                 # Handle consequences if it's a dict with positive/negative keys
@@ -990,7 +1287,11 @@ Ensure the ADR is well-structured, balanced, and considers all perspectives."""
                     if negative:
                         consequences_parts.append("Negative: " + ", ".join(negative))
 
-                    data["consequences"] = "\n".join(consequences_parts) if consequences_parts else "No consequences identified."
+                    data["consequences"] = (
+                        "\n".join(consequences_parts)
+                        if consequences_parts
+                        else "No consequences identified."
+                    )
                 elif "consequences" in data and isinstance(data["consequences"], str):
                     # If it's already a string, keep it as is (fallback for old format)
                     # Don't create consequences_structured in this case
@@ -1181,19 +1482,23 @@ Ensure the ADR is well-structured, balanced, and considers all perspectives."""
         options = []
         if recommended_options:
             for i, opt in enumerate(set(recommended_options)):
-                options.append(ADRGenerationOptions(
-                    option_name=f"Option {i+1}: {opt}",
-                    description=f"Recommended by experts: {opt}",
-                    pros=["Recommended by domain experts"],
-                    cons=["May have unconsidered drawbacks"]
-                ))
+                options.append(
+                    ADRGenerationOptions(
+                        option_name=f"Option {i+1}: {opt}",
+                        description=f"Recommended by experts: {opt}",
+                        pros=["Recommended by domain experts"],
+                        cons=["May have unconsidered drawbacks"],
+                    )
+                )
         else:
-            options.append(ADRGenerationOptions(
-                option_name="Recommended Approach",
-                description="To be determined based on expert analysis",
-                pros=["Based on expert input"],
-                cons=["Requires further analysis"]
-            ))
+            options.append(
+                ADRGenerationOptions(
+                    option_name="Recommended Approach",
+                    description="To be determined based on expert analysis",
+                    pros=["Based on expert input"],
+                    cons=["Requires further analysis"],
+                )
+            )
 
         # Combine concerns and requirements
         all_concerns = []
@@ -1203,7 +1508,9 @@ Ensure the ADR is well-structured, balanced, and considers all perspectives."""
             all_requirements.extend(p.requirements)
 
         consequences = f"Positive: Addresses key requirements including {', '.join(all_requirements[:3])}\n"
-        consequences += f"Negative: Must address concerns including {', '.join(all_concerns[:3])}"
+        consequences += (
+            f"Negative: Must address concerns including {', '.join(all_concerns[:3])}"
+        )
 
         return ADRGenerationResult(
             prompt=prompt,
@@ -1219,7 +1526,9 @@ Ensure the ADR is well-structured, balanced, and considers all perspectives."""
             personas_used=[p.persona for p in synthesis_inputs],
         )
 
-    def convert_to_adr(self, generation_result: ADRGenerationResult, author: Optional[str] = None) -> ADR:
+    def convert_to_adr(
+        self, generation_result: ADRGenerationResult, author: Optional[str] = None
+    ) -> ADR:
         """Convert a generation result to a complete ADR object.
 
         Args:
@@ -1261,7 +1570,7 @@ Ensure the ADR is well-structured, balanced, and considers all perspectives."""
         metadata = ADRMetadata(
             title=generation_result.generated_title,
             author=author,
-            tags=generation_result.prompt.tags or []
+            tags=generation_result.prompt.tags or [],
         )
 
         return ADR(metadata=metadata, content=content)
@@ -1279,7 +1588,7 @@ Ensure the ADR is well-structured, balanced, and considers all perspectives."""
             "overall_score": 0.0,
             "issues": [],
             "warnings": [],
-            "strengths": []
+            "strengths": [],
         }
 
         # Check title quality
@@ -1297,7 +1606,9 @@ Ensure the ADR is well-structured, balanced, and considers all perspectives."""
         elif len(result.context_and_problem.strip()) > 1000:
             validation["warnings"].append("Context and problem statement is very long")
         else:
-            validation["strengths"].append("Context and problem statement length is appropriate")
+            validation["strengths"].append(
+                "Context and problem statement length is appropriate"
+            )
             validation["overall_score"] += 0.2
 
         # Check decision outcome
@@ -1332,7 +1643,9 @@ Ensure the ADR is well-structured, balanced, and considers all perspectives."""
         if not result.personas_used or len(result.personas_used) == 0:
             validation["issues"].append("No personas were involved in generation")
         elif len(result.personas_used) >= 3:
-            validation["strengths"].append("Multiple personas contributed to the analysis")
+            validation["strengths"].append(
+                "Multiple personas contributed to the analysis"
+            )
             validation["overall_score"] += 0.1
 
         # Check confidence score

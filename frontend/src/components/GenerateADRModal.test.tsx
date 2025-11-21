@@ -170,7 +170,7 @@ describe('GenerateADRModal', () => {
     vi.useFakeTimers();
     const startTime = Date.now();
     
-    const { rerender } = render(<GenerateADRModal {...mockProps} isGenerating={true} generationStartTime={startTime} />);
+    render(<GenerateADRModal {...mockProps} isGenerating={true} generationStartTime={startTime} />);
 
     // Wait for component to mount and start interval
     await vi.advanceTimersByTimeAsync(1000);

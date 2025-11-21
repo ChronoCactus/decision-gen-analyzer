@@ -2,7 +2,7 @@
 
 import logging
 import sys
-from typing import Any, Dict
+from typing import Any
 
 import structlog
 
@@ -76,7 +76,8 @@ class ConsoleRenderer:
 
         # Remove processed fields
         remaining = {
-            k: v for k, v in event_dict.items()
+            k: v
+            for k, v in event_dict.items()
             if k not in {"level", "timestamp", "logger", "event"}
         }
 
@@ -84,10 +85,10 @@ class ConsoleRenderer:
         if self.colors:
             level_colors = {
                 "debug": "\033[36m",  # Cyan
-                "info": "\033[32m",   # Green
-                "warning": "\033[33m", # Yellow
+                "info": "\033[32m",  # Green
+                "warning": "\033[33m",  # Yellow
                 "error": "\033[31m",  # Red
-                "critical": "\033[35m", # Magenta
+                "critical": "\033[35m",  # Magenta
             }
             reset = "\033[0m"
             color = level_colors.get(level.lower(), "")

@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { useEscapeKey } from '@/hooks/useEscapeKey';
 import { apiClient } from '@/lib/api';
 import { LLMProvider, CreateProviderRequest, UpdateProviderRequest } from '@/types/api';
+import { Toast } from './Toast';
 
 interface SettingsModalProps {
   onClose: () => void;
@@ -25,6 +26,7 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
   useEscapeKey(onClose);
 
   const [activeTab, setActiveTab] = useState<'providers' | 'general'>('providers');
+  const [toast, setToast] = useState<{ message: string; type: 'info' | 'success' | 'warning' | 'error' } | null>(null);
   const [providers, setProviders] = useState<LLMProvider[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -43,6 +45,52 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
   });
   const [isSaving, setIsSaving] = useState(false);
   const [isDeleting, setIsDeleting] = useState<string | null>(null);
+
+  const validateProviderEndpoint = async (type: string, url: string) => {
+    if (!url) return;
+
+    // Check for Ollama endpoint when OpenAI is selected
+    if (type === 'openai') {
+      try {
+        const baseUrl = url.endsWith('/') ? url.slice(0, -1) : url;
+        // Use a short timeout to avoid hanging
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 2000);
+        
+        const response = await fetch(`${baseUrl}/api/ps`, { 
+          method: 'GET',
+          signal: controller.signal
+        }).catch(() => null);
+        
+        clearTimeout(timeoutId);
+
+        if (response?.ok) {
+          setToast({
+            message: `Warning: The endpoint "${url}" appears to be an Ollama server (found /api/ps). You selected 'openai' provider type.`,
+            type: 'warning'
+          });
+        }
+      } catch {
+        // Ignore network errors
+      }
+    }
+
+    // Check for llama.cpp endpoint format
+    if (type === 'llama_cpp') {
+      if (!url.includes('/v1')) {
+        setToast({
+          message: "Suggestion: Llama.cpp endpoints usually require '/v1' in the path (e.g., http://localhost:8080/v1).",
+          type: 'warning'
+        });
+      }
+    }
+  };
+
+  useEffect(() => {
+    if (providers.length > 0) {
+      providers.forEach(p => validateProviderEndpoint(p.provider_type, p.base_url));
+    }
+  }, [providers]);
 
   useEffect(() => {
     loadProviders();
@@ -131,9 +179,11 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
       if (editingProvider) {
         // Update existing provider
         await apiClient.updateProvider(editingProvider.id, requestData as UpdateProviderRequest);
+        setToast({ message: 'Provider updated successfully', type: 'success' });
       } else {
         // Create new provider
         await apiClient.createProvider(requestData as CreateProviderRequest);
+        setToast({ message: 'Provider created successfully', type: 'success' });
       }
 
       await loadProviders();
@@ -156,6 +206,7 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
 
     try {
       await apiClient.deleteProvider(providerId);
+      setToast({ message: 'Provider deleted successfully', type: 'success' });
       await loadProviders();
     } catch (err: any) {
       setError(err.message || 'Failed to delete provider');
@@ -169,6 +220,7 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
     setError(null);
     try {
       await apiClient.updateProvider(providerId, { is_default: true });
+      setToast({ message: 'Default provider set successfully', type: 'success' });
       await loadProviders();
     } catch (err: any) {
       setError(err.message || 'Failed to set default provider');
@@ -178,7 +230,7 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 dark:bg-opacity-70 flex items-center justify-center z-50 p-4">
-      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-hidden flex flex-col">
+      <div className="relative bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-hidden flex flex-col">
         {/* Header */}
         <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center">
           <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Settings</h2>
@@ -253,10 +305,11 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
 
                   <div className="grid grid-cols-2 gap-4">
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                      <label htmlFor="provider-name" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                         Name *
                       </label>
                       <input
+                        id="provider-name"
                         type="text"
                         required
                         value={formData.name}
@@ -267,13 +320,18 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
                     </div>
 
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                      <label htmlFor="provider-type" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                         Provider Type *
                       </label>
                       <select
+                        id="provider-type"
                         required
                         value={formData.provider_type}
-                        onChange={(e) => setFormData({ ...formData, provider_type: e.target.value })}
+                        onChange={(e) => {
+                          const newType = e.target.value;
+                          setFormData({ ...formData, provider_type: newType });
+                          validateProviderEndpoint(newType, formData.base_url);
+                        }}
                         className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
                       >
                         <option value="ollama">Ollama</option>
@@ -286,24 +344,27 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
                     </div>
 
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                      <label htmlFor="base-url" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                         Base URL *
                       </label>
                       <input
+                        id="base-url"
                         type="text"
                         required
                         value={formData.base_url}
                         onChange={(e) => setFormData({ ...formData, base_url: e.target.value })}
+                        onBlur={() => validateProviderEndpoint(formData.provider_type, formData.base_url)}
                         className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
                         placeholder="http://localhost:11434"
                       />
                     </div>
 
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                      <label htmlFor="model-name" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                         Model Name *
                       </label>
                       <input
+                        id="model-name"
                         type="text"
                         required
                         value={formData.model_name}
@@ -405,7 +466,7 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
                     </div>
                   ) : providers.length === 0 ? (
                     <div className="text-center py-8 text-gray-500 dark:text-gray-400">
-                      No providers configured. Click "Add Provider" to get started.
+                          No providers configured. Click &quot;Add Provider&quot; to get started.
                     </div>
                   ) : (
                     providers.map((provider) => (
@@ -512,6 +573,14 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
             Close
           </button>
         </div>
+        {toast && (
+          <Toast
+            message={toast.message}
+            type={toast.type}
+            onClose={() => setToast(null)}
+            positionType="absolute"
+          />
+        )}
       </div>
     </div>
   );

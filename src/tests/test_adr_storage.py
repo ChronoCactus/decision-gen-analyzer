@@ -1,12 +1,12 @@
 """Tests for ADR storage abstraction."""
 
-import pytest
-from unittest.mock import AsyncMock, Mock
-from datetime import datetime, UTC
+from unittest.mock import AsyncMock
 from uuid import uuid4
 
+import pytest
+
 from src.adr_storage import ADRStorageService
-from src.models import ADR, ADRMetadata, ADRContent, ADRStatus
+from src.models import ADR
 
 
 class TestADRStorage:

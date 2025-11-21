@@ -1,13 +1,11 @@
 """Tests for persona manager."""
 
-import pytest
 import json
 import tempfile
 from pathlib import Path
-from unittest.mock import patch, mock_open, MagicMock
 from tempfile import TemporaryDirectory
 
-from src.persona_manager import PersonaManager, PersonaConfig
+from src.persona_manager import PersonaConfig, PersonaManager
 
 
 class TestPersonaConfig:
@@ -91,13 +89,17 @@ class TestPersonaManager:
         with tempfile.TemporaryDirectory() as temp_dir:
             config_dir = Path(temp_dir)
             config_file = config_dir / "technical_lead.json"
-            config_file.write_text(json.dumps({
-                "name": "Technical Lead",
-                "description": "Test description",
-                "instructions": "Test instructions",
-                "focus_areas": ["Area1", "Area2"],
-                "evaluation_criteria": ["Criterion1"]
-            }))
+            config_file.write_text(
+                json.dumps(
+                    {
+                        "name": "Technical Lead",
+                        "description": "Test description",
+                        "instructions": "Test instructions",
+                        "focus_areas": ["Area1", "Area2"],
+                        "evaluation_criteria": ["Criterion1"],
+                    }
+                )
+            )
 
             manager = PersonaManager(config_dir=str(config_dir), include_defaults=False)
 
@@ -168,10 +170,14 @@ class TestPersonaManager:
             config_dir = Path(temp_dir)
             config_file = config_dir / "technical_lead.json"
             # Missing 'description' field
-            config_file.write_text(json.dumps({
-                "name": "Technical Lead",
-                "instructions": "Test",
-            }))
+            config_file.write_text(
+                json.dumps(
+                    {
+                        "name": "Technical Lead",
+                        "instructions": "Test",
+                    }
+                )
+            )
 
             manager = PersonaManager(config_dir=str(config_dir), include_defaults=False)
 

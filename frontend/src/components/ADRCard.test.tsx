@@ -128,7 +128,6 @@ describe('ADRCard', () => {
   });
 
   it('should call onAnalyze when Analyze button is clicked', async () => {
-    const user = userEvent.setup();
     mockCallbacks.onAnalyze.mockResolvedValue(undefined);
     
     render(<ADRCard adr={mockADR} {...defaultProps} />);
@@ -139,11 +138,7 @@ describe('ADRCard', () => {
   });
 
   it('should show analyzing state during analysis', async () => {
-    const user = userEvent.setup();
-    let resolveAnalyze: () => void;
-    const analyzePromise = new Promise<void>((resolve) => {
-      resolveAnalyze = resolve;
-    });
+    const analyzePromise = new Promise<void>(() => { });
     mockCallbacks.onAnalyze.mockReturnValue(analyzePromise);
 
     render(<ADRCard adr={mockADR} {...defaultProps} />);

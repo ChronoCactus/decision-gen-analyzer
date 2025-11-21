@@ -1,4 +1,4 @@
-import { ADR, ADRListResponse, AnalyzeADRRequest, GenerateADRRequest, TaskResponse, TaskStatus, Persona, DefaultModelConfig } from '@/types/api';
+import { ADR, ADRListResponse, AnalyzeADRRequest, GenerateADRRequest, RefinePersonasRequest, TaskResponse, TaskStatus, Persona, DefaultModelConfig } from '@/types/api';
 
 const DEFAULT_API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
@@ -108,9 +108,9 @@ class ApiClient {
         console.warn('⚠️ Failed to fetch API config (HTTP %d), using inferred URL:', response.status, inferredBackendUrl);
         this.apiBaseUrl = inferredBackendUrl;
       }
-    } catch (error) {
+    } catch (error) { 
       // If config fetch fails, use inferred URL as fallback
-      console.warn('⚠️ Failed to fetch API config, using inferred URL:', inferredBackendUrl);
+      console.warn('⚠️ Failed to fetch API config, using inferred URL:', inferredBackendUrl, error);
       this.apiBaseUrl = inferredBackendUrl;
     }
   }
@@ -165,6 +165,13 @@ class ApiClient {
   async deleteADR(adrId: string): Promise<{ message: string }> {
     return this.request<{ message: string }>(`/api/v1/adrs/${adrId}`, {
       method: 'DELETE',
+    });
+  }
+
+  async refinePersonas(adrId: string, request: RefinePersonasRequest): Promise<TaskResponse> {
+    return this.request<TaskResponse>(`/api/v1/adrs/${adrId}/refine-personas`, {
+      method: 'POST',
+      body: JSON.stringify(request),
     });
   }
 

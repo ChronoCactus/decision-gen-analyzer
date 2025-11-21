@@ -2,21 +2,21 @@
 
 import asyncio
 import json
-from datetime import datetime, UTC, timedelta
+from datetime import UTC, datetime, timedelta
 from enum import Enum
-from typing import Dict, List, Optional, Any, Callable
-from uuid import UUID, uuid4
+from typing import Any, Callable, Dict, List, Optional
+from uuid import uuid4
 
 import structlog
 
 from src.config import Settings
-
 
 logger = structlog.get_logger(__name__)
 
 
 class JobStatus(str, Enum):
     """Status of a scheduled job."""
+
     PENDING = "pending"
     RUNNING = "running"
     COMPLETED = "completed"
@@ -26,6 +26,7 @@ class JobStatus(str, Enum):
 
 class JobType(str, Enum):
     """Types of scheduled jobs."""
+
     ADR_REANALYSIS = "adr_reanalysis"
     WEB_SEARCH_UPDATE = "web_search_update"
     CONTINUITY_CHECK = "continuity_check"
@@ -84,22 +85,38 @@ class ScheduledJob:
             job_id=data["job_id"],
             job_type=JobType(data["job_type"]),
             schedule_interval=data.get("schedule_interval"),
-            next_run=datetime.fromisoformat(data["next_run"]) if data.get("next_run") else None,
-            last_run=datetime.fromisoformat(data["last_run"]) if data.get("last_run") else None,
+            next_run=(
+                datetime.fromisoformat(data["next_run"])
+                if data.get("next_run")
+                else None
+            ),
+            last_run=(
+                datetime.fromisoformat(data["last_run"])
+                if data.get("last_run")
+                else None
+            ),
             status=JobStatus(data["status"]),
             parameters=data.get("parameters", {}),
             max_retries=data.get("max_retries", 3),
             retry_count=data.get("retry_count", 0),
-            created_at=datetime.fromisoformat(data["created_at"]) if data.get("created_at") else None,
-            updated_at=datetime.fromisoformat(data["updated_at"]) if data.get("updated_at") else None,
+            created_at=(
+                datetime.fromisoformat(data["created_at"])
+                if data.get("created_at")
+                else None
+            ),
+            updated_at=(
+                datetime.fromisoformat(data["updated_at"])
+                if data.get("updated_at")
+                else None
+            ),
         )
 
     def should_run(self) -> bool:
         """Check if job should run now."""
         return (
-            self.status in [JobStatus.PENDING, JobStatus.COMPLETED, JobStatus.FAILED] and
-            self.next_run and
-            datetime.now(UTC) >= self.next_run
+            self.status in [JobStatus.PENDING, JobStatus.COMPLETED, JobStatus.FAILED]
+            and self.next_run
+            and datetime.now(UTC) >= self.next_run
         )
 
     def mark_running(self) -> None:
@@ -115,7 +132,9 @@ class ScheduledJob:
         self.updated_at = datetime.now(UTC)
 
         if self.schedule_interval:
-            self.next_run = datetime.now(UTC) + timedelta(seconds=self.schedule_interval)
+            self.next_run = datetime.now(UTC) + timedelta(
+                seconds=self.schedule_interval
+            )
 
     def mark_failed(self, error: Optional[str] = None) -> None:
         """Mark job as failed."""
@@ -124,7 +143,7 @@ class ScheduledJob:
 
         if self.retry_count < self.max_retries:
             # Schedule retry with exponential backoff
-            delay = 60 * (2 ** self.retry_count)  # 1min, 2min, 4min
+            delay = 60 * (2**self.retry_count)  # 1min, 2min, 4min
             self.next_run = datetime.now(UTC) + timedelta(seconds=delay)
             self.retry_count += 1
             self.status = JobStatus.PENDING
@@ -244,7 +263,7 @@ class JobScheduler:
             return
 
         # Limit concurrent jobs
-        jobs_to_run = jobs_to_run[:self.max_concurrent_jobs]
+        jobs_to_run = jobs_to_run[: self.max_concurrent_jobs]
 
         # Run jobs concurrently
         tasks = []
@@ -301,7 +320,7 @@ class JobScheduler:
         }
 
         try:
-            with open(filepath, 'w') as f:
+            with open(filepath, "w") as f:
                 json.dump(state, f, indent=2)
             self.logger.info("Scheduler state saved", filepath=filepath)
         except Exception as e:
@@ -314,7 +333,7 @@ class JobScheduler:
     def load_state(self, filepath: str) -> None:
         """Load scheduler state from file."""
         try:
-            with open(filepath, 'r') as f:
+            with open(filepath, "r") as f:
                 state = json.load(f)
 
             self.jobs = {}
@@ -327,7 +346,9 @@ class JobScheduler:
                 jobs_loaded=len(self.jobs),
             )
         except FileNotFoundError:
-            self.logger.info("No scheduler state file found, starting fresh", filepath=filepath)
+            self.logger.info(
+                "No scheduler state file found, starting fresh", filepath=filepath
+            )
         except Exception as e:
             self.logger.error(
                 "Failed to load scheduler state",
@@ -399,7 +420,8 @@ class NotificationManager:
 
         original_count = len(self.notifications)
         self.notifications = [
-            n for n in self.notifications
+            n
+            for n in self.notifications
             if datetime.fromisoformat(n["timestamp"]) > cutoff
         ]
 
@@ -422,7 +444,9 @@ class NotificationManager:
         confidence: float,
     ) -> str:
         """Notify about ADR changes detected during re-analysis."""
-        severity = "high" if confidence > 0.8 else "medium" if confidence > 0.6 else "low"
+        severity = (
+            "high" if confidence > 0.8 else "medium" if confidence > 0.6 else "low"
+        )
 
         return self.add_notification(
             notification_type="adr_change",

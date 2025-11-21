@@ -1,13 +1,8 @@
 """Tests for Celery tasks."""
 
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
-from uuid import uuid4
 
-from src.celery_app import (
-    analyze_adr_task,
-    generate_adr_task,
-)
+from src.celery_app import analyze_adr_task, generate_adr_task
 from src.models import ADR
 
 

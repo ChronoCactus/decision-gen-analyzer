@@ -1,10 +1,9 @@
 """Redis-based cache for LightRAG document ID mappings."""
 
-import asyncio
 import os
 import time
-from typing import Optional, Dict, List, Any
 from datetime import timedelta
+from typing import Any, Dict, List, Optional
 
 import redis.asyncio as aioredis
 
@@ -27,7 +26,7 @@ class LightRAGDocumentCache:
 
     def __init__(self, redis_url: Optional[str] = None):
         """Initialize the document cache.
-        
+
         Args:
             redis_url: Redis connection URL. Defaults to REDIS_URL env var.
         """
@@ -37,9 +36,7 @@ class LightRAGDocumentCache:
     async def __aenter__(self):
         """Async context manager entry."""
         self._redis = await aioredis.from_url(
-            self.redis_url,
-            encoding="utf-8",
-            decode_responses=True
+            self.redis_url, encoding="utf-8", decode_responses=True
         )
         return self
 
@@ -50,10 +47,10 @@ class LightRAGDocumentCache:
 
     async def get_doc_id(self, file_path: str) -> Optional[str]:
         """Get the LightRAG document ID for a given file path.
-        
+
         Args:
             file_path: The file path (e.g., "adr-123.txt" or just "adr-123")
-            
+
         Returns:
             The LightRAG document ID (e.g., "doc-abc123...") or None if not found
         """
@@ -76,7 +73,7 @@ class LightRAGDocumentCache:
 
     async def set_doc_id(self, file_path: str, doc_id: str) -> None:
         """Set the LightRAG document ID for a given file path.
-        
+
         Args:
             file_path: The file path (e.g., "adr-123.txt")
             doc_id: The LightRAG document ID (e.g., "doc-abc123...")
@@ -89,16 +86,12 @@ class LightRAGDocumentCache:
             file_path = f"{file_path}.txt"
 
         cache_key = f"{self.CACHE_KEY_PREFIX}{file_path}"
-        await self._redis.setex(
-            cache_key,
-            self.CACHE_TTL,
-            doc_id
-        )
+        await self._redis.setex(cache_key, self.CACHE_TTL, doc_id)
         logger.debug("Cached document ID", file_path=file_path, doc_id=doc_id)
 
     async def delete_doc_id(self, file_path: str) -> None:
         """Remove a document ID from the cache.
-        
+
         Args:
             file_path: The file path to remove
         """
@@ -115,10 +108,10 @@ class LightRAGDocumentCache:
 
     async def update_from_documents(self, documents: List[Dict]) -> int:
         """Update cache from a list of document dictionaries.
-        
+
         Args:
             documents: List of document dicts with 'id' and 'file_path' fields
-            
+
         Returns:
             Number of documents cached
         """
@@ -156,9 +149,7 @@ class LightRAGDocumentCache:
 
         while True:
             cursor, keys = await self._redis.scan(
-                cursor=cursor,
-                match=f"{self.CACHE_KEY_PREFIX}*",
-                count=100
+                cursor=cursor, match=f"{self.CACHE_KEY_PREFIX}*", count=100
             )
             keys_to_delete.extend(keys)
 
@@ -230,7 +221,7 @@ class LightRAGDocumentCache:
 
     async def get_last_sync_time(self) -> Optional[float]:
         """Get the timestamp of the last cache sync.
-        
+
         Returns:
             Unix timestamp of last sync, or None if never synced
         """
