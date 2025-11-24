@@ -318,3 +318,8 @@ lint-backend:
 	black src/ tests/
 	isort src/ tests/
 	ruff check src/ tests/ --fix
+
+lint-frontend:
+	cd frontend && npm run lint -- --fix
+
+lint: lint-backend lint-frontend
