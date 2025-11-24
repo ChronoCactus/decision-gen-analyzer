@@ -44,6 +44,26 @@ describe('ADRModal', () => {
     },
   };
 
+  const mockADRWithPersonas: ADR = {
+    ...mockADR,
+    persona_responses: [
+      {
+        persona: 'technical_lead',
+        perspective: 'Technical perspective',
+        reasoning: 'Technical reasoning',
+        concerns: ['Performance'],
+        requirements: ['High availability'],
+      },
+      {
+        persona: 'business_analyst',
+        perspective: 'Business perspective',
+        reasoning: 'Business reasoning',
+        concerns: ['Cost'],
+        requirements: ['ROI'],
+      },
+    ],
+  };
+
   const mockProps = {
     adr: mockADR,
     onClose: vi.fn(),
@@ -53,6 +73,8 @@ describe('ADRModal', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    // Mock scrollIntoView for all tests
+    Element.prototype.scrollIntoView = vi.fn();
   });
 
   it('should render ADR modal with title and metadata', () => {
@@ -306,26 +328,6 @@ describe('ADRModal', () => {
   });
 
   describe('Bulk Refinement', () => {
-    const mockADRWithPersonas: ADR = {
-      ...mockADR,
-      persona_responses: [
-        {
-          persona: 'technical_lead',
-          perspective: 'Technical perspective',
-          reasoning: 'Technical reasoning',
-          concerns: ['Performance'],
-          requirements: ['High availability'],
-        },
-        {
-          persona: 'business_analyst',
-          perspective: 'Business perspective',
-          reasoning: 'Business reasoning',
-          concerns: ['Cost'],
-          requirements: ['ROI'],
-        },
-      ],
-    };
-
     it('should show "Refine All Personas" button when personas exist', () => {
       render(<ADRModal {...mockProps} adr={mockADRWithPersonas} />);
 
@@ -550,6 +552,82 @@ describe('ADRModal', () => {
 
       // Should not call API
       expect(mockRefinePersonas).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('Sticky Footer Layout', () => {
+    it('should render modal with flex column layout', () => {
+      render(<ADRModal {...mockProps} />);
+
+      // Find the modal container (direct child of the backdrop)
+      const backdrop = screen.getByRole('button', { name: 'Close' }).closest('.fixed');
+      const modalContainer = backdrop?.querySelector('.max-w-4xl');
+
+      expect(modalContainer).toHaveClass('flex', 'flex-col');
+    });
+
+    it('should have scrollable content area with flex-1', () => {
+      render(<ADRModal {...mockProps} />);
+
+      // The content area should have overflow-y-auto and flex-1
+      const contentArea = screen.getByText('Context & Problem').closest('.overflow-y-auto');
+      expect(contentArea).toHaveClass('flex-1', 'overflow-y-auto');
+    });
+
+    it('should have sticky footer with buttons', () => {
+      render(<ADRModal {...mockProps} />);
+
+      // Footer should contain the action buttons
+      const closeButton = screen.getByRole('button', { name: 'Close' });
+      const analyzeButton = screen.getByRole('button', { name: 'Analyze ADR' });
+      const footer = closeButton.closest('.flex-shrink-0');
+
+      expect(footer).toBeInTheDocument();
+      expect(footer).toHaveClass('flex-shrink-0');
+      expect(footer).toContainElement(closeButton);
+      expect(footer).toContainElement(analyzeButton);
+    });
+
+    it('should show persona buttons in footer when personas exist', () => {
+      render(<ADRModal {...mockProps} adr={mockADRWithPersonas} />);
+
+      expect(screen.getByText(/Show Personas \(2\)/)).toBeInTheDocument();
+      expect(screen.getByText('Refine All Personas')).toBeInTheDocument();
+    });
+  });
+
+  describe('Scroll-to-View Behavior', () => {
+    it('should scroll to bulk refinement section when opened', async () => {
+      const user = userEvent.setup();
+      render(<ADRModal {...mockProps} adr={mockADRWithPersonas} />);
+
+      const refineButton = screen.getByText('Refine All Personas');
+      await user.click(refineButton);
+
+      // Should call scrollIntoView with smooth behavior
+      await vi.waitFor(() => {
+        expect(Element.prototype.scrollIntoView).toHaveBeenCalledWith({
+          behavior: 'smooth',
+          block: 'nearest',
+        });
+      });
+    });
+
+    it('should not scroll when bulk refinement is closed', async () => {
+      const user = userEvent.setup();
+      render(<ADRModal {...mockProps} adr={mockADRWithPersonas} />);
+
+      const refineButton = screen.getByText('Refine All Personas');
+      await user.click(refineButton);
+
+      vi.mocked(Element.prototype.scrollIntoView).mockClear();
+
+      // Close the section
+      const hideButton = screen.getByText('Hide Bulk Refine');
+      await user.click(hideButton);
+
+      // Should not scroll when closing
+      expect(Element.prototype.scrollIntoView).not.toHaveBeenCalled();
     });
   });
 });

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { PersonaResponse, PersonaRefinementItem } from '@/types/api';
 import { useEscapeKey } from '@/hooks/useEscapeKey';
 
@@ -20,6 +20,16 @@ export function PersonasModal({ personas, onClose, onRefine }: PersonasModalProp
   const [refinementPrompts, setRefinementPrompts] = useState<Record<string, string>>({});
   const [refinementsToDelete, setRefinementsToDelete] = useState<Record<string, number[]>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const refinementRefs = useRef<Record<string, HTMLDivElement | null>>({});
+
+  // Scroll to refinement section when a persona's refine mode is activated
+  useEffect(() => {
+    // Find the persona that was just set to refining
+    const justActivated = Object.keys(refining).find(persona => refining[persona]);
+    if (justActivated && refinementRefs.current[justActivated]) {
+      refinementRefs.current[justActivated]?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+  }, [refining]);
 
   const formatPersonaName = (persona: string) => {
     return persona
@@ -258,7 +268,7 @@ export function PersonasModal({ personas, onClose, onRefine }: PersonasModalProp
               </div>
 
               {refining[persona.persona] && (
-                <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-600">
+                <div ref={el => { refinementRefs.current[persona.persona] = el; }} className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-600">
                   <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
                     Refinement Prompt
                   </label>

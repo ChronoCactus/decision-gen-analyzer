@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { ADR, ADRStatus, PersonaRefinementItem } from '@/types/api';
 import { PersonasModal } from './PersonasModal';
 import { useEscapeKey } from '@/hooks/useEscapeKey';
@@ -27,9 +27,17 @@ export function ADRModal({ adr, onClose, onAnalyze, isAnalyzing, onADRUpdate, on
     message: '',
     type: 'success'
   });
+  const bulkRefineRef = useRef<HTMLDivElement>(null);
 
   // Close this modal with ESC, but only if personas modal is not open
   useEscapeKey(onClose, !showPersonas && !showBulkRefine);
+
+  // Scroll to bulk refinement section when it becomes visible
+  useEffect(() => {
+    if (showBulkRefine && bulkRefineRef.current) {
+      bulkRefineRef.current.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+  }, [showBulkRefine]);
 
   const handleStatusChange = async (newStatus: string) => {
     if (newStatus === currentAdr.metadata.status) {
@@ -351,7 +359,7 @@ export function ADRModal({ adr, onClose, onAnalyze, isAnalyzing, onADRUpdate, on
 
           {/* Bulk Refinement Section */}
           {showBulkRefine && currentAdr.persona_responses && currentAdr.persona_responses.length > 0 && (
-            <div className="mt-6 p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
+            <div ref={bulkRefineRef} className="mt-6 p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
               <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2">Refine All Personas</h3>
               <p className="text-sm text-gray-600 dark:text-gray-400 mb-3">
                 This refinement prompt will be applied to all {currentAdr.persona_responses.length} personas to regenerate their perspectives and create a new ADR.

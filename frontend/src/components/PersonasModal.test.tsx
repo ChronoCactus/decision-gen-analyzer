@@ -30,11 +30,14 @@ describe('PersonasModal', () => {
 
   const mockProps = {
     personas: mockPersonas,
+    adrId: 'test-adr-id',
     onClose: vi.fn(),
   };
 
   beforeEach(() => {
     vi.clearAllMocks();
+    // Mock scrollIntoView for all tests
+    Element.prototype.scrollIntoView = vi.fn();
   });
 
   it('should render personas modal with title', () => {
@@ -441,6 +444,107 @@ describe('PersonasModal', () => {
 
       // Should show count of 2 (counts personas, not individual refinements: 1 persona with prompt + 1 persona with deletions)
       expect(screen.getByText('Submit Changes (2)')).toBeInTheDocument();
+    });
+  });
+
+  describe('Sticky Footer Layout', () => {
+    it('should render modal with flex column layout', () => {
+      render(<PersonasModal {...mockProps} />);
+
+      // Find the modal container
+      const backdrop = screen.getByText('Individual Persona Responses').closest('.fixed');
+      const modalContainer = backdrop?.querySelector('.max-w-4xl');
+
+      expect(modalContainer).toHaveClass('flex', 'flex-col');
+    });
+
+    it('should have scrollable content area with flex-1', () => {
+      render(<PersonasModal {...mockProps} />);
+
+      // The content area should have overflow-y-auto and flex-1
+      const contentArea = screen.getByText('Technical Lead').closest('.overflow-y-auto');
+      expect(contentArea).toHaveClass('flex-1', 'overflow-y-auto');
+    });
+
+    it('should have sticky footer with close button', () => {
+      render(<PersonasModal {...mockProps} />);
+
+      // Footer should contain the close button
+      const closeButton = screen.getByRole('button', { name: 'Close' });
+      const footer = closeButton.closest('.flex-shrink-0');
+
+      expect(footer).toBeInTheDocument();
+      expect(footer).toHaveClass('flex-shrink-0');
+      expect(footer).toContainElement(closeButton);
+    });
+
+    it('should show submit button in footer when there are changes', async () => {
+      const user = userEvent.setup();
+      render(<PersonasModal {...mockProps} onRefine={vi.fn()} />);
+
+      const refineButtons = screen.getAllByText('Refine');
+      await user.click(refineButtons[0]);
+
+      const textarea = screen.getByPlaceholderText(/Enter additional instructions/);
+      await user.type(textarea, 'Test');
+
+      expect(screen.getByText(/Submit Changes/)).toBeInTheDocument();
+    });
+  });
+
+  describe('Scroll-to-View Behavior', () => {
+    it('should scroll to refinement section when refine is clicked', async () => {
+      const user = userEvent.setup();
+      render(<PersonasModal {...mockProps} onRefine={vi.fn()} />);
+
+      const refineButtons = screen.getAllByText('Refine');
+      await user.click(refineButtons[0]);
+
+      // Should call scrollIntoView with smooth behavior
+      await vi.waitFor(() => {
+        expect(Element.prototype.scrollIntoView).toHaveBeenCalledWith({
+          behavior: 'smooth',
+          block: 'nearest',
+        });
+      });
+    });
+
+    it('should scroll to correct persona when multiple refines are toggled', async () => {
+      const user = userEvent.setup();
+      render(<PersonasModal {...mockProps} onRefine={vi.fn()} />);
+
+      const refineButtons = screen.getAllByText('Refine');
+
+      // Toggle first persona
+      await user.click(refineButtons[0]);
+      await vi.waitFor(() => expect(Element.prototype.scrollIntoView).toHaveBeenCalled());
+
+      vi.mocked(Element.prototype.scrollIntoView).mockClear();
+
+      // Toggle second persona
+      await user.click(refineButtons[1]);
+      await vi.waitFor(() => expect(Element.prototype.scrollIntoView).toHaveBeenCalled());
+
+      // Should have been called for both personas
+      expect(Element.prototype.scrollIntoView).toHaveBeenCalledTimes(1);
+    });
+
+    it('should not scroll when refinement is cancelled', async () => {
+      const user = userEvent.setup();
+      render(<PersonasModal {...mockProps} onRefine={vi.fn()} />);
+
+      const refineButton = screen.getAllByText('Refine')[0];
+      await user.click(refineButton);
+
+      await vi.waitFor(() => expect(Element.prototype.scrollIntoView).toHaveBeenCalled());
+      vi.mocked(Element.prototype.scrollIntoView).mockClear();
+
+      // Cancel refinement
+      const cancelButton = screen.getByText('Cancel');
+      await user.click(cancelButton);
+
+      // Should not scroll when cancelling
+      expect(Element.prototype.scrollIntoView).not.toHaveBeenCalled();
     });
   });
 });
