@@ -73,6 +73,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.backend
+      target: production
     ports:
       - "8000:8000"
     restart: unless-stopped
@@ -113,6 +114,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.backend
+      target: production
     command: celery -A src.celery_app worker --loglevel=info
     restart: unless-stopped
     environment:
@@ -145,6 +147,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.frontend
+      target: production
     ports:
       - "3003:3000"
     depends_on:
