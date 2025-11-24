@@ -8,7 +8,7 @@ interface PersonasModalProps {
   personas: PersonaResponse[];
   adrId: string;
   onClose: () => void;
-  onRefine?: (refinements: PersonaRefinementItem[]) => void;
+  onRefine?: (refinements: PersonaRefinementItem[], refinementsToDelete?: Record<string, number[]>) => void;
 }
 
 export function PersonasModal({ personas, onClose, onRefine }: PersonasModalProps) {
@@ -18,6 +18,7 @@ export function PersonasModal({ personas, onClose, onRefine }: PersonasModalProp
   // Track which personas are being refined and their refinement prompts
   const [refining, setRefining] = useState<Record<string, boolean>>({});
   const [refinementPrompts, setRefinementPrompts] = useState<Record<string, string>>({});
+  const [refinementsToDelete, setRefinementsToDelete] = useState<Record<string, number[]>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const formatPersonaName = (persona: string) => {
@@ -49,25 +50,51 @@ export function PersonasModal({ personas, onClose, onRefine }: PersonasModalProp
     }));
   };
 
+  const handleToggleRefinementDeletion = (persona: string, index: number) => {
+    setRefinementsToDelete(prev => {
+      const personaDeletions = prev[persona] || [];
+      const isMarked = personaDeletions.includes(index);
+
+      if (isMarked) {
+        // Remove from deletion list
+        const updated = personaDeletions.filter(i => i !== index);
+        if (updated.length === 0) {
+          const newPrev = { ...prev };
+          delete newPrev[persona];
+          return newPrev;
+        }
+        return { ...prev, [persona]: updated };
+      } else {
+        // Add to deletion list
+        return { ...prev, [persona]: [...personaDeletions, index] };
+      }
+    });
+  };
+
   const handleSubmitRefinements = async () => {
     if (!onRefine) return;
 
     // Collect all refinements with non-empty prompts
     const refinements: PersonaRefinementItem[] = Object.entries(refinementPrompts)
-      .filter(([prompt]) => prompt.trim().length > 0)
+      .filter(([, prompt]) => prompt.trim().length > 0)
       .map(([persona, prompt]) => ({
         persona,
         refinement_prompt: prompt
       }));
 
-    if (refinements.length === 0) return;
+    // Check if there are any changes to submit
+    if (refinements.length === 0 && Object.keys(refinementsToDelete).length === 0) {
+      return;
+    }
 
     setIsSubmitting(true);
     try {
-      await onRefine(refinements);
+      // Pass both refinements and deletions
+      await onRefine(refinements, refinementsToDelete);
       // Reset state after successful submission
       setRefining({});
       setRefinementPrompts({});
+      setRefinementsToDelete({});
     } catch (error) {
       console.error('Failed to refine personas:', error);
     } finally {
@@ -75,8 +102,10 @@ export function PersonasModal({ personas, onClose, onRefine }: PersonasModalProp
     }
   };
 
-  // Check if there are any valid refinements ready to submit
-  const hasRefinements = Object.values(refinementPrompts).some(prompt => prompt.trim().length > 0);
+  // Check if there are any valid refinements or deletions ready to submit
+  const hasChanges =
+    Object.values(refinementPrompts).some(prompt => prompt.trim().length > 0) ||
+    Object.keys(refinementsToDelete).length > 0;
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 dark:bg-opacity-70 flex items-center justify-center z-[60] p-4">
@@ -179,6 +208,53 @@ export function PersonasModal({ personas, onClose, onRefine }: PersonasModalProp
                     </ul>
                   </div>
                 )}
+
+                {persona.refinement_history && persona.refinement_history.length > 0 && (
+                  <div>
+                    <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wide mb-2">
+                      Refinement History ({persona.refinement_history.length})
+                    </h4>
+                    <div className="space-y-2">
+                      {persona.refinement_history.map((refinement, i) => {
+                        const isMarkedForDeletion = refinementsToDelete[persona.persona]?.includes(i);
+                        return (
+                          <div
+                            key={i}
+                            className={`border rounded-md p-3 transition-all ${isMarkedForDeletion
+                                ? 'bg-red-50 dark:bg-red-900/20 border-red-300 dark:border-red-800 opacity-50'
+                                : 'bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800'
+                              }`}
+                          >
+                            <div className="flex items-center justify-between mb-1">
+                              <span className={`text-xs font-semibold ${isMarkedForDeletion
+                                  ? 'text-red-700 dark:text-red-400 line-through'
+                                  : 'text-blue-700 dark:text-blue-400'
+                                }`}>
+                                Refinement #{i + 1}
+                                {isMarkedForDeletion && ' (Pending Deletion)'}
+                              </span>
+                              <button
+                                onClick={() => handleToggleRefinementDeletion(persona.persona, i)}
+                                className={`text-xs px-2 py-1 rounded transition-colors ${isMarkedForDeletion
+                                    ? 'bg-gray-200 dark:bg-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-500'
+                                    : 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 hover:bg-red-200 dark:hover:bg-red-900/50'
+                                  }`}
+                              >
+                                {isMarkedForDeletion ? 'Undo' : 'Delete'}
+                              </button>
+                            </div>
+                            <p className={`text-sm italic ${isMarkedForDeletion
+                                ? 'text-gray-500 dark:text-gray-500 line-through'
+                                : 'text-gray-700 dark:text-gray-300'
+                              }`}>
+                              {refinement}
+                            </p>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
               </div>
 
               {refining[persona.persona] && (
@@ -203,14 +279,14 @@ export function PersonasModal({ personas, onClose, onRefine }: PersonasModalProp
         </div>
 
         <div className="sticky bottom-0 bg-gray-50 dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700 p-4">
-          {hasRefinements ? (
+          {hasChanges ? (
             <div className="space-y-2">
               <button
                 onClick={handleSubmitRefinements}
                 disabled={isSubmitting}
                 className="w-full bg-blue-600 text-white px-6 py-3 rounded-md hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors font-medium"
               >
-                {isSubmitting ? 'Submitting...' : `Submit Refinements (${Object.keys(refinementPrompts).length})`}
+                {isSubmitting ? 'Submitting...' : `Submit Changes (${Object.keys(refinementPrompts).length + Object.keys(refinementsToDelete).length})`}
               </button>
               <button
                 onClick={onClose}

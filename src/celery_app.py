@@ -559,6 +559,7 @@ def refine_personas_task(
     self,
     adr_id: str,
     persona_refinements: dict,  # Dict[str, str] mapping persona name to refinement prompt
+    refinements_to_delete: dict = None,  # Dict[str, List[int]] mapping persona name to refinement indices to delete
     provider_id: str = None,
 ):
     """Celery task for refining persona perspectives in an existing ADR."""
@@ -651,6 +652,7 @@ def refine_personas_task(
                 refined_adr = await generation_service.refine_personas(
                     adr,
                     persona_refinements,
+                    refinements_to_delete=refinements_to_delete or {},
                     progress_callback=update_progress,
                     provider_id=provider_id,
                 )
@@ -689,6 +691,17 @@ def refine_personas_task(
         return result
 
     except Exception as e:
+        # Log the full error for debugging
+        import traceback
+
+        logger.error(
+            "Error in refine_personas_task",
+            adr_id=adr_id,
+            error=str(e),
+            error_type=type(e).__name__,
+            traceback=traceback.format_exc(),
+        )
+
         # Publish task failed status
         async def _publish_task_failed(error: Exception):
             broadcaster = get_broadcaster()
@@ -711,8 +724,8 @@ def refine_personas_task(
         # Properly handle exceptions for Celery serialization
         error_msg = str(e)
         self.update_state(state="FAILURE", meta={"error": error_msg})
-        # Re-raise with a simple exception that can be serialized
-        raise Exception(error_msg)
+        # Re-raise the original exception to preserve type info
+        raise
 
 
 @celery_app.task(bind=True, name="monitor_upload_status")

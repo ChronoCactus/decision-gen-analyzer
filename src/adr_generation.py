@@ -114,6 +114,7 @@ class ADRGenerationService:
         self,
         adr: ADR,
         persona_refinements: Dict[str, str],
+        refinements_to_delete: Dict[str, List[int]] = None,
         progress_callback: Optional[callable] = None,
         provider_id: Optional[str] = None,
     ) -> ADR:
@@ -166,13 +167,55 @@ class ADRGenerationService:
             else:
                 existing_persona_responses.append(pr)
 
-        # Regenerate only the personas that need refinement
+        # Process refinement deletions first
+        personas_with_deletions = set()
+        if refinements_to_delete:
+            for persona_name, indices_to_delete in refinements_to_delete.items():
+                # Find the persona response
+                persona_response = next(
+                    (
+                        pr
+                        for pr in existing_persona_responses
+                        if pr.persona == persona_name
+                    ),
+                    None,
+                )
+                if persona_response and hasattr(persona_response, "refinement_history"):
+                    # Sort indices in reverse order to delete from end to start
+                    # This prevents index shifting issues
+                    sorted_indices = sorted(indices_to_delete, reverse=True)
+                    original_count = len(persona_response.refinement_history)
+
+                    for idx in sorted_indices:
+                        if 0 <= idx < len(persona_response.refinement_history):
+                            persona_response.refinement_history.pop(idx)
+
+                    deleted_count = original_count - len(
+                        persona_response.refinement_history
+                    )
+                    if deleted_count > 0:
+                        personas_with_deletions.add(persona_name)
+
+                    logger.info(
+                        f"Deleted {deleted_count} refinement(s) from {persona_name}",
+                        persona=persona_name,
+                        deleted_count=deleted_count,
+                        remaining_count=len(persona_response.refinement_history),
+                    )
+
+        # Determine which personas need regeneration
+        # This includes both personas with new refinements AND personas with deletions
+        personas_to_regenerate = (
+            set(persona_refinements.keys()) | personas_with_deletions
+        )
+
         if progress_callback:
-            progress_callback(
-                f"Refining {len(persona_refinements)} persona perspective(s)..."
-            )
+            total_count = len(personas_to_regenerate)
+            progress_callback(f"Regenerating {total_count} persona perspective(s)...")
 
         refined_responses = []
+
+        # First, handle personas with new refinements
         for persona_name, refinement_prompt in persona_refinements.items():
             # Find the original persona response
             original_response = next(
@@ -255,14 +298,25 @@ class ADRGenerationService:
                 # Parse the response
                 perspective_data = self._parse_persona_response(response)
                 if perspective_data:
+                    # Preserve and extend refinement history
+                    existing_history = (
+                        original_response.refinement_history
+                        if hasattr(original_response, "refinement_history")
+                        else []
+                    )
+                    updated_history = existing_history + [refinement_prompt]
+
                     refined_response = PersonaSynthesisInput(
                         persona=persona_name,
                         original_prompt_text=refined_prompt_text,
+                        refinement_history=updated_history,
                         **perspective_data,
                     )
                     refined_responses.append(refined_response)
                     logger.info(
-                        "Successfully parsed persona refinement", persona=persona_name
+                        "Successfully parsed persona refinement",
+                        persona=persona_name,
+                        refinement_count=len(updated_history),
                     )
                 else:
                     logger.error(
@@ -278,17 +332,132 @@ class ADRGenerationService:
                     error_type=type(e).__name__,
                 )
 
-        # Check if any personas were successfully refined
-        if not refined_responses:
+        # Now handle personas that only had deletions (no new refinements)
+        personas_only_deletions = personas_with_deletions - set(
+            persona_refinements.keys()
+        )
+
+        for persona_name in personas_only_deletions:
+            if progress_callback:
+                progress_callback(
+                    f"Regenerating {persona_name.replace('_', ' ').title()} after refinement deletion..."
+                )
+
+            # Find the persona response (with updated refinement_history from deletions)
+            persona_response = next(
+                (pr for pr in existing_persona_responses if pr.persona == persona_name),
+                None,
+            )
+
+            if not persona_response:
+                logger.warning(
+                    f"Cannot regenerate persona {persona_name}: persona not found"
+                )
+                continue
+
+            persona_config = self.persona_manager.get_persona_config(persona_name)
+            if not persona_config:
+                logger.warning(
+                    f"Cannot regenerate persona {persona_name}: config not found"
+                )
+                continue
+
+            # Reconstruct the prompt with the current refinement history
+            # Start with the original prompt
+            if persona_response.original_prompt_text:
+                # Extract the base prompt (before any refinements)
+                base_prompt = persona_response.original_prompt_text.split(
+                    "\n\n**Additional Refinement Request**:"
+                )[0]
+            else:
+                # Recreate base prompt from config
+                base_prompt = self._create_persona_generation_prompt(
+                    persona_config,
+                    original_prompt,
+                    [],
+                )
+
+            # Now add back the remaining refinements
+            current_prompt = base_prompt
+            if persona_response.refinement_history:
+                for refinement in persona_response.refinement_history:
+                    current_prompt += (
+                        f"\n\n**Additional Refinement Request**:\n{refinement}"
+                    )
+
+            # Create client for this persona
+            if persona_config.model_config:
+                persona_client = create_client_from_persona_config(
+                    persona_config, demo_mode=False
+                )
+            elif provider_id:
+                persona_client = await create_client_from_provider_id(
+                    provider_id, demo_mode=False
+                )
+            else:
+                persona_client = create_client_from_persona_config(
+                    persona_config, demo_mode=False
+                )
+
+            # Regenerate the persona with updated prompt
+            try:
+                async with persona_client:
+                    response = await persona_client.generate(
+                        prompt=current_prompt, temperature=0.7, num_predict=2000
+                    )
+
+                logger.info(
+                    "Received response for persona regeneration after deletion",
+                    persona=persona_name,
+                    response_length=len(response),
+                )
+
+                # Parse the response
+                perspective_data = self._parse_persona_response(response)
+                if perspective_data:
+                    regenerated_response = PersonaSynthesisInput(
+                        persona=persona_name,
+                        original_prompt_text=current_prompt,
+                        refinement_history=persona_response.refinement_history,
+                        **perspective_data,
+                    )
+                    refined_responses.append(regenerated_response)
+                    logger.info(
+                        "Successfully regenerated persona after deletion",
+                        persona=persona_name,
+                        remaining_refinements=len(persona_response.refinement_history),
+                    )
+                else:
+                    logger.error(
+                        "Failed to parse persona regeneration response",
+                        persona=persona_name,
+                    )
+            except Exception as e:
+                logger.error(
+                    "Exception during persona regeneration after deletion",
+                    persona=persona_name,
+                    error=str(e),
+                    error_type=type(e).__name__,
+                )
+
+        # Check if any personas were successfully refined (or had deletions)
+        if not refined_responses and not personas_with_deletions:
             error_msg = f"Failed to refine any of the requested personas: {list(persona_refinements.keys())}"
             logger.error(error_msg)
             raise ValueError(error_msg)
 
-        logger.info(
-            "Successfully refined personas",
-            requested=list(persona_refinements.keys()),
-            refined=[pr.persona for pr in refined_responses],
-        )
+        if refined_responses:
+            logger.info(
+                "Successfully refined personas",
+                requested=list(persona_refinements.keys()),
+                refined=[pr.persona for pr in refined_responses],
+            )
+
+        if personas_with_deletions:
+            logger.info(
+                "Successfully deleted refinements from personas",
+                personas_with_deletions=list(personas_with_deletions),
+            )
 
         # Merge refined responses with existing ones
         updated_responses = []
@@ -302,7 +471,7 @@ class ADRGenerationService:
                 )
                 updated_responses.append(refined)
             else:
-                # Keep the original
+                # Keep the original (which may have had deletions applied)
                 updated_responses.append(original)
 
         # Re-synthesize the ADR with updated persona responses
