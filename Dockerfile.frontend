@@ -30,6 +30,10 @@ COPY frontend/ ./
 ARG NEXT_PUBLIC_API_URL=""
 ENV NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
 
+# Version injected at build time from CI/CD pipeline
+ARG NEXT_PUBLIC_APP_VERSION="dev"
+ENV NEXT_PUBLIC_APP_VERSION=${NEXT_PUBLIC_APP_VERSION}
+
 # Build the application with increased Node.js memory limit
 # Default Node.js memory limit is ~512MB-2GB depending on architecture
 # Next.js builds can require 4-6GB for large projects
