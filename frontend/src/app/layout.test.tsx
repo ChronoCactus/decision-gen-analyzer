@@ -21,6 +21,17 @@ describe('RootLayout', () => {
     expect(screen.getByText('Test Content')).toBeInTheDocument();
   });
 
+  it('should render version footer', () => {
+    render(
+      <RootLayout>
+        <div>Content</div>
+      </RootLayout>
+    );
+
+    // Version footer should be present
+    expect(screen.getByRole('contentinfo')).toBeInTheDocument();
+  });
+
   it('should render layout structure', () => {
     const { container } = render(
       <RootLayout>

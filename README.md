@@ -66,7 +66,23 @@ The system includes:
 
 ## Development Setup
 
-### Backend Setup
+**Recommended: Use Docker for development** with hot-reload enabled:
+
+```bash
+make dev
+```
+
+This starts all services with automatic code reloading:
+- **Backend API** (port 8000) - Auto-reloads on Python changes
+- **Celery Worker** - Auto-restarts on Python changes  
+- **Frontend** (port 3003) - Hot-reload on React/TypeScript changes
+- **Redis** (port 6380) - Task queue
+
+### Local Development (Without Docker)
+
+If you prefer to run services locally:
+
+#### Backend Setup
 
 1. Install Python dependencies:
 ```bash
@@ -83,7 +99,7 @@ redis-server
 ./scripts/run_backend.sh
 ```
 
-### Frontend Setup
+#### Frontend Setup
 
 1. Install Node.js dependencies:
 ```bash

@@ -44,6 +44,26 @@ describe('ADRModal', () => {
     },
   };
 
+  const mockADRWithPersonas: ADR = {
+    ...mockADR,
+    persona_responses: [
+      {
+        persona: 'technical_lead',
+        perspective: 'Technical perspective',
+        reasoning: 'Technical reasoning',
+        concerns: ['Performance'],
+        requirements: ['High availability'],
+      },
+      {
+        persona: 'business_analyst',
+        perspective: 'Business perspective',
+        reasoning: 'Business reasoning',
+        concerns: ['Cost'],
+        requirements: ['ROI'],
+      },
+    ],
+  };
+
   const mockProps = {
     adr: mockADR,
     onClose: vi.fn(),
@@ -53,6 +73,8 @@ describe('ADRModal', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    // Mock scrollIntoView for all tests
+    Element.prototype.scrollIntoView = vi.fn();
   });
 
   it('should render ADR modal with title and metadata', () => {
@@ -303,5 +325,309 @@ describe('ADRModal', () => {
 
     // Should not call API
     expect(mockUpdateStatus).not.toHaveBeenCalled();
+  });
+
+  describe('Bulk Refinement', () => {
+    it('should show "Refine All Personas" button when personas exist', () => {
+      render(<ADRModal {...mockProps} adr={mockADRWithPersonas} />);
+
+      expect(screen.getByText('Refine All Personas')).toBeInTheDocument();
+    });
+
+    it('should not show "Refine All Personas" button when no personas exist', () => {
+      render(<ADRModal {...mockProps} />);
+
+      expect(screen.queryByText('Refine All Personas')).not.toBeInTheDocument();
+    });
+
+    it('should toggle bulk refinement section when button is clicked', async () => {
+      const user = userEvent.setup();
+      render(<ADRModal {...mockProps} adr={mockADRWithPersonas} />);
+
+      const refineButton = screen.getByText('Refine All Personas');
+      await user.click(refineButton);
+
+      // Should show the bulk refinement section (text is split across elements)
+      expect(screen.getByText(/This refinement prompt will be applied to all/)).toBeInTheDocument();
+      expect(screen.getByText(/personas to regenerate their perspectives/)).toBeInTheDocument();
+      expect(screen.getByPlaceholderText(/Enter refinement instructions/)).toBeInTheDocument();
+      
+      // Button text should change
+      expect(screen.getByText('Hide Bulk Refine')).toBeInTheDocument();
+    });
+
+    it('should hide bulk refinement section when button is clicked again', async () => {
+      const user = userEvent.setup();
+      render(<ADRModal {...mockProps} adr={mockADRWithPersonas} />);
+
+      const refineButton = screen.getByText('Refine All Personas');
+      await user.click(refineButton);
+      
+      // Click again to hide
+      const hideButton = screen.getByText('Hide Bulk Refine');
+      await user.click(hideButton);
+
+      // Should hide the section
+      expect(screen.queryByText(/refinement prompt will be applied/)).not.toBeInTheDocument();
+      expect(screen.queryByPlaceholderText(/Enter refinement instructions/)).not.toBeInTheDocument();
+    });
+
+    it('should update bulk refinement prompt when typing in textarea', async () => {
+      const user = userEvent.setup();
+      render(<ADRModal {...mockProps} adr={mockADRWithPersonas} />);
+
+      const refineButton = screen.getByText('Refine All Personas');
+      await user.click(refineButton);
+
+      const textarea = screen.getByPlaceholderText(/Enter refinement instructions/);
+      await user.type(textarea, 'Add more security considerations');
+
+      expect(textarea).toHaveValue('Add more security considerations');
+    });
+
+    it('should disable submit button when prompt is empty', async () => {
+      const user = userEvent.setup();
+      render(<ADRModal {...mockProps} adr={mockADRWithPersonas} />);
+
+      const refineButton = screen.getByText('Refine All Personas');
+      await user.click(refineButton);
+
+      const submitButton = screen.getByText('Submit Bulk Refinement');
+      expect(submitButton).toBeDisabled();
+    });
+
+    it('should enable submit button when prompt has content', async () => {
+      const user = userEvent.setup();
+      render(<ADRModal {...mockProps} adr={mockADRWithPersonas} />);
+
+      const refineButton = screen.getByText('Refine All Personas');
+      await user.click(refineButton);
+
+      const textarea = screen.getByPlaceholderText(/Enter refinement instructions/);
+      await user.type(textarea, 'Test prompt');
+
+      const submitButton = screen.getByText('Submit Bulk Refinement');
+      expect(submitButton).not.toBeDisabled();
+    });
+
+    it('should call onRefineQueued with task id on successful submission', async () => {
+      const { apiClient } = await import('@/lib/api');
+      const mockRefinePersonas = vi.fn().mockResolvedValue({ task_id: 'task-123' });
+      vi.mocked(apiClient).refinePersonas = mockRefinePersonas;
+
+      const mockOnRefineQueued = vi.fn();
+      const user = userEvent.setup();
+      render(
+        <ADRModal 
+          {...mockProps} 
+          adr={mockADRWithPersonas} 
+          onRefineQueued={mockOnRefineQueued}
+        />
+      );
+
+      const refineButton = screen.getByText('Refine All Personas');
+      await user.click(refineButton);
+
+      const textarea = screen.getByPlaceholderText(/Enter refinement instructions/);
+      await user.type(textarea, 'Add security details');
+
+      const submitButton = screen.getByText('Submit Bulk Refinement');
+      await user.click(submitButton);
+
+      // Should call API with all personas
+      await vi.waitFor(() => {
+        expect(mockRefinePersonas).toHaveBeenCalledWith(
+          'adr-123',
+          {
+            refinements: [
+              {
+                persona: 'technical_lead',
+                refinement_prompt: 'Add security details',
+              },
+              {
+                persona: 'business_analyst',
+                refinement_prompt: 'Add security details',
+              },
+            ],
+            refinements_to_delete: undefined,
+            provider_id: undefined,
+          }
+        );
+      });
+
+      // Should notify parent
+      expect(mockOnRefineQueued).toHaveBeenCalledWith('task-123');
+    });
+
+    it('should close both modals after successful bulk refinement', async () => {
+      const { apiClient } = await import('@/lib/api');
+      const mockRefinePersonas = vi.fn().mockResolvedValue({ task_id: 'task-123' });
+      vi.mocked(apiClient).refinePersonas = mockRefinePersonas;
+
+      const mockOnClose = vi.fn();
+      const user = userEvent.setup();
+      render(
+        <ADRModal 
+          {...mockProps} 
+          adr={mockADRWithPersonas} 
+          onClose={mockOnClose}
+        />
+      );
+
+      const refineButton = screen.getByText('Refine All Personas');
+      await user.click(refineButton);
+
+      const textarea = screen.getByPlaceholderText(/Enter refinement instructions/);
+      await user.type(textarea, 'Test');
+
+      const submitButton = screen.getByText('Submit Bulk Refinement');
+      await user.click(submitButton);
+
+      await vi.waitFor(() => {
+        expect(mockOnClose).toHaveBeenCalled();
+      });
+    });
+
+    it('should reset bulk refinement state after canceling', async () => {
+      const user = userEvent.setup();
+      render(<ADRModal {...mockProps} adr={mockADRWithPersonas} />);
+
+      const refineButton = screen.getByText('Refine All Personas');
+      await user.click(refineButton);
+
+      const textarea = screen.getByPlaceholderText(/Enter refinement instructions/);
+      await user.type(textarea, 'Some text');
+
+      const cancelButton = screen.getByText('Cancel');
+      await user.click(cancelButton);
+
+      // Reopen the section
+      const refineButtonAgain = screen.getByText('Refine All Personas');
+      await user.click(refineButtonAgain);
+
+      // Textarea should be empty
+      const textareaAgain = screen.getByPlaceholderText(/Enter refinement instructions/);
+      expect(textareaAgain).toHaveValue('');
+    });
+
+    it('should show error toast on bulk refinement failure', async () => {
+      const { apiClient } = await import('@/lib/api');
+      const mockRefinePersonas = vi.fn().mockRejectedValue(new Error('API Error'));
+      vi.mocked(apiClient).refinePersonas = mockRefinePersonas;
+
+      const user = userEvent.setup();
+      render(<ADRModal {...mockProps} adr={mockADRWithPersonas} />);
+
+      const refineButton = screen.getByText('Refine All Personas');
+      await user.click(refineButton);
+
+      const textarea = screen.getByPlaceholderText(/Enter refinement instructions/);
+      await user.type(textarea, 'Test');
+
+      const submitButton = screen.getByText('Submit Bulk Refinement');
+      await user.click(submitButton);
+
+      // Should show error toast
+      await vi.waitFor(() => {
+        expect(screen.getByText(/Failed to queue persona refinement/)).toBeInTheDocument();
+      });
+    });
+
+    it('should not submit if prompt is only whitespace', async () => {
+      const { apiClient } = await import('@/lib/api');
+      const mockRefinePersonas = vi.fn();
+      vi.mocked(apiClient).refinePersonas = mockRefinePersonas;
+
+      const user = userEvent.setup();
+      render(<ADRModal {...mockProps} adr={mockADRWithPersonas} />);
+
+      const refineButton = screen.getByText('Refine All Personas');
+      await user.click(refineButton);
+
+      const textarea = screen.getByPlaceholderText(/Enter refinement instructions/);
+      await user.type(textarea, '   '); // Only spaces
+
+      const submitButton = screen.getByText('Submit Bulk Refinement');
+      await user.click(submitButton);
+
+      // Should not call API
+      expect(mockRefinePersonas).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('Sticky Footer Layout', () => {
+    it('should render modal with flex column layout', () => {
+      render(<ADRModal {...mockProps} />);
+
+      // Find the modal container (direct child of the backdrop)
+      const backdrop = screen.getByRole('button', { name: 'Close' }).closest('.fixed');
+      const modalContainer = backdrop?.querySelector('.max-w-4xl');
+
+      expect(modalContainer).toHaveClass('flex', 'flex-col');
+    });
+
+    it('should have scrollable content area with flex-1', () => {
+      render(<ADRModal {...mockProps} />);
+
+      // The content area should have overflow-y-auto and flex-1
+      const contentArea = screen.getByText('Context & Problem').closest('.overflow-y-auto');
+      expect(contentArea).toHaveClass('flex-1', 'overflow-y-auto');
+    });
+
+    it('should have sticky footer with buttons', () => {
+      render(<ADRModal {...mockProps} />);
+
+      // Footer should contain the action buttons
+      const closeButton = screen.getByRole('button', { name: 'Close' });
+      const analyzeButton = screen.getByRole('button', { name: 'Analyze ADR' });
+      const footer = closeButton.closest('.flex-shrink-0');
+
+      expect(footer).toBeInTheDocument();
+      expect(footer).toHaveClass('flex-shrink-0');
+      expect(footer).toContainElement(closeButton);
+      expect(footer).toContainElement(analyzeButton);
+    });
+
+    it('should show persona buttons in footer when personas exist', () => {
+      render(<ADRModal {...mockProps} adr={mockADRWithPersonas} />);
+
+      expect(screen.getByText(/Show Personas \(2\)/)).toBeInTheDocument();
+      expect(screen.getByText('Refine All Personas')).toBeInTheDocument();
+    });
+  });
+
+  describe('Scroll-to-View Behavior', () => {
+    it('should scroll to bulk refinement section when opened', async () => {
+      const user = userEvent.setup();
+      render(<ADRModal {...mockProps} adr={mockADRWithPersonas} />);
+
+      const refineButton = screen.getByText('Refine All Personas');
+      await user.click(refineButton);
+
+      // Should call scrollIntoView with smooth behavior
+      await vi.waitFor(() => {
+        expect(Element.prototype.scrollIntoView).toHaveBeenCalledWith({
+          behavior: 'smooth',
+          block: 'nearest',
+        });
+      });
+    });
+
+    it('should not scroll when bulk refinement is closed', async () => {
+      const user = userEvent.setup();
+      render(<ADRModal {...mockProps} adr={mockADRWithPersonas} />);
+
+      const refineButton = screen.getByText('Refine All Personas');
+      await user.click(refineButton);
+
+      vi.mocked(Element.prototype.scrollIntoView).mockClear();
+
+      // Close the section
+      const hideButton = screen.getByText('Hide Bulk Refine');
+      await user.click(hideButton);
+
+      // Should not scroll when closing
+      expect(Element.prototype.scrollIntoView).not.toHaveBeenCalled();
+    });
   });
 });
