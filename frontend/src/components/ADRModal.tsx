@@ -128,8 +128,8 @@ export function ADRModal({ adr, onClose, onAnalyze, isAnalyzing, onADRUpdate, on
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 dark:bg-opacity-70 flex items-center justify-center p-4 z-50">
-      <div className="bg-white dark:bg-gray-800 rounded-lg max-w-4xl w-full max-h-[90vh] overflow-y-auto">
-        <div className="p-6">
+      <div className="bg-white dark:bg-gray-800 rounded-lg max-w-4xl w-full max-h-[90vh] flex flex-col">
+        <div className="flex-1 overflow-y-auto p-6">
           <div className="flex justify-between items-start mb-6">
             <div className="flex-1">
               <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100 mb-2">
@@ -384,7 +384,11 @@ export function ADRModal({ adr, onClose, onAnalyze, isAnalyzing, onADRUpdate, on
             </div>
           )}
 
-          <div className="flex gap-4 mt-8 pt-6 border-t border-gray-200 dark:border-gray-700">
+        </div>
+
+        {/* Sticky Footer with Buttons */}
+        <div className="flex-shrink-0 border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-6">
+          <div className="flex gap-4">
             {currentAdr.persona_responses && currentAdr.persona_responses.length > 0 && (
               <>
                 <button

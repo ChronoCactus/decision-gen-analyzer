@@ -109,8 +109,8 @@ export function PersonasModal({ personas, onClose, onRefine }: PersonasModalProp
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 dark:bg-opacity-70 flex items-center justify-center z-[60] p-4">
-      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
-        <div className="sticky top-0 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 p-6 flex justify-between items-center">
+      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-2xl max-w-4xl w-full max-h-[90vh] flex flex-col">
+        <div className="flex-shrink-0 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 p-6 flex justify-between items-center">
           <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Individual Persona Responses</h2>
           <button
             onClick={onClose}
@@ -122,7 +122,7 @@ export function PersonasModal({ personas, onClose, onRefine }: PersonasModalProp
           </button>
         </div>
 
-        <div className="p-6 space-y-6">
+        <div className="flex-1 overflow-y-auto p-6 space-y-6">
           {personas.map((persona, index) => (
             <div key={index} className="bg-gradient-to-br from-gray-50 to-white dark:from-gray-700 dark:to-gray-800 border border-gray-200 dark:border-gray-600 rounded-lg p-6 shadow-sm">
               <div className="flex items-center justify-between mb-4">
@@ -278,7 +278,7 @@ export function PersonasModal({ personas, onClose, onRefine }: PersonasModalProp
           ))}
         </div>
 
-        <div className="sticky bottom-0 bg-gray-50 dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700 p-4">
+        <div className="flex-shrink-0 bg-gray-50 dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700 p-4">
           {hasChanges ? (
             <div className="space-y-2">
               <button
