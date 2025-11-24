@@ -1,5 +1,4 @@
 import type { NextConfig } from "next";
-// @ts-ignore - package.json is not typed
 import packageJson from "./package.json";
 
 const nextConfig: NextConfig = {
