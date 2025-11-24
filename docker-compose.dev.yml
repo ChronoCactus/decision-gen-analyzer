@@ -1,0 +1,32 @@
+version: '3.8'
+
+# Development override file for docker-compose
+# Usage: docker compose -f docker-compose.yml -f docker-compose.dev.yml up
+# Merges with base docker-compose.yml - only overrides specific fields
+
+services:
+  backend:
+    build:
+      target: development
+    command: uvicorn src.api.main:app --host 0.0.0.0 --port 8000 --reload
+    environment:
+      WATCHFILES_FORCE_POLLING: "true"
+
+  celery_worker:
+    build:
+      target: development
+    command: watchfiles --filter python 'celery -A src.celery_app worker --loglevel=info' src/ 
+    environment:
+      WATCHFILES_FORCE_POLLING: "true"
+
+  frontend:
+    build:
+      target: development
+    command: npm run dev
+    volumes:
+      - ./frontend:/app 
+      - /app/node_modules
+      - /app/.next
+    environment:
+      NEXT_TELEMETRY_DISABLED: "1"
+      WATCHPACK_POLLING: "true"

@@ -1,5 +1,5 @@
-# Frontend Dockerfile
-FROM node:20-alpine
+# Frontend Dockerfile - Multi-stage build for dev and prod
+FROM node:20-alpine AS base
 
 # Set working directory
 WORKDIR /app
@@ -9,6 +9,17 @@ COPY frontend/package*.json ./
 
 # Install dependencies
 RUN npm ci
+
+# Development stage - runs dev server with hot reload
+FROM base AS development
+
+# Don't copy source code - it will be mounted as volume
+EXPOSE 3000
+
+CMD ["npm", "run", "dev"]
+
+# Production stage - builds and runs optimized production server
+FROM base AS production
 
 # Copy source code
 COPY frontend/ ./
@@ -25,8 +36,6 @@ ENV NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
 ENV NODE_OPTIONS="--max-old-space-size=4096"
 RUN npm run build
 
-# Expose port
 EXPOSE 3000
 
-# Start the application
 CMD ["npm", "start"]

@@ -1,4 +1,4 @@
-.PHONY: test test-backend test-frontend test-backend-unit test-backend-integration test-coverage test-coverage-backend test-coverage-frontend clean help install-frontend-deps docker-build docker-push-local docker-tag version test-version-script docker-buildx-setup docker-build-multiarch docker-push-local-multiarch docker-push-backend-multiarch docker-push-frontend-multiarch docker-push-frontend-multiarch-sequential docker-push-local-multiarch-sequential docker-buildx-reset
+.PHONY: test test-backend test-frontend test-backend-unit test-backend-integration test-coverage test-coverage-backend test-coverage-frontend clean help install-frontend-deps docker-build docker-push-local docker-tag version test-version-script docker-buildx-setup docker-build-multiarch docker-push-local-multiarch docker-push-backend-multiarch docker-push-frontend-multiarch docker-push-frontend-multiarch-sequential docker-push-local-multiarch-sequential docker-buildx-reset dev dev-down
 
 # Configuration
 REGISTRY ?= localhost:5000
@@ -15,6 +15,12 @@ VERSION_WITH_SHA := $(VERSION)_$(GIT_SHA)
 # Default target
 help:
 	@echo "Available targets:"
+	@echo ""
+	@echo "Development:"
+	@echo "  dev                       - Start all services in development mode with hot-reload"
+	@echo "  dev-down                  - Stop development services"
+	@echo ""
+	@echo "Testing:"
 	@echo "  test                      - Run all tests (backend + frontend)"
 	@echo "  test-backend              - Run all backend tests (unit + integration)"
 	@echo "  test-backend-unit         - Run backend unit tests only"
@@ -42,6 +48,14 @@ help:
 	@echo "  test-version-script          - Run tests for version calculation script"
 	@echo ""
 	@echo "  help                      - Show this help message"
+
+# Development targets
+dev:
+	@if [ -f .env ]; then export $(cat .env | grep -v '#' | xargs); fi; \
+		./scripts/dev.sh
+
+dev-down:
+	@docker compose -f docker-compose.yml -f docker-compose.dev.yml down
 
 # Combined test targets
 test: test-backend test-frontend
