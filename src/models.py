@@ -566,6 +566,10 @@ class PersonaSynthesisInput(BaseModel):
         default=None,
         description="Original prompt text used to generate this persona's response",
     )
+    refinement_history: List[str] = Field(
+        default_factory=list,
+        description="History of refinement prompts applied to this persona",
+    )
 
 
 class ADRGenerationBatch(BaseModel):

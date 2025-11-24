@@ -3,7 +3,7 @@
 import asyncio
 import io
 import json
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 from fastapi import (
     APIRouter,
@@ -15,7 +15,7 @@ from fastapi import (
     WebSocketDisconnect,
 )
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from src.celery_app import analyze_adr_task, generate_adr_task
 from src.config import get_settings
@@ -63,6 +63,10 @@ class RefinePersonasRequest(BaseModel):
     """Request model for refining personas in an existing ADR."""
 
     refinements: List[PersonaRefinementItem]
+    refinements_to_delete: Optional[Dict[str, List[int]]] = Field(
+        default=None,
+        description="Map of persona name to list of refinement indices to delete",
+    )
     provider_id: Optional[str] = None
 
 
@@ -472,6 +476,7 @@ async def refine_personas(adr_id: str, request: RefinePersonasRequest):
         task = refine_personas_task.delay(
             adr_id=adr_id,
             persona_refinements=persona_refinements,
+            refinements_to_delete=request.refinements_to_delete or {},
             provider_id=request.provider_id,
         )
 

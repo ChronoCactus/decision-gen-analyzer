@@ -12,6 +12,7 @@ export interface PersonaResponse {
   reasoning: string;
   concerns: string[];
   requirements: string[];
+  refinement_history?: string[];
 }
 
 export interface ADRMetadata {
@@ -91,6 +92,7 @@ export interface PersonaRefinementItem {
 
 export interface RefinePersonasRequest {
   refinements: PersonaRefinementItem[];
+  refinements_to_delete?: Record<string, number[]>;
   provider_id?: string;
 }
 

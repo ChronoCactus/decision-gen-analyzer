@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { ADR, ADRStatus, PersonaRefinementItem } from '@/types/api';
 import { PersonasModal } from './PersonasModal';
 import { useEscapeKey } from '@/hooks/useEscapeKey';
@@ -20,14 +20,24 @@ export function ADRModal({ adr, onClose, onAnalyze, isAnalyzing, onADRUpdate, on
   const [showPersonas, setShowPersonas] = useState(false);
   const [currentAdr, setCurrentAdr] = useState<ADR>(adr);
   const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
+  const [showBulkRefine, setShowBulkRefine] = useState(false);
+  const [bulkRefinementPrompt, setBulkRefinementPrompt] = useState('');
   const [refinementToast, setRefinementToast] = useState<{ show: boolean; message: string; type: 'success' | 'error' }>({
     show: false,
     message: '',
     type: 'success'
   });
+  const bulkRefineRef = useRef<HTMLDivElement>(null);
 
   // Close this modal with ESC, but only if personas modal is not open
-  useEscapeKey(onClose, !showPersonas);
+  useEscapeKey(onClose, !showPersonas && !showBulkRefine);
+
+  // Scroll to bulk refinement section when it becomes visible
+  useEffect(() => {
+    if (showBulkRefine && bulkRefineRef.current) {
+      bulkRefineRef.current.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+  }, [showBulkRefine]);
 
   const handleStatusChange = async (newStatus: string) => {
     if (newStatus === currentAdr.metadata.status) {
@@ -52,10 +62,11 @@ export function ADRModal({ adr, onClose, onAnalyze, isAnalyzing, onADRUpdate, on
     }
   };
 
-  const handleRefinePersonas = async (refinements: PersonaRefinementItem[]) => {
+  const handleRefinePersonas = async (refinements: PersonaRefinementItem[], refinementsToDelete?: Record<string, number[]>) => {
     try {
       const response = await apiClient.refinePersonas(currentAdr.metadata.id, {
         refinements,
+        refinements_to_delete: refinementsToDelete,
         provider_id: undefined // Use default provider
       });
 
@@ -83,6 +94,29 @@ export function ADRModal({ adr, onClose, onAnalyze, isAnalyzing, onADRUpdate, on
     }
   };
 
+  const handleBulkRefinement = async () => {
+    if (!bulkRefinementPrompt.trim()) {
+      return;
+    }
+
+    // Create refinement items for all personas with the same prompt
+    const refinements: PersonaRefinementItem[] = currentAdr.persona_responses?.map(persona => ({
+      persona: persona.persona,
+      refinement_prompt: bulkRefinementPrompt
+    })) || [];
+
+    if (refinements.length === 0) {
+      return;
+    }
+
+    // Reset bulk refine UI
+    setShowBulkRefine(false);
+    setBulkRefinementPrompt('');
+
+    // Use the same handler as individual refinements
+    await handleRefinePersonas(refinements);
+  };
+
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'accepted':
@@ -102,8 +136,8 @@ export function ADRModal({ adr, onClose, onAnalyze, isAnalyzing, onADRUpdate, on
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 dark:bg-opacity-70 flex items-center justify-center p-4 z-50">
-      <div className="bg-white dark:bg-gray-800 rounded-lg max-w-4xl w-full max-h-[90vh] overflow-y-auto">
-        <div className="p-6">
+      <div className="bg-white dark:bg-gray-800 rounded-lg max-w-4xl w-full max-h-[90vh] flex flex-col">
+        <div className="flex-1 overflow-y-auto p-6">
           <div className="flex justify-between items-start mb-6">
             <div className="flex-1">
               <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100 mb-2">
@@ -323,14 +357,61 @@ export function ADRModal({ adr, onClose, onAnalyze, isAnalyzing, onADRUpdate, on
             </div>
           </div>
 
-          <div className="flex gap-4 mt-8 pt-6 border-t border-gray-200 dark:border-gray-700">
+          {/* Bulk Refinement Section */}
+          {showBulkRefine && currentAdr.persona_responses && currentAdr.persona_responses.length > 0 && (
+            <div ref={bulkRefineRef} className="mt-6 p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2">Refine All Personas</h3>
+              <p className="text-sm text-gray-600 dark:text-gray-400 mb-3">
+                This refinement prompt will be applied to all {currentAdr.persona_responses.length} personas to regenerate their perspectives and create a new ADR.
+              </p>
+              <textarea
+                value={bulkRefinementPrompt}
+                onChange={(e) => setBulkRefinementPrompt(e.target.value)}
+                placeholder="Enter refinement instructions to apply to all personas..."
+                className="w-full px-4 py-3 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400"
+                rows={4}
+              />
+              <div className="flex gap-3 mt-3">
+                <button
+                  onClick={handleBulkRefinement}
+                  disabled={!bulkRefinementPrompt.trim()}
+                  className="flex-1 bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 disabled:bg-gray-400 dark:disabled:bg-gray-600 disabled:cursor-not-allowed transition-colors font-medium"
+                >
+                  Submit Bulk Refinement
+                </button>
+                <button
+                  onClick={() => {
+                    setShowBulkRefine(false);
+                    setBulkRefinementPrompt('');
+                  }}
+                  className="px-4 py-2 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 rounded-md hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors font-medium"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
+
+        </div>
+
+        {/* Sticky Footer with Buttons */}
+        <div className="flex-shrink-0 border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-6">
+          <div className="flex gap-4">
             {currentAdr.persona_responses && currentAdr.persona_responses.length > 0 && (
-              <button
-                onClick={() => setShowPersonas(true)}
-                className="flex-1 bg-purple-600 text-white px-6 py-3 rounded-md hover:bg-purple-700 transition-colors font-medium"
-              >
-                Show Personas ({currentAdr.persona_responses.length})
-              </button>
+              <>
+                <button
+                  onClick={() => setShowPersonas(true)}
+                  className="flex-1 bg-purple-600 text-white px-6 py-3 rounded-md hover:bg-purple-700 transition-colors font-medium"
+                >
+                  Show Personas ({currentAdr.persona_responses.length})
+                </button>
+                <button
+                  onClick={() => setShowBulkRefine(!showBulkRefine)}
+                  className="flex-1 bg-blue-600 text-white px-6 py-3 rounded-md hover:bg-blue-700 transition-colors font-medium"
+                >
+                  {showBulkRefine ? 'Hide Bulk Refine' : 'Refine All Personas'}
+                </button>
+              </>
             )}
             <button
               onClick={onAnalyze}
