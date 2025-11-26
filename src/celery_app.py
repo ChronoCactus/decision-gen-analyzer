@@ -218,7 +218,7 @@ def generate_adr_task(
 
             # Create the generation prompt with required fields
             generation_prompt = ADRGenerationPrompt(
-                title=f"ADR: {prompt[:50]}",
+                title=f"{prompt[:50]}",
                 context=context or "No additional context provided",
                 problem_statement=prompt,  # The prompt IS the problem statement
                 tags=tags or [],
@@ -393,6 +393,15 @@ def generate_adr_task(
                     referenced_adrs=(
                         result.referenced_adrs if result.referenced_adrs else None
                     ),
+                    original_generation_prompt={
+                        "title": generation_prompt.title,
+                        "context": generation_prompt.context,
+                        "problem_statement": generation_prompt.problem_statement,
+                        "constraints": generation_prompt.constraints,
+                        "stakeholders": generation_prompt.stakeholders,
+                        "tags": generation_prompt.tags,
+                        "retrieval_mode": generation_prompt.retrieval_mode,
+                    },
                 ),
                 persona_responses=persona_responses_data,
             )
@@ -708,6 +717,342 @@ def refine_personas_task(
             await broadcaster.publish_task_status(
                 task_id=self.request.id,
                 task_name="refine_personas_task",
+                status="failed",
+                position=None,
+                message=f"Error: {str(error)}",
+            )
+
+            # Track task completion even on failure
+            from src.task_queue_monitor import get_task_queue_monitor
+
+            monitor = get_task_queue_monitor()
+            await monitor.track_task_completed(self.request.id)
+
+        asyncio.run(_publish_task_failed(e))
+
+        # Properly handle exceptions for Celery serialization
+        error_msg = str(e)
+        self.update_state(state="FAILURE", meta={"error": error_msg})
+        # Re-raise the original exception to preserve type info
+        raise
+
+
+@celery_app.task(bind=True)
+def refine_original_prompt_task(
+    self,
+    adr_id: str,
+    refined_prompt_fields: dict,
+    provider_id: str = None,
+):
+    """Celery task for refining the original generation prompt.
+
+    This task regenerates all personas with a refined original prompt.
+    Any existing persona refinements are preserved and re-applied.
+
+    Args:
+        adr_id: ID of the ADR to refine
+        refined_prompt_fields: Dict with updated prompt fields (title, context, problem_statement, etc.)
+        provider_id: Optional provider ID for LLM selection
+    """
+    try:
+        # Track task start
+        async def _publish_task_started():
+            from src.websocket_broadcaster import get_broadcaster
+
+            broadcaster = get_broadcaster()
+            await broadcaster.publish_task_status(
+                task_id=self.request.id,
+                task_name="refine_original_prompt_task",
+                status="active",
+                position=None,
+                message=f"Refining original prompt for ADR {adr_id}",
+            )
+
+            from src.task_queue_monitor import get_task_queue_monitor
+
+            monitor = get_task_queue_monitor()
+            await monitor.track_task_started(
+                task_id=self.request.id,
+                task_name="refine_original_prompt_task",
+                args=(adr_id,),
+                kwargs={
+                    "refined_prompt_fields": refined_prompt_fields,
+                    "provider_id": provider_id,
+                },
+            )
+
+        asyncio.run(_publish_task_started())
+
+        self.update_state(state="PROGRESS", meta={"message": "Loading ADR"})
+
+        async def _refine():
+            from src.adr_file_storage import get_adr_storage
+            from src.adr_generation import ADRGenerationService
+            from src.config import get_settings
+            from src.lightrag_client import LightRAGClient
+            from src.llama_client import (
+                LlamaCppClient,
+                LlamaCppClientPool,
+                create_client_from_provider_id,
+            )
+            from src.persona_manager import PersonaManager
+            from src.websocket_broadcaster import get_broadcaster
+
+            settings = get_settings()
+
+            # If a specific provider_id was requested, use that provider
+            if provider_id:
+                logger.info(f"Creating LLM client from provider_id: {provider_id}")
+                llama_client = await create_client_from_provider_id(provider_id)
+            else:
+                # Use default behavior: pool if secondary backend configured, otherwise single client
+                if settings.llm_base_url_1 or settings.llm_embedding_base_url:
+                    logger.info("Using LlamaCppClientPool for parallel generation")
+                    llama_client = LlamaCppClientPool(demo_mode=False)
+                else:
+                    logger.info("Using single LlamaCppClient")
+                    llama_client = LlamaCppClient(demo_mode=False)
+
+            lightrag_client = LightRAGClient(demo_mode=False)
+            persona_manager = PersonaManager()
+
+            # Initialize the service
+            generation_service = ADRGenerationService(
+                llama_client=llama_client,
+                lightrag_client=lightrag_client,
+                persona_manager=persona_manager,
+            )
+
+            # Load the existing ADR (use asyncio.to_thread for blocking I/O)
+            storage = get_adr_storage()
+            adr = await asyncio.to_thread(storage.get_adr, adr_id)
+
+            if not adr:
+                raise ValueError(f"ADR not found: {adr_id}")
+
+            self.update_state(
+                state="PROGRESS",
+                meta={
+                    "message": "Regenerating all personas with refined original prompt"
+                },
+            )
+
+            # Create progress callback
+            def update_progress(message: str):
+                self.update_state(state="PROGRESS", meta={"message": message})
+
+            # Refine the original prompt and regenerate all personas
+            # Exclude the current ADR from retrieval to prevent self-referencing
+            async with llama_client:
+                refined_adr = await generation_service.refine_original_prompt(
+                    adr,
+                    refined_prompt_fields,
+                    progress_callback=update_progress,
+                    provider_id=provider_id,
+                    exclude_adr_id=adr_id,
+                )
+
+            self.update_state(
+                state="PROGRESS",
+                meta={"message": "Saving refined ADR"},
+            )
+
+            # Save the updated ADR (use asyncio.to_thread for blocking I/O)
+            await asyncio.to_thread(storage.save_adr, refined_adr)
+
+            # Update the document in LightRAG with the refined content
+            self.update_state(
+                state="PROGRESS",
+                meta={"message": "Updating ADR in LightRAG"},
+            )
+
+            try:
+                from src.lightrag_doc_cache import LightRAGDocumentCache
+
+                # Format updated ADR content for LightRAG storage
+                adr_content = f"""Title: {refined_adr.metadata.title}
+Status: {refined_adr.metadata.status}
+Tags: {', '.join(refined_adr.metadata.tags)}
+
+Context & Problem:
+{refined_adr.content.context_and_problem}
+
+Decision Outcome:
+{refined_adr.content.decision_outcome}
+
+Consequences:
+{refined_adr.content.consequences}
+
+Decision Drivers:
+{chr(10).join(f"- {driver}" for driver in refined_adr.content.decision_drivers)}
+
+Considered Options:
+{chr(10).join(f"- {opt}" for opt in refined_adr.content.considered_options)}
+"""
+
+                # Update the document in LightRAG
+                # LightRAG doesn't have update - must delete then re-insert
+                # Use a fresh LightRAG client with its own context manager
+                async with LightRAGClient(demo_mode=False) as rag_client:
+                    # First, look up the LightRAG document ID from cache
+                    refined_adr_id = str(refined_adr.metadata.id)
+                    lightrag_doc_id = None
+
+                    try:
+                        async with LightRAGDocumentCache() as cache:
+                            lightrag_doc_id = await cache.get_doc_id(refined_adr_id)
+
+                        if lightrag_doc_id:
+                            logger.info(
+                                "Found LightRAG doc ID in cache for deletion",
+                                adr_id=refined_adr_id,
+                                lightrag_doc_id=lightrag_doc_id,
+                            )
+                        else:
+                            logger.info(
+                                "No cached LightRAG doc ID, deletion may fail",
+                                adr_id=refined_adr_id,
+                            )
+                    except Exception as cache_error:
+                        logger.warning(
+                            "Failed to look up LightRAG doc ID from cache",
+                            adr_id=refined_adr_id,
+                            error=str(cache_error),
+                        )
+
+                    # Try to delete the existing document using the LightRAG doc ID
+                    try:
+                        await rag_client.delete_document(
+                            doc_id=refined_adr_id,
+                            lightrag_doc_id=lightrag_doc_id,  # Pass the real doc ID
+                        )
+                        logger.info(
+                            "Deleted existing ADR from LightRAG before re-inserting",
+                            adr_id=refined_adr_id,
+                            lightrag_doc_id=lightrag_doc_id,
+                        )
+                        # Wait for deletion to complete (LightRAG processes deletion async)
+                        # Give it 2 seconds to process the deletion before re-inserting
+                        await asyncio.sleep(2)
+                    except Exception as delete_error:
+                        # Document might not exist, that's ok
+                        logger.info(
+                            "Could not delete document (may not exist), proceeding with insert",
+                            adr_id=refined_adr_id,
+                            error=str(delete_error),
+                        )
+
+                    # Now insert the updated document
+                    result = await rag_client.store_document(
+                        doc_id=refined_adr_id,
+                        content=adr_content,
+                        metadata={
+                            "type": "adr",
+                            "title": refined_adr.metadata.title,
+                            "status": refined_adr.metadata.status,
+                            "tags": refined_adr.metadata.tags,
+                            "created_at": refined_adr.metadata.created_at.isoformat(),
+                            "updated_at": refined_adr.metadata.updated_at.isoformat(),
+                        },
+                    )
+
+                    # Check if we got a track_id for monitoring upload status
+                    track_id = result.get("track_id")
+
+                    if track_id:
+                        # Store upload status and start monitoring task
+                        async with LightRAGDocumentCache() as cache:
+                            await cache.set_upload_status(
+                                adr_id=refined_adr_id,
+                                track_id=track_id,
+                                status="processing",
+                                message="Updated ADR document in LightRAG, processing...",
+                            )
+
+                        logger.info(
+                            "Refined ADR upload started with tracking",
+                            adr_id=refined_adr_id,
+                            track_id=track_id,
+                        )
+
+                        # Start background task to monitor upload status
+                        from src.celery_app import monitor_upload_status_task
+
+                        monitor_upload_status_task.delay(refined_adr_id, track_id)
+                    else:
+                        # No track_id, assume immediate success (old LightRAG behavior)
+                        if result and result.get("status") == "success":
+                            lightrag_doc_id_result = result.get(
+                                "doc_id", refined_adr_id
+                            )
+                            async with LightRAGDocumentCache() as cache:
+                                await cache.set_doc_id(
+                                    refined_adr_id, lightrag_doc_id_result
+                                )
+                            logger.info(
+                                "Refined ADR updated in LightRAG and cache updated",
+                                adr_id=refined_adr_id,
+                                lightrag_doc_id=lightrag_doc_id_result,
+                            )
+
+                    self.update_state(
+                        state="PROGRESS",
+                        meta={"message": "ADR indexed in LightRAG"},
+                    )
+            except Exception as e:
+                # Log but don't fail if RAG update fails
+                logger.warning(
+                    "Failed to update ADR in LightRAG",
+                    error=str(e),
+                    error_type=type(e).__name__,
+                )
+
+            # Broadcast completion
+            # Import already done at top of _refine function
+            broadcaster = get_broadcaster()
+            await broadcaster.publish_upload_status(
+                adr_id=adr_id,
+                status="completed",
+                message="Original prompt refinement completed",
+            )
+
+            # Track task completion
+            from src.task_queue_monitor import get_task_queue_monitor
+
+            monitor = get_task_queue_monitor()
+            await monitor.track_task_completed(self.request.id)
+
+            return {
+                "adr_id": adr_id,
+                "title": refined_adr.metadata.title,
+                "refined_fields": list(refined_prompt_fields.keys()),
+                "updated_at": refined_adr.metadata.updated_at.isoformat(),
+            }
+
+        # Run the async refinement
+        result = asyncio.run(_refine())
+        return result
+
+    except Exception as e:
+        # Log the full error for debugging
+        import traceback
+
+        logger.error(
+            "Error in refine_original_prompt_task",
+            adr_id=adr_id,
+            error=str(e),
+            error_type=type(e).__name__,
+            traceback=traceback.format_exc(),
+        )
+
+        # Publish task failed status
+        async def _publish_task_failed(error: Exception):
+            from src.websocket_broadcaster import get_broadcaster
+
+            broadcaster = get_broadcaster()
+            await broadcaster.publish_task_status(
+                task_id=self.request.id,
+                task_name="refine_original_prompt_task",
                 status="failed",
                 position=None,
                 message=f"Error: {str(error)}",

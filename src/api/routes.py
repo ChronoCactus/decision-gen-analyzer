@@ -491,6 +491,78 @@ async def refine_personas(adr_id: str, request: RefinePersonasRequest):
         )
 
 
+class RefineOriginalPromptRequest(BaseModel):
+    """Request model for refining the original generation prompt."""
+
+    title: Optional[str] = None
+    context: Optional[str] = None
+    problem_statement: Optional[str] = None
+    constraints: Optional[List[str]] = None
+    stakeholders: Optional[List[str]] = None
+    retrieval_mode: Optional[str] = None
+    provider_id: Optional[str] = None
+
+
+@adr_router.post("/{adr_id}/refine-original-prompt", response_model=TaskResponse)
+async def refine_original_prompt(adr_id: str, request: RefineOriginalPromptRequest):
+    """Refine the original generation prompt and regenerate all personas.
+
+    This endpoint allows you to update the original prompt used to generate the ADR.
+    All personas will be regenerated with the new prompt, and any existing persona
+    refinements will be preserved and re-applied.
+
+    Args:
+        adr_id: The ADR ID to refine
+        request: The refined prompt fields (only fields you want to update)
+
+    Returns:
+        TaskResponse with task_id for tracking the refinement
+    """
+    try:
+        from src.celery_app import refine_original_prompt_task
+
+        # Build dict of refined fields (exclude None values and provider_id)
+        refined_prompt_fields = {}
+        if request.title is not None:
+            refined_prompt_fields["title"] = request.title
+        if request.context is not None:
+            refined_prompt_fields["context"] = request.context
+        if request.problem_statement is not None:
+            refined_prompt_fields["problem_statement"] = request.problem_statement
+        if request.constraints is not None:
+            refined_prompt_fields["constraints"] = request.constraints
+        if request.stakeholders is not None:
+            refined_prompt_fields["stakeholders"] = request.stakeholders
+        if request.retrieval_mode is not None:
+            refined_prompt_fields["retrieval_mode"] = request.retrieval_mode
+
+        if not refined_prompt_fields:
+            raise HTTPException(
+                status_code=400,
+                detail="At least one prompt field must be provided for refinement",
+            )
+
+        # Queue the refinement task
+        task = refine_original_prompt_task.delay(
+            adr_id=adr_id,
+            refined_prompt_fields=refined_prompt_fields,
+            provider_id=request.provider_id,
+        )
+
+        return TaskResponse(
+            task_id=task.id,
+            status="queued",
+            message=f"Original prompt refinement queued with {len(refined_prompt_fields)} updated field(s)",
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to queue original prompt refinement: {str(e)}",
+        )
+
+
 class UpdateStatusRequest(BaseModel):
     """Request model for updating ADR status."""
 

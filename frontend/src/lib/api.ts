@@ -1,4 +1,4 @@
-import { ADR, ADRListResponse, AnalyzeADRRequest, GenerateADRRequest, RefinePersonasRequest, TaskResponse, TaskStatus, Persona, DefaultModelConfig } from '@/types/api';
+import { ADR, ADRListResponse, AnalyzeADRRequest, GenerateADRRequest, RefinePersonasRequest, RefineOriginalPromptRequest, TaskResponse, TaskStatus, Persona, DefaultModelConfig } from '@/types/api';
 
 const DEFAULT_API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
@@ -170,6 +170,13 @@ class ApiClient {
 
   async refinePersonas(adrId: string, request: RefinePersonasRequest): Promise<TaskResponse> {
     return this.request<TaskResponse>(`/api/v1/adrs/${adrId}/refine-personas`, {
+      method: 'POST',
+      body: JSON.stringify(request),
+    });
+  }
+
+  async refineOriginalPrompt(adrId: string, request: RefineOriginalPromptRequest): Promise<TaskResponse> {
+    return this.request<TaskResponse>(`/api/v1/adrs/${adrId}/refine-original-prompt`, {
       method: 'POST',
       body: JSON.stringify(request),
     });
