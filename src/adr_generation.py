@@ -522,13 +522,284 @@ class ADRGenerationService:
 
         return adr
 
+    async def refine_original_prompt(
+        self,
+        adr: ADR,
+        refined_prompt_fields: Dict[str, Any],
+        progress_callback: Optional[callable] = None,
+        provider_id: Optional[str] = None,
+        exclude_adr_id: Optional[str] = None,
+    ) -> ADR:
+        """Refine the original generation prompt and regenerate all personas.
+
+        This method takes a refined/updated original prompt and regenerates the entire ADR.
+        All personas are re-run with the new prompt, and any existing refinements for each
+        persona are preserved and re-applied.
+
+        Args:
+            adr: The existing ADR with original prompt and persona responses
+            refined_prompt_fields: Dict with updated prompt fields (title, context, problem_statement, constraints, stakeholders, retrieval_mode)
+            progress_callback: Optional callback function for progress updates
+            provider_id: Optional provider ID to use for personas without custom model_config
+            exclude_adr_id: Optional ADR ID to exclude from retrieval (typically the current ADR to prevent self-referencing)
+
+        Returns:
+            Updated ADR with regenerated content and persona responses
+        """
+        logger.info(
+            "Starting original prompt refinement",
+            adr_id=str(adr.metadata.id),
+            refined_fields=list(refined_prompt_fields.keys()),
+        )
+
+        if not adr.content.original_generation_prompt:
+            raise ValueError(
+                "ADR has no original generation prompt stored. This ADR may have been created before prompt storage was implemented."
+            )
+
+        if not adr.persona_responses:
+            raise ValueError("ADR has no persona responses to regenerate")
+
+        # Merge the refined fields with the original prompt
+        original_prompt_data = adr.content.original_generation_prompt.copy()
+        original_prompt_data.update(refined_prompt_fields)
+
+        # Create the refined generation prompt
+        from src.models import ADRGenerationPrompt
+
+        refined_prompt = ADRGenerationPrompt(
+            title=original_prompt_data.get("title", adr.metadata.title),
+            context=original_prompt_data.get("context", ""),
+            problem_statement=original_prompt_data.get("problem_statement", ""),
+            constraints=original_prompt_data.get("constraints"),
+            stakeholders=original_prompt_data.get("stakeholders"),
+            tags=original_prompt_data.get("tags", adr.metadata.tags),
+            retrieval_mode=original_prompt_data.get("retrieval_mode", "naive"),
+        )  # Convert persona_responses to PersonaSynthesisInput objects if they're dicts
+        from src.models import PersonaSynthesisInput
+
+        existing_persona_responses = []
+        for pr in adr.persona_responses:
+            if isinstance(pr, dict):
+                existing_persona_responses.append(PersonaSynthesisInput(**pr))
+            else:
+                existing_persona_responses.append(pr)
+
+        # Get the list of personas to regenerate (all existing personas)
+        personas_to_regenerate = [pr.persona for pr in existing_persona_responses]
+
+        if progress_callback:
+            progress_callback(
+                f"Regenerating {len(personas_to_regenerate)} persona perspective(s) with refined original prompt..."
+            )
+
+        # Retrieve related context with the refined prompt
+        related_context = []
+        referenced_adr_info = []
+        if refined_prompt.retrieval_mode != "bypass":
+            if progress_callback:
+                progress_callback("Retrieving related context with refined prompt...")
+            related_context, referenced_adr_info = await self._get_related_context(
+                refined_prompt, exclude_adr_id=exclude_adr_id
+            )
+
+        # Regenerate all personas with the refined original prompt
+        regenerated_responses = []
+
+        for persona_response in existing_persona_responses:
+            persona_name = persona_response.persona
+
+            if progress_callback:
+                progress_callback(
+                    f"Regenerating {persona_name.replace('_', ' ').title()}..."
+                )
+
+            persona_config = self.persona_manager.get_persona_config(persona_name)
+            if not persona_config:
+                logger.warning(
+                    f"Cannot regenerate persona {persona_name}: config not found"
+                )
+                continue
+
+            # Create the base prompt with the refined original prompt
+            base_prompt_text = self._create_persona_generation_prompt(
+                persona_config,
+                refined_prompt,
+                related_context,
+            )
+
+            # Re-apply any existing refinements from the persona's history
+            current_prompt = base_prompt_text
+            if (
+                hasattr(persona_response, "refinement_history")
+                and persona_response.refinement_history
+            ):
+                for refinement in persona_response.refinement_history:
+                    current_prompt += (
+                        f"\n\n**Additional Refinement Request**:\n{refinement}"
+                    )
+
+            # Create client for this persona
+            if persona_config.model_config:
+                persona_client = create_client_from_persona_config(
+                    persona_config, demo_mode=False
+                )
+            elif provider_id:
+                persona_client = await create_client_from_provider_id(
+                    provider_id, demo_mode=False
+                )
+            else:
+                persona_client = create_client_from_persona_config(
+                    persona_config, demo_mode=False
+                )
+
+            # Generate response with the refined prompt
+            try:
+                async with persona_client:
+                    response = await persona_client.generate(
+                        prompt=current_prompt, temperature=0.7, num_predict=2000
+                    )
+
+                logger.info(
+                    "Received response for persona with refined original prompt",
+                    persona=persona_name,
+                    response_length=len(response),
+                )
+
+                # Parse the response
+                perspective_data = self._parse_persona_response(response)
+                if perspective_data:
+                    # Preserve the refinement history
+                    refinement_history = (
+                        persona_response.refinement_history
+                        if hasattr(persona_response, "refinement_history")
+                        else []
+                    )
+
+                    regenerated_response = PersonaSynthesisInput(
+                        persona=persona_name,
+                        original_prompt_text=base_prompt_text,  # Store the NEW base prompt
+                        refinement_history=refinement_history,  # Preserve existing refinements
+                        **perspective_data,
+                    )
+                    regenerated_responses.append(regenerated_response)
+                    logger.info(
+                        "Successfully regenerated persona with refined original prompt",
+                        persona=persona_name,
+                        refinement_count=len(refinement_history),
+                    )
+                else:
+                    logger.error(
+                        "Failed to parse persona regeneration response",
+                        persona=persona_name,
+                    )
+            except Exception as e:
+                logger.error(
+                    "Exception during persona regeneration with refined original prompt",
+                    persona=persona_name,
+                    error=str(e),
+                    error_type=type(e).__name__,
+                )
+
+        # Check if any personas were successfully regenerated
+        if not regenerated_responses:
+            error_msg = "Failed to regenerate any personas with refined original prompt"
+            logger.error(error_msg)
+            raise ValueError(error_msg)
+
+        logger.info(
+            "Successfully regenerated all personas with refined original prompt",
+            regenerated_count=len(regenerated_responses),
+        )
+
+        # Re-synthesize the ADR with regenerated persona responses
+        if progress_callback:
+            progress_callback("Re-synthesizing ADR with regenerated perspectives...")
+
+        result = await self._synthesize_adr(
+            refined_prompt,
+            regenerated_responses,
+            related_context,
+            referenced_adr_info,
+            progress_callback,
+        )
+
+        logger.info(
+            "ADR re-synthesis with refined original prompt completed successfully"
+        )
+
+        # Update the ADR with new content
+        adr.metadata.title = result.generated_title  # Update title from synthesis
+        adr.content.context_and_problem = result.context_and_problem
+        adr.content.decision_outcome = result.decision_outcome
+        adr.content.consequences = result.consequences
+        adr.content.considered_options = [
+            opt.option_name for opt in result.considered_options
+        ]
+        adr.content.decision_drivers = result.decision_drivers
+
+        # Update options_details with full option objects
+        from src.models import OptionDetails
+
+        adr.content.options_details = [
+            OptionDetails(
+                name=opt.option_name,
+                description=opt.description,
+                pros=opt.pros,
+                cons=opt.cons,
+            )
+            for opt in result.considered_options
+        ]
+
+        # Update consequences_structured
+        if result.consequences_structured:
+            from src.models import ConsequencesStructured
+
+            adr.content.consequences_structured = ConsequencesStructured(
+                positive=result.consequences_structured.get("positive", []),
+                negative=result.consequences_structured.get("negative", []),
+            )
+
+        # Update the stored original generation prompt
+        adr.content.original_generation_prompt = {
+            "title": result.generated_title,
+            "context": refined_prompt.context,
+            "problem_statement": refined_prompt.problem_statement,
+            "constraints": refined_prompt.constraints,
+            "stakeholders": refined_prompt.stakeholders,
+            "tags": refined_prompt.tags,
+            "retrieval_mode": refined_prompt.retrieval_mode,
+        }
+
+        # Update referenced ADRs
+        adr.content.referenced_adrs = (
+            referenced_adr_info if referenced_adr_info else None
+        )
+
+        # Update persona responses
+        adr.persona_responses = [pr.model_dump() for pr in regenerated_responses]
+
+        # Update timestamp
+        from datetime import UTC, datetime
+
+        adr.metadata.updated_at = datetime.now(UTC)
+
+        logger.info(
+            "Original prompt refinement completed",
+            adr_id=str(adr.metadata.id),
+            personas_regenerated=len(regenerated_responses),
+        )
+
+        return adr
+
     async def _get_related_context(
-        self, prompt: ADRGenerationPrompt
+        self, prompt: ADRGenerationPrompt, exclude_adr_id: Optional[str] = None
     ) -> tuple[List[str], List[Dict[str, str]]]:
         """Retrieve related ADRs from vector database.
 
         Args:
             prompt: The generation prompt
+            exclude_adr_id: Optional ADR ID to exclude from results (to prevent self-referencing)
 
         Returns:
             Tuple of (related context strings, referenced ADR info dicts with id, title, summary)
@@ -571,6 +842,14 @@ class ADRGenerationService:
                 doc_id = doc.get("id", "unknown")
                 if doc_id == "context":
                     # This is the generic query response, not a specific ADR
+                    continue
+
+                # Skip the excluded ADR to prevent self-referencing
+                if exclude_adr_id and doc_id == exclude_adr_id:
+                    logger.info(
+                        "Filtering out self-reference from related context",
+                        excluded_adr_id=exclude_adr_id,
+                    )
                     continue
 
                 doc_title = doc.get("title", doc_id)
@@ -918,11 +1197,11 @@ class ADRGenerationService:
 **Focus Areas**: {', '.join(persona_config.focus_areas)}
 **Evaluation Criteria**: {', '.join(persona_config.evaluation_criteria)}
 
-**Decision Context**:
-{prompt.context}
-
 **Problem Statement**:
 {prompt.problem_statement}
+
+**Decision Context**:
+{prompt.context}
 
 **Constraints**:
 {constraints_str}
@@ -1234,8 +1513,8 @@ Ensure your response is practical, considers the constraints, and reflects your 
 
 **Original Request**:
 Title: {prompt.title}
-Context: {prompt.context}
 Problem: {prompt.problem_statement}
+Context: {prompt.context}
 
 **Expert Perspectives**:
 {perspectives_str}
@@ -1247,7 +1526,7 @@ Problem: {prompt.problem_statement}
 Based on these perspectives, create a complete ADR. You must respond with a JSON object containing:
 
 {{
-  "title": "Clear, descriptive ADR title",
+  "title": "Clear, descriptive ADR title (update if the problem statement has changed)",
   "context_and_problem": "Comprehensive context and problem statement",
   "considered_options": [
     {{
