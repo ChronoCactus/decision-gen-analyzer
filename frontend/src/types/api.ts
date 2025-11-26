@@ -56,6 +56,17 @@ export interface ADRContent {
   consequences_structured?: ConsequencesStructured;
   referenced_adrs?: ReferencedADR[];
   more_information?: string;
+  original_generation_prompt?: OriginalGenerationPrompt;
+}
+
+export interface OriginalGenerationPrompt {
+  title: string;
+  context: string;
+  problem_statement: string;
+  constraints?: string[];
+  stakeholders?: string[];
+  tags?: string[];
+  retrieval_mode: string;
 }
 
 export enum ADRStatus {
@@ -93,6 +104,16 @@ export interface PersonaRefinementItem {
 export interface RefinePersonasRequest {
   refinements: PersonaRefinementItem[];
   refinements_to_delete?: Record<string, number[]>;
+  provider_id?: string;
+}
+
+export interface RefineOriginalPromptRequest {
+  title?: string;
+  context?: string;
+  problem_statement?: string;
+  constraints?: string[];
+  stakeholders?: string[];
+  retrieval_mode?: string;
   provider_id?: string;
 }
 

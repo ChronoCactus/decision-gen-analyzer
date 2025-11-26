@@ -22,15 +22,19 @@ export function ADRModal({ adr, onClose, onAnalyze, isAnalyzing, onADRUpdate, on
   const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
   const [showBulkRefine, setShowBulkRefine] = useState(false);
   const [bulkRefinementPrompt, setBulkRefinementPrompt] = useState('');
+  const [showOriginalPromptEdit, setShowOriginalPromptEdit] = useState(false);
+  const [refinedContext, setRefinedContext] = useState('');
+  const [refinedPrompt, setRefinedPrompt] = useState('');
   const [refinementToast, setRefinementToast] = useState<{ show: boolean; message: string; type: 'success' | 'error' }>({
     show: false,
     message: '',
     type: 'success'
   });
   const bulkRefineRef = useRef<HTMLDivElement>(null);
+  const originalPromptEditRef = useRef<HTMLDivElement>(null);
 
   // Close this modal with ESC, but only if personas modal is not open
-  useEscapeKey(onClose, !showPersonas && !showBulkRefine);
+  useEscapeKey(onClose, !showPersonas && !showBulkRefine && !showOriginalPromptEdit);
 
   // Scroll to bulk refinement section when it becomes visible
   useEffect(() => {
@@ -38,6 +42,13 @@ export function ADRModal({ adr, onClose, onAnalyze, isAnalyzing, onADRUpdate, on
       bulkRefineRef.current.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     }
   }, [showBulkRefine]);
+
+  // Scroll to original prompt edit section when it becomes visible
+  useEffect(() => {
+    if (showOriginalPromptEdit && originalPromptEditRef.current) {
+      originalPromptEditRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  }, [showOriginalPromptEdit]);
 
   const handleStatusChange = async (newStatus: string) => {
     if (newStatus === currentAdr.metadata.status) {
@@ -115,6 +126,45 @@ export function ADRModal({ adr, onClose, onAnalyze, isAnalyzing, onADRUpdate, on
 
     // Use the same handler as individual refinements
     await handleRefinePersonas(refinements);
+  };
+
+  const handleOriginalPromptRefinement = async () => {
+    if (!refinedContext.trim() || !refinedPrompt.trim()) {
+      return;
+    }
+
+    try {
+      const response = await apiClient.refineOriginalPrompt(currentAdr.metadata.id, {
+        context: refinedContext,
+        problem_statement: refinedPrompt,
+      });
+
+      // Reset UI
+      setShowOriginalPromptEdit(false);
+      setRefinedContext('');
+      setRefinedPrompt('');
+
+      // Close modal so user can see progress
+      onClose();
+
+      // Notify parent to start polling for the refinement task
+      if (onRefineQueued) {
+        onRefineQueued(response.task_id);
+      }
+
+    } catch (error) {
+      console.error('Failed to refine original prompt:', error);
+      setRefinementToast({
+        show: true,
+        message: 'Failed to queue original prompt refinement. Please try again.',
+        type: 'error'
+      });
+
+      // Auto-hide error toast after 5 seconds
+      setTimeout(() => {
+        setRefinementToast({ show: false, message: '', type: 'success' });
+      }, 5000);
+    }
   };
 
   const getStatusColor = (status: string) => {
@@ -389,6 +439,85 @@ export function ADRModal({ adr, onClose, onAnalyze, isAnalyzing, onADRUpdate, on
                   Cancel
                 </button>
               </div>
+            </div>
+          )}
+
+          {/* Original Prompt Refinement Section */}
+          {currentAdr.content.original_generation_prompt && (
+            <div className="mt-6 p-4 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg">
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2">Original Request</h3>
+              <p className="text-xs text-gray-600 dark:text-gray-400 mb-3">
+                View and refine the original prompt that was used to generate this ADR. Refining the context will regenerate all personas with the updated prompt.
+              </p>
+
+              {!showOriginalPromptEdit ? (
+                <div className="space-y-2">
+                  <div className="text-sm">
+                    <span className="font-medium text-gray-700 dark:text-gray-300">Prompt: </span>
+                    <span className="text-gray-600 dark:text-gray-400">{currentAdr.content.original_generation_prompt.problem_statement}</span>
+                  </div>
+                  <div className="text-sm">
+                    <span className="font-medium text-gray-700 dark:text-gray-300">Context: </span>
+                    <span className="text-gray-600 dark:text-gray-400">{currentAdr.content.original_generation_prompt.context}</span>
+                  </div>
+                  {currentAdr.content.original_generation_prompt.constraints && currentAdr.content.original_generation_prompt.constraints.length > 0 && (
+                    <div className="text-sm">
+                      <span className="font-medium text-gray-700 dark:text-gray-300">Constraints: </span>
+                      <span className="text-gray-600 dark:text-gray-400">{currentAdr.content.original_generation_prompt.constraints.join(', ')}</span>
+                    </div>
+                  )}
+                  <button
+                    onClick={() => {
+                      setShowOriginalPromptEdit(true);
+                      setRefinedContext(currentAdr.content.original_generation_prompt?.context || '');
+                      setRefinedPrompt(currentAdr.content.original_generation_prompt?.problem_statement || '');
+                    }}
+                    className="mt-2 px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors font-medium"
+                  >
+                    Edit Original Request
+                  </button>
+                </div>
+              ) : (
+                <div ref={originalPromptEditRef} className="space-y-3">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Prompt</label>
+                    <textarea
+                      value={refinedPrompt}
+                      onChange={(e) => setRefinedPrompt(e.target.value)}
+                      className="w-full px-3 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-green-500 dark:focus:ring-green-400"
+                      rows={3}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Context</label>
+                    <textarea
+                      value={refinedContext}
+                      onChange={(e) => setRefinedContext(e.target.value)}
+                      className="w-full px-3 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-green-500 dark:focus:ring-green-400"
+                      rows={3}
+                    />
+                  </div>
+                  <div className="flex gap-3">
+                    <button
+                      onClick={handleOriginalPromptRefinement}
+                      disabled={!refinedContext.trim() || !refinedPrompt.trim()}
+                      className="flex-1 bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700 disabled:bg-gray-400 dark:disabled:bg-gray-600 disabled:cursor-not-allowed transition-colors font-medium"
+                    >
+                      Submit Refinement
+                    </button>
+                    <button
+                      onClick={() => {
+                        setShowOriginalPromptEdit(false);
+                        setRefinedContext('');
+                        setRefinedPrompt('');
+                      }}
+                      className="px-4 py-2 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 rounded-md hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors font-medium"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 

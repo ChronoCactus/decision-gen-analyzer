@@ -141,6 +141,10 @@ class ADRContent(BaseModel):
     more_information: Optional[str] = Field(
         default=None, description="Additional evidence, team agreement, etc."
     )
+    original_generation_prompt: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="Original generation prompt used to create this ADR. Stored as dict with keys: title, context, problem_statement, constraints, stakeholders, tags, retrieval_mode. Used for refinement.",
+    )
 
 
 class ADR(BaseModel):
