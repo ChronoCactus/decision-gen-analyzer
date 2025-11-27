@@ -561,7 +561,8 @@ describe('ADRModal', () => {
 
       // Find the modal container (direct child of the backdrop)
       const backdrop = screen.getByRole('button', { name: 'Close' }).closest('.fixed');
-      const modalContainer = backdrop?.querySelector('.max-w-4xl');
+      // Updated selector to match responsive class
+      const modalContainer = backdrop?.querySelector('.sm\\:max-w-4xl');
 
       expect(modalContainer).toHaveClass('flex', 'flex-col');
     });

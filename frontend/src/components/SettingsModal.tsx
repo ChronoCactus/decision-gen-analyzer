@@ -5,9 +5,12 @@ import { useEscapeKey } from '@/hooks/useEscapeKey';
 import { apiClient } from '@/lib/api';
 import { LLMProvider, CreateProviderRequest, UpdateProviderRequest } from '@/types/api';
 import { Toast } from './Toast';
+import { InterfaceSettings } from '@/hooks/useInterfaceSettings';
 
 interface SettingsModalProps {
   onClose: () => void;
+  interfaceSettings: InterfaceSettings;
+  onUpdateInterfaceSettings: (settings: Partial<InterfaceSettings>) => void;
 }
 
 type ProviderFormData = {
@@ -22,10 +25,10 @@ type ProviderFormData = {
   is_default: boolean;
 };
 
-export function SettingsModal({ onClose }: SettingsModalProps) {
+export function SettingsModal({ onClose, interfaceSettings, onUpdateInterfaceSettings }: SettingsModalProps) {
   useEscapeKey(onClose);
 
-  const [activeTab, setActiveTab] = useState<'providers' | 'general'>('providers');
+  const [activeTab, setActiveTab] = useState<'providers' | 'general' | 'interface'>('providers');
   const [toast, setToast] = useState<{ message: string; type: 'info' | 'success' | 'warning' | 'error' } | null>(null);
   const [providers, setProviders] = useState<LLMProvider[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -257,13 +260,22 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
             </button>
             <button
               onClick={() => setActiveTab('general')}
-              className={`py-3 px-4 font-medium text-sm border-b-2 transition-colors ${
+              className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
                 activeTab === 'general'
                   ? 'border-blue-500 text-blue-600 dark:text-blue-400'
                   : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
               }`}
             >
               General
+            </button>
+            <button
+              onClick={() => setActiveTab('interface')}
+              className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${activeTab === 'interface'
+                  ? 'border-blue-500 text-blue-600 dark:text-blue-400'
+                  : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
+                }`}
+            >
+              Interface
             </button>
           </div>
         </div>
@@ -560,6 +572,52 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
               <p className="text-gray-600 dark:text-gray-400">
                 General settings will be added here in a future update.
               </p>
+            </div>
+          )}
+
+          {activeTab === 'interface' && (
+            <div>
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">
+                Interface Settings
+              </h3>
+
+              <div className="space-y-6">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <label className="font-medium text-gray-900 dark:text-gray-100">
+                      Auto-dismiss Notifications
+                    </label>
+                    <p className="text-sm text-gray-500 dark:text-gray-400">
+                      Automatically hide success/info notifications after a delay
+                    </p>
+                  </div>
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input
+                      type="checkbox"
+                      className="sr-only peer"
+                      checked={interfaceSettings.autoDismissToasts}
+                      onChange={(e) => onUpdateInterfaceSettings({ autoDismissToasts: e.target.checked })}
+                    />
+                    <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 dark:peer-focus:ring-blue-800 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-blue-600"></div>
+                  </label>
+                </div>
+
+                {interfaceSettings.autoDismissToasts && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                      Dismiss Delay (seconds)
+                    </label>
+                    <input
+                      type="number"
+                      min="1"
+                      max="60"
+                      value={interfaceSettings.toastDismissTimeout}
+                      onChange={(e) => onUpdateInterfaceSettings({ toastDismissTimeout: Math.max(1, parseInt(e.target.value) || 5) })}
+                      className="w-full max-w-xs px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                    />
+                  </div>
+                )}
+              </div>
             </div>
           )}
         </div>

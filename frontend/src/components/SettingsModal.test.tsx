@@ -33,6 +33,12 @@ describe('SettingsModal', () => {
     }
   ];
 
+  const mockInterfaceSettings = {
+    autoDismissToasts: false,
+    toastDismissTimeout: 5,
+  };
+  const mockUpdateInterfaceSettings = vi.fn();
+
   beforeEach(() => {
     vi.clearAllMocks();
     (apiClient.listProviders as any).mockResolvedValue({ providers: mockProviders });
@@ -44,7 +50,13 @@ describe('SettingsModal', () => {
   });
 
   it('renders providers list', async () => {
-    render(<SettingsModal onClose={() => {}} />);
+    render(
+      <SettingsModal
+        onClose={() => { }}
+        interfaceSettings={mockInterfaceSettings}
+        onUpdateInterfaceSettings={mockUpdateInterfaceSettings}
+      />
+    );
     
     await waitFor(() => {
       expect(screen.getByText('Ollama Local')).toBeInTheDocument();
@@ -53,7 +65,13 @@ describe('SettingsModal', () => {
 
   it('validates OpenAI provider with Ollama endpoint', async () => {
     const user = userEvent.setup();
-    render(<SettingsModal onClose={() => {}} />);
+    render(
+      <SettingsModal
+        onClose={() => { }}
+        interfaceSettings={mockInterfaceSettings}
+        onUpdateInterfaceSettings={mockUpdateInterfaceSettings}
+      />
+    );
     
     await waitFor(() => {
       expect(screen.getByText('Ollama Local')).toBeInTheDocument();
@@ -84,7 +102,13 @@ describe('SettingsModal', () => {
 
   it('validates Llama.cpp provider without /v1', async () => {
     const user = userEvent.setup();
-    render(<SettingsModal onClose={() => {}} />);
+    render(
+      <SettingsModal
+        onClose={() => { }}
+        interfaceSettings={mockInterfaceSettings}
+        onUpdateInterfaceSettings={mockUpdateInterfaceSettings}
+      />
+    );
     
     await waitFor(() => {
       expect(screen.getByText('Ollama Local')).toBeInTheDocument();
