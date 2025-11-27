@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { ADR, AnalyzeADRRequest, GenerateADRRequest, TaskResponse } from '@/types/api';
 import { apiClient } from '@/lib/api';
 import { ADRCard } from '@/components/ADRCard';
@@ -12,6 +12,7 @@ import { Toast } from '@/components/Toast';
 import { useCacheStatusWebSocket } from '@/hooks/useCacheStatusWebSocket';
 import { useTaskQueueWebSocket } from '@/hooks/useTaskQueueWebSocket';
 import { useGlobalUploadStatus } from '@/hooks/useUploadStatus';
+import { useInterfaceSettings } from '@/hooks/useInterfaceSettings';
 
 export default function Home() {
   const [adrs, setAdrs] = useState<ADR[]>([]);
@@ -25,6 +26,11 @@ export default function Home() {
   const [generationStartTime, setGenerationStartTime] = useState<number | undefined>(undefined);
   const [isGenerating, setIsGenerating] = useState(false);
   const [currentTime, setCurrentTime] = useState(Date.now());
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
+  // Interface settings
+  const { settings: interfaceSettings, updateSettings: updateInterfaceSettings } = useInterfaceSettings();
+  const processedTaskIds = useRef<Set<string>>(new Set());
   
   // Multi-select state
   const [selectionMode, setSelectionMode] = useState(false);
@@ -47,6 +53,25 @@ export default function Home() {
   useEffect(() => {
     loadADRs();
   }, []);
+
+  // Auto-dismiss completed tasks based on settings
+  useEffect(() => {
+    if (!interfaceSettings.autoDismissToasts) return;
+
+    Object.entries(tasks).forEach(([taskId, task]) => {
+      if ((task.status === 'completed' || task.status === 'failed' || task.status === 'revoked') && !processedTaskIds.current.has(taskId)) {
+        processedTaskIds.current.add(taskId);
+        setTimeout(() => {
+          setTasks(prev => {
+            const newTasks = { ...prev };
+            delete newTasks[taskId];
+            return newTasks;
+          });
+          processedTaskIds.current.delete(taskId);
+        }, interfaceSettings.toastDismissTimeout * 1000);
+      }
+    });
+  }, [tasks, interfaceSettings]);
 
   // Update current time every second for timer display
   useEffect(() => {
@@ -254,6 +279,7 @@ export default function Home() {
             // Refresh ADR list
             await loadADRs();
           }
+
           // Stop polling
           return;
         }
@@ -264,6 +290,7 @@ export default function Home() {
             setIsGenerating(false);
             setGenerationStartTime(undefined);
           }
+
           // Stop polling
           return;
         }
@@ -274,11 +301,10 @@ export default function Home() {
             setIsGenerating(false);
             setGenerationStartTime(undefined);
           }
+
           // Stop polling
           return;
-        }
-
-        // Continue polling
+        }        // Continue polling
         setTimeout(poll, 2000);
       } catch (err) {
         console.error('Failed to poll task status:', err);
@@ -487,17 +513,37 @@ export default function Home() {
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
       <div className="max-w-7xl mx-auto px-4 py-8">
-        <div className="flex justify-between items-center mb-4">
-          <div>
-            <h1 className="text-3xl font-bold text-gray-900 dark:text-gray-100">Decision Generator & Analyzer</h1>
-            <p className="text-gray-600 dark:text-gray-400 mt-2">AI-powered ADR generation and analysis</p>
+        <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4 relative">
+          <div className="w-full md:w-auto flex justify-between items-center">
+            <div>
+              <h1 className="text-2xl md:text-3xl font-bold text-gray-900 dark:text-gray-100">Decision Generator & Analyzer</h1>
+              <p className="text-sm md:text-base text-gray-600 dark:text-gray-400 mt-1 md:mt-2">AI-powered ADR generation and analysis</p>
+            </div>
+
+            {/* Mobile Menu Toggle */}
+            <button
+              onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+              className="md:hidden p-2 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-md"
+            >
+              {mobileMenuOpen ? (
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              ) : (
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5" />
+                </svg>
+              )}
+            </button>
           </div>
-          <div className="flex gap-3">
+
+          {/* Desktop Actions */}
+          <div className="hidden md:flex gap-3 items-center">
             {!selectionMode && (
               <>
                 <button
                   onClick={() => setShowSettings(true)}
-                  className="bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 px-4 py-2 rounded-md hover:bg-gray-200 dark:hover:bg-gray-600 font-medium text-sm transition-colors"
+                  className="bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 px-3 py-2 rounded-md hover:bg-gray-200 dark:hover:bg-gray-600 font-medium text-sm transition-colors"
                   title="Settings"
                 >
                   <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5">
@@ -507,13 +553,13 @@ export default function Home() {
                 </button>
                 <button
                   onClick={() => setShowImportExportModal(true)}
-                  className="bg-purple-600 text-white px-4 py-2 rounded-md hover:bg-purple-700 font-medium text-sm"
+                  className="bg-purple-600 text-white px-4 py-2 rounded-md hover:bg-purple-700 font-medium text-sm whitespace-nowrap"
                 >
                   Import/Export
                 </button>
                 <button
                   onClick={() => setShowQueueViewer(true)}
-                  className="bg-indigo-600 text-white px-4 py-2 rounded-md hover:bg-indigo-700 font-medium text-sm relative"
+                  className="bg-indigo-600 text-white px-4 py-2 rounded-md hover:bg-indigo-700 font-medium text-sm relative whitespace-nowrap"
                 >
                   View Queue
                   {queueStatus.total_tasks > 0 && (
@@ -524,14 +570,14 @@ export default function Home() {
                 </button>
                 <button
                   onClick={toggleSelectionMode}
-                  className="bg-gray-600 text-white px-4 py-2 rounded-md hover:bg-gray-700 font-medium text-sm"
+                  className="bg-gray-600 text-white px-4 py-2 rounded-md hover:bg-gray-700 font-medium text-sm whitespace-nowrap"
                   disabled={adrs.length === 0}
                 >
                   Select Mode
                 </button>
                 <button
                   onClick={() => setShowGenerateModal(true)}
-                  className="bg-blue-600 text-white px-6 py-3 rounded-md hover:bg-blue-700 font-semibold animate-pulse-border"
+                  className="bg-blue-600 text-white px-6 py-2 rounded-md hover:bg-blue-700 font-semibold animate-pulse-border whitespace-nowrap"
                 >
                   Generate New ADR
                 </button>
@@ -549,6 +595,68 @@ export default function Home() {
             )}
           </div>
         </div>
+
+        {/* Mobile Menu */}
+        {mobileMenuOpen && (
+          <div className="md:hidden flex flex-col gap-3 mb-6 bg-white dark:bg-gray-800 p-4 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700">
+            {!selectionMode && (
+              <>
+                <button
+                  onClick={() => { setShowGenerateModal(true); setMobileMenuOpen(false); }}
+                  className="bg-blue-600 text-white px-4 py-3 rounded-md hover:bg-blue-700 font-semibold text-center"
+                >
+                  Generate New ADR
+                </button>
+                <div className="grid grid-cols-2 gap-3">
+                  <button
+                    onClick={() => { setShowImportExportModal(true); setMobileMenuOpen(false); }}
+                    className="bg-purple-600 text-white px-4 py-2 rounded-md hover:bg-purple-700 font-medium text-sm text-center"
+                  >
+                    Import/Export
+                  </button>
+                  <button
+                    onClick={() => { setShowQueueViewer(true); setMobileMenuOpen(false); }}
+                    className="bg-indigo-600 text-white px-4 py-2 rounded-md hover:bg-indigo-700 font-medium text-sm relative text-center"
+                  >
+                    View Queue
+                    {queueStatus.total_tasks > 0 && (
+                      <span className="absolute -top-2 -right-2 bg-red-500 text-white text-xs font-bold rounded-full h-5 w-5 flex items-center justify-center">
+                        {queueStatus.total_tasks}
+                      </span>
+                    )}
+                  </button>
+                </div>
+                <button
+                  onClick={() => { toggleSelectionMode(); setMobileMenuOpen(false); }}
+                  className="bg-gray-600 text-white px-4 py-2 rounded-md hover:bg-gray-700 font-medium text-sm text-center"
+                  disabled={adrs.length === 0}
+                >
+                  Select Mode
+                </button>
+                <button
+                  onClick={() => { setShowSettings(true); setMobileMenuOpen(false); }}
+                  className="bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 px-4 py-2 rounded-md hover:bg-gray-200 dark:hover:bg-gray-600 font-medium text-sm text-center flex items-center justify-center gap-2"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.324.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 011.37.49l1.296 2.247a1.125 1.125 0 01-.26 1.431l-1.003.827c-.293.24-.438.613-.431.992a6.759 6.759 0 010 .255c-.007.378.138.75.43.99l1.005.828c.424.35.534.954.26 1.43l-1.298 2.247a1.125 1.125 0 01-1.369.491l-1.217-.456c-.355-.133-.75-.072-1.076.124a6.57 6.57 0 01-.22.128c-.331.183-.581.495-.644.869l-.213 1.28c-.09.543-.56.941-1.11.941h-2.594c-.55 0-1.02-.398-1.11-.94l-.213-1.281c-.062-.374-.312-.686-.644-.87a6.52 6.52 0 01-.22-.127c-.325-.196-.72-.257-1.076-.124l-1.217.456a1.125 1.125 0 01-1.369-.49l-1.297-2.247a1.125 1.125 0 01.26-1.431l1.004-.827c.292-.24.437-.613.43-.992a6.932 6.932 0 010-.255c.007-.378-.138-.75-.43-.99l-1.004-.828a1.125 1.125 0 01-.26-1.43l1.297-2.247a1.125 1.125 0 011.37-.491l1.216.456c.356.133.751.072 1.076-.124.072-.044.146-.087.22-.128.332-.183.582-.495.644-.869l.214-1.281z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                  </svg>
+                  Settings
+                </button>
+              </>
+            )}
+            {selectionMode && (
+              <>
+                <button
+                  onClick={() => { toggleSelectionMode(); setMobileMenuOpen(false); }}
+                  className="bg-gray-600 text-white px-4 py-2 rounded-md hover:bg-gray-700 font-medium text-sm text-center"
+                >
+                  Exit Select Mode
+                </button>
+              </>
+            )}
+          </div>
+        )}
 
         {/* RAG Cache Status */}
         <div className="mb-4 flex justify-end items-center gap-4">
@@ -622,60 +730,77 @@ export default function Home() {
           </div>
         )}
 
-        {/* Task Status Notifications */}
-        {Object.entries(tasks).length > 0 && (
+        {/* Task Status Notifications - Active/Pending (Inline) */}
+        {Object.values(tasks).filter(t => t.status !== 'completed' && t.status !== 'failed' && t.status !== 'revoked').length > 0 && (
           <div className="mb-6 space-y-2">
-            {Object.entries(tasks).map(([taskId, task]) => {
-              const elapsedSeconds = task.startTime 
-                ? Math.floor((currentTime - task.startTime) / 1000)
-                : 0;
-              const showTimer = task.startTime && (task.status === 'queued' || task.status === 'progress');
+            {Object.entries(tasks)
+              .filter(([, t]) => t.status !== 'completed' && t.status !== 'failed' && t.status !== 'revoked')
+              .map(([taskId, task]) => {
+                const elapsedSeconds = task.startTime
+                  ? Math.floor((currentTime - task.startTime) / 1000)
+                  : 0;
+                const showTimer = task.startTime && (task.status === 'queued' || task.status === 'progress');
 
-              return (
+                return (
+                  <div
+                    key={taskId}
+                    className="p-4 rounded-md bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800"
+                  >
+                    <div className="flex items-center justify-between gap-4">
+                      <div className="flex items-center gap-3 flex-1">
+                        <span className="text-sm font-medium text-gray-900 dark:text-gray-100">
+                          {task.status === 'queued' && '⏳ '}
+                          {task.status === 'progress' && '🔄 '}
+                          {task.message}
+                        </span>
+                        {showTimer && (
+                          <span className="text-sm font-semibold text-blue-700 dark:text-blue-300 bg-blue-100 dark:bg-blue-900/40 px-2.5 py-1 rounded-md whitespace-nowrap">
+                            {elapsedSeconds}s
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+          </div>
+        )}
+
+        {/* Task Status Notifications - Completed/Failed (Floating Stack) */}
+        {Object.values(tasks).filter(t => t.status === 'completed' || t.status === 'failed' || t.status === 'revoked').length > 0 && (
+          <div className="fixed bottom-4 right-4 z-50 flex flex-col gap-2 w-full max-w-sm pointer-events-none">
+            {Object.entries(tasks)
+              .filter(([, t]) => t.status === 'completed' || t.status === 'failed' || t.status === 'revoked')
+              .map(([taskId, task]) => (
                 <div
                   key={taskId}
-                  className={`p-4 rounded-md ${
-                    task.status === 'completed'
-                    ? 'bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800'
-                      : task.status === 'failed'
-                      ? 'bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800'
-                      : task.status === 'revoked'
-                        ? 'bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800'
-                      : 'bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800'
-                  }`}
+                  className={`p-4 rounded-lg shadow-lg pointer-events-auto flex items-center justify-between gap-4 animate-slide-up ${task.status === 'completed'
+                    ? 'bg-green-600 text-white'
+                    : task.status === 'failed'
+                      ? 'bg-red-600 text-white'
+                      : 'bg-orange-600 text-white'
+                    }`}
                 >
-                  <div className="flex items-center justify-between gap-4">
-                    <div className="flex items-center gap-3 flex-1">
-                      <span className="text-sm font-medium text-gray-900 dark:text-gray-100">
-                        {task.status === 'completed' && '✅ '}
-                        {task.status === 'failed' && '❌ '}
-                        {task.status === 'revoked' && '🚫 '}
-                        {task.status === 'queued' && '⏳ '}
-                        {task.status === 'progress' && '🔄 '}
-                        {task.message}
-                      </span>
-                      {showTimer && (
-                        <span className="text-sm font-semibold text-blue-700 dark:text-blue-300 bg-blue-100 dark:bg-blue-900/40 px-2.5 py-1 rounded-md whitespace-nowrap">
-                          {elapsedSeconds}s
-                        </span>
-                      )}
-                    </div>
-                    {task.status === 'completed' || task.status === 'failed' || task.status === 'revoked' ? (
-                      <button
-                        onClick={() => setTasks(prev => {
-                          const newTasks = { ...prev };
-                          delete newTasks[taskId];
-                          return newTasks;
-                        })}
-                        className="text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 text-sm flex-shrink-0"
-                      >
-                        ✕
-                      </button>
-                    ) : null}
+                  <div className="flex items-center gap-3 flex-1">
+                    <span className="text-sm font-medium">
+                      {task.status === 'failed' && '❌ '}
+                      {task.status === 'revoked' && '🚫 '}
+                      {task.message}
+                    </span>
                   </div>
+                  <button
+                    onClick={() => setTasks(prev => {
+                      const newTasks = { ...prev };
+                      delete newTasks[taskId];
+                      return newTasks;
+                    })}
+                    className="text-white/80 hover:text-white transition-colors"
+                    aria-label="Close"
+                  >
+                    ✕
+                  </button>
                 </div>
-              );
-            })}
+              ))}
           </div>
         )}
 
@@ -745,7 +870,11 @@ export default function Home() {
 
         {/* Settings Modal */}
         {showSettings && (
-          <SettingsModal onClose={() => setShowSettings(false)} />
+          <SettingsModal
+            onClose={() => setShowSettings(false)}
+            interfaceSettings={interfaceSettings}
+            onUpdateInterfaceSettings={updateInterfaceSettings}
+          />
         )}
 
         {/* Toast Notification */}

@@ -148,9 +148,9 @@ export function GenerateADRModal({ onClose, onGenerate, isGenerating, generation
   };
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 dark:bg-opacity-70 flex items-center justify-center p-4 z-50">
-      <div className="bg-white dark:bg-gray-800 rounded-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-        <div className="p-6">
+    <div className="fixed inset-0 bg-black bg-opacity-50 dark:bg-opacity-70 flex items-center justify-center sm:p-4 z-50">
+      <div className="bg-white dark:bg-gray-800 sm:rounded-lg w-full h-full sm:h-auto sm:max-w-2xl sm:max-h-[90vh] overflow-y-auto">
+        <div className="p-4 sm:p-6">
           <div className="flex justify-between items-start mb-6">
             <div className="flex-1">
               <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Generate New ADR</h2>
@@ -193,7 +193,7 @@ export function GenerateADRModal({ onClose, onGenerate, isGenerating, generation
                 value={prompt}
                 onChange={(e) => setPrompt(e.target.value)}
                 placeholder="Describe the decision you want to document..."
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-vertical"
+                className="w-full px-3 py-3 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-vertical"
                 rows={4}
                 required
               />
@@ -211,7 +211,7 @@ export function GenerateADRModal({ onClose, onGenerate, isGenerating, generation
                 value={context}
                 onChange={(e) => setContext(e.target.value)}
                 placeholder="Any additional context, constraints, or requirements..."
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-vertical"
+                className="w-full px-3 py-3 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-vertical"
                 rows={3}
               />
               <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
@@ -229,7 +229,7 @@ export function GenerateADRModal({ onClose, onGenerate, isGenerating, generation
                 value={tags}
                 onChange={(e) => setTags(e.target.value)}
                 placeholder="architecture, database, security (comma-separated)"
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full px-3 py-3 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               />
               <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
                 Optional: Comma-separated tags to categorize the ADR.
@@ -244,7 +244,7 @@ export function GenerateADRModal({ onClose, onGenerate, isGenerating, generation
                 id="retrieval-mode"
                 value={retrievalMode}
                 onChange={(e) => setRetrievalMode(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full px-3 py-3 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               >
                 <option value="naive">Naive - Simple vector similarity search (Recommended)</option>
                 <option value="local">Local - Focused entity-based retrieval</option>

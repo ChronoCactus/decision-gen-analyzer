@@ -147,7 +147,7 @@ export function ADRCard({ adr, onAnalyze, onDelete, onPushToRAG, onExport, cache
   return (
     <>
       <div 
-        className={`relative bg-white dark:bg-gray-800 rounded-lg shadow-md p-6 hover:shadow-lg transition-all border ${
+        className={`relative bg-white dark:bg-gray-800 rounded-lg shadow-md p-4 md:p-6 hover:shadow-lg transition-all border ${
           selectionMode 
             ? isSelected 
               ? 'border-blue-500 dark:border-blue-400 ring-2 ring-blue-500 dark:ring-blue-400 cursor-pointer' 
@@ -212,14 +212,14 @@ export function ADRCard({ adr, onAnalyze, onDelete, onPushToRAG, onExport, cache
             <div className="flex gap-2">
               <button
                 onClick={() => setShowModal(true)}
-                className="flex-1 bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 transition-colors"
+                className="flex-1 bg-blue-600 text-white px-2 md:px-4 py-2 rounded-md hover:bg-blue-700 transition-colors text-sm"
               >
                 View
               </button>
               <button
                 onClick={handleAnalyze}
                 disabled={true}
-                className="flex-1 bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                className="flex-1 bg-green-600 text-white px-2 md:px-4 py-2 rounded-md hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-sm"
               >
                 {isAnalyzing ? 'Analyzing...' : 'Analyze'}
               </button>
@@ -230,7 +230,7 @@ export function ADRCard({ adr, onAnalyze, onDelete, onPushToRAG, onExport, cache
               {uploadStatus === 'processing' && (
                 <button
                   disabled
-                  className="flex-1 bg-blue-600 text-white px-4 py-2 rounded-md opacity-75 cursor-wait transition-colors text-sm flex items-center justify-center gap-2"
+                  className="flex-1 bg-blue-600 text-white px-2 md:px-4 py-2 rounded-md opacity-75 cursor-wait transition-colors text-sm flex items-center justify-center gap-2"
                   title="Processing in RAG..."
                   aria-label="Processing in RAG"
                 >
@@ -238,33 +238,33 @@ export function ADRCard({ adr, onAnalyze, onDelete, onPushToRAG, onExport, cache
                     <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                     <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                   </svg>
-                  Processing in RAG...
+                  <span className="hidden md:inline">Processing...</span>
                 </button>
               )}
 
               {uploadStatus === 'completed' && (
                 <button
                   disabled
-                  className="flex-1 bg-green-600 text-white px-4 py-2 rounded-md opacity-90 cursor-default transition-all text-sm flex items-center justify-center gap-2 animate-pulse"
+                  className="flex-1 bg-green-600 text-white px-2 md:px-4 py-2 rounded-md opacity-90 cursor-default transition-all text-sm flex items-center justify-center gap-2 animate-pulse"
                   title="Successfully uploaded to RAG"
                 >
                   <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5">
                     <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                   </svg>
-                  Successfully uploaded to RAG
+                  <span className="hidden md:inline">Uploaded</span>
                 </button>
               )}
 
               {uploadStatus === 'failed' && (
                 <button
                   onClick={handlePushToRAG}
-                  className="flex-1 bg-red-600 text-white px-4 py-2 rounded-md hover:bg-red-700 transition-colors text-sm flex items-center justify-center gap-2"
+                  className="flex-1 bg-red-600 text-white px-2 md:px-4 py-2 rounded-md hover:bg-red-700 transition-colors text-sm flex items-center justify-center gap-2"
                   title={uploadMessage || 'Upload failed - click to retry'}
                 >
                   <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5">
                     <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z" />
                   </svg>
-                  Upload Failed - Retry
+                  <span className="hidden md:inline">Retry</span>
                 </button>
               )}
 
@@ -277,25 +277,26 @@ export function ADRCard({ adr, onAnalyze, onDelete, onPushToRAG, onExport, cache
                 <button
                   onClick={handlePushToRAG}
                   disabled={cacheRebuilding}
-                  className="flex-1 bg-purple-600 text-white px-4 py-2 rounded-md hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-sm"
+                  className="flex-1 bg-purple-600 text-white px-2 md:px-4 py-2 rounded-md hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-sm"
                   title={cacheRebuilding ? 'Cache is rebuilding...' : 'Push to RAG'}
                 >
-                  {cacheRebuilding ? 'Cache Rebuilding...' : 'Push to RAG'}
+                  {cacheRebuilding ? 'Rebuilding...' : 'Push to RAG'}
                 </button>
               )}
 
               <button
                 onClick={handleExport}
-                className="flex-1 bg-indigo-600 text-white px-4 py-2 rounded-md hover:bg-indigo-700 transition-colors text-sm flex items-center justify-center gap-2"
+                className="flex-1 bg-indigo-600 text-white px-2 md:px-4 py-2 rounded-md hover:bg-indigo-700 transition-colors text-sm flex items-center justify-center gap-2"
+                title="Export"
               >
                 <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5">
                   <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
                 </svg>
-                <span className="text-xs">Export</span>
+                <span className="hidden md:inline text-xs">Export</span>
               </button>
               <button
                 onClick={() => setShowDeleteModal(true)}
-                className="flex-1 text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300 px-4 py-2 rounded-md hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors text-sm flex items-center justify-center"
+                className="flex-1 text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300 px-2 md:px-4 py-2 rounded-md hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors text-sm flex items-center justify-center"
                 title="Delete ADR"
               >
                 <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5">
