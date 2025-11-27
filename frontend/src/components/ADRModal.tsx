@@ -190,7 +190,7 @@ export function ADRModal({ adr, onClose, onAnalyze, isAnalyzing, onADRUpdate, on
         {/* Sticky Header */}
         <div className="relative flex-shrink-0 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 p-4 sm:p-6 flex justify-between items-start">
           <div className="flex-1 hidden sm:block pr-12">
-            <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100 mb-2">
+            <h2 className="text-xl sm:text-2xl font-bold text-gray-900 dark:text-gray-100 mb-2">
               {currentAdr.metadata.title}
             </h2>
             <div className="flex items-center gap-4 text-sm text-gray-600 dark:text-gray-400">

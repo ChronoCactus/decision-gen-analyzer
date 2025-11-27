@@ -23,6 +23,7 @@ export function GenerateADRModal({ onClose, onGenerate, isGenerating, generation
   const [providers, setProviders] = useState<LLMProvider[]>([]);
   const [selectedProviderId, setSelectedProviderId] = useState<string>('');
   const [elapsedTime, setElapsedTime] = useState(0);
+  const [showContext, setShowContext] = useState(false);
 
   // Detect OS for keyboard shortcut display (computed once on mount)
   const [isMac] = useState(() => {
@@ -153,7 +154,7 @@ export function GenerateADRModal({ onClose, onGenerate, isGenerating, generation
         <div className="p-4 sm:p-6">
           <div className="flex justify-between items-start mb-6">
             <div className="flex-1 pr-12">
-              <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Generate New ADR</h2>
+              <h2 className="text-xl sm:text-2xl font-bold text-gray-900 dark:text-gray-100">Generate New ADR</h2>
               {providers.length > 0 && (
                 <div className="mt-2 flex items-center gap-2">
                   <label htmlFor="provider-select" className="text-xs text-gray-600 dark:text-gray-400">
@@ -197,29 +198,46 @@ export function GenerateADRModal({ onClose, onGenerate, isGenerating, generation
                 onChange={(e) => setPrompt(e.target.value)}
                 placeholder="Describe the decision you want to document..."
                 className="w-full px-3 py-3 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-vertical"
-                rows={4}
+                rows={3}
                 required
               />
               <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-                Describe the architectural decision you want to generate an ADR for.
+                Describe what you want to generate an decision record for.
               </p>
             </div>
 
-            <div>
-              <label htmlFor="context" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                Additional Context
-              </label>
-              <textarea
-                id="context"
-                value={context}
-                onChange={(e) => setContext(e.target.value)}
-                placeholder="Any additional context, constraints, or requirements..."
-                className="w-full px-3 py-3 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-vertical"
-                rows={3}
-              />
-              <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-                Optional: Provide additional context to help generate a more accurate ADR.
-              </p>
+            <div className="border border-gray-200 dark:border-gray-700 rounded-md overflow-hidden">
+              <button
+                type="button"
+                onClick={() => setShowContext(!showContext)}
+                className="w-full flex items-center justify-between px-4 py-3 bg-gray-50 dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors text-left"
+              >
+                <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Additional Context</span>
+                <svg
+                  className={`w-5 h-5 text-gray-500 transition-transform ${showContext ? 'transform rotate-180' : ''}`}
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                >
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+              </button>
+
+              {showContext && (
+                <div className="p-4 bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700">
+                  <textarea
+                    id="context"
+                    value={context}
+                    onChange={(e) => setContext(e.target.value)}
+                    placeholder="Any additional context, constraints, or requirements..."
+                    className="w-full px-3 py-3 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-vertical"
+                    rows={3}
+                  />
+                  <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                    Optional: Provide additional context to help generate a more accurate decision record.
+                  </p>
+                </div>
+              )}
             </div>
 
             <div>
@@ -274,7 +292,7 @@ export function GenerateADRModal({ onClose, onGenerate, isGenerating, generation
               {loadingPersonas ? (
                 <div className="text-sm text-gray-500 dark:text-gray-400">Loading personas...</div>
               ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   {personas.map((persona) => (
                     <label
                       key={persona.value}
