@@ -147,7 +147,7 @@ export function ADRCard({ adr, onAnalyze, onDelete, onPushToRAG, onExport, cache
   return (
     <>
       <div 
-        className={`relative bg-white dark:bg-gray-800 rounded-lg shadow-md p-4 md:p-6 hover:shadow-lg transition-all border ${
+        className={`relative bg-white dark:bg-gray-800 rounded-lg shadow-md p-3 md:p-6 hover:shadow-lg transition-all border ${
           selectionMode 
             ? isSelected 
               ? 'border-blue-500 dark:border-blue-400 ring-2 ring-blue-500 dark:ring-blue-400 cursor-pointer' 
@@ -170,18 +170,18 @@ export function ADRCard({ adr, onAnalyze, onDelete, onPushToRAG, onExport, cache
           </div>
         )}
 
-        <div className="flex justify-between items-start mb-4">
-          <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 line-clamp-2">
+        <div className="flex justify-between items-start mb-3 md:mb-4">
+          <h3 className="text-base md:text-lg font-semibold text-gray-900 dark:text-gray-100 line-clamp-2 pr-2">
             {currentAdr.metadata.title}
           </h3>
           {!selectionMode && (
-            <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(currentAdr.metadata.status)}`}>
+            <span className={`flex-shrink-0 px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(currentAdr.metadata.status)}`}>
               {currentAdr.metadata.status}
             </span>
           )}
         </div>
 
-        <p className="text-gray-600 dark:text-gray-400 text-sm mb-4 line-clamp-3">
+        <p className="text-gray-600 dark:text-gray-400 text-xs md:text-sm mb-3 md:mb-4 line-clamp-3">
           {currentAdr.content.context_and_problem}
         </p>
 
@@ -212,16 +212,25 @@ export function ADRCard({ adr, onAnalyze, onDelete, onPushToRAG, onExport, cache
             <div className="flex gap-2">
               <button
                 onClick={() => setShowModal(true)}
-                className="flex-1 bg-blue-600 text-white px-2 md:px-4 py-2 rounded-md hover:bg-blue-700 transition-colors text-sm"
+                className="flex-1 bg-blue-600 text-white px-2 md:px-4 py-2 rounded-md hover:bg-blue-700 transition-colors text-sm flex items-center justify-center gap-2"
+                title="View Details"
               >
-                View
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                </svg>
+                <span className="hidden md:inline">View</span>
               </button>
               <button
                 onClick={handleAnalyze}
                 disabled={true}
-                className="flex-1 bg-green-600 text-white px-2 md:px-4 py-2 rounded-md hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-sm"
+                className="flex-1 bg-green-600 text-white px-2 md:px-4 py-2 rounded-md hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-sm flex items-center justify-center gap-2"
+                title="Analyze"
               >
-                {isAnalyzing ? 'Analyzing...' : 'Analyze'}
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M9.75 3.104v5.714a2.25 2.25 0 01-.659 1.591L5 14.5M9.75 3.104c-.251.023-.501.05-.75.082m.75-.082a24.301 24.301 0 014.5 0m0 0v5.714c0 .597.237 1.17.659 1.591L19.8 15.3M14.25 3.104c.251.023.501.05.75.082M19.8 15.3l-1.57.393A9.065 9.065 0 0112 15a9.065 9.065 0 00-6.23-.693L5 14.5m14.8.8l1.402 1.402c1.232 1.232.65 3.318-1.067 3.611A48.309 48.309 0 0112 21c-2.773 0-5.491-.235-8.135-.687-1.718-.293-2.3-2.379-1.067-3.61L5 14.5" />
+                </svg>
+                <span className="hidden md:inline">{isAnalyzing ? 'Analyzing...' : 'Analyze'}</span>
               </button>
             </div>
 
@@ -277,10 +286,13 @@ export function ADRCard({ adr, onAnalyze, onDelete, onPushToRAG, onExport, cache
                 <button
                   onClick={handlePushToRAG}
                   disabled={cacheRebuilding}
-                  className="flex-1 bg-purple-600 text-white px-2 md:px-4 py-2 rounded-md hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-sm"
+                  className="flex-1 bg-purple-600 text-white px-2 md:px-4 py-2 rounded-md hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-sm flex items-center justify-center gap-2"
                   title={cacheRebuilding ? 'Cache is rebuilding...' : 'Push to RAG'}
                 >
-                  {cacheRebuilding ? 'Rebuilding...' : 'Push to RAG'}
+                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
+                  </svg>
+                  <span className="hidden md:inline">{cacheRebuilding ? 'Rebuilding...' : 'Push to RAG'}</span>
                 </button>
               )}
 
@@ -292,7 +304,7 @@ export function ADRCard({ adr, onAnalyze, onDelete, onPushToRAG, onExport, cache
                 <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5">
                   <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
                 </svg>
-                <span className="hidden md:inline text-xs">Export</span>
+                <span className="hidden md:inline">Export</span>
               </button>
               <button
                 onClick={() => setShowDeleteModal(true)}
