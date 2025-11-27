@@ -6,12 +6,16 @@ import { ADRStatus } from '@/types/api';
 
 // Mock components
 vi.mock('@/components/ADRCard', () => ({
-  ADRCard: ({ adr, onAnalyze, onDelete, onPushToRAG }: any) => (
+  ADRCard: ({ adr, onAnalyze, onDelete, onPushToRAG, selectionMode }: any) => (
     <div data-testid={`adr-card-${adr.metadata.id}`}>
       <div>{adr.metadata.title}</div>
-      <button onClick={() => onAnalyze(adr.metadata.id)}>Analyze</button>
-      <button onClick={() => onDelete(adr.metadata.id)}>Delete</button>
-      <button onClick={() => onPushToRAG(adr.metadata.id)}>Push to RAG</button>
+      {!selectionMode && (
+        <>
+          <button onClick={() => onAnalyze(adr.metadata.id)}>Analyze</button>
+          <button onClick={() => onDelete(adr.metadata.id)}>Delete</button>
+          <button onClick={() => onPushToRAG(adr.metadata.id)}>Push to RAG</button>
+        </>
+      )}
     </div>
   ),
 }));
@@ -401,8 +405,8 @@ describe('Home Page - Multi-Select Feature', () => {
 
     await user.click(screen.getByRole('button', { name: /select mode/i }));
 
-    expect(screen.getByRole('button', { name: /export selected/i })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /delete selected/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^export$/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^delete$/i })).toBeInTheDocument();
   });
 
   it('should export selected ADRs with correct schema format', async () => {
@@ -431,7 +435,7 @@ describe('Home Page - Multi-Select Feature', () => {
 
     await user.click(screen.getByRole('button', { name: /select mode/i }));
     await user.click(screen.getByRole('button', { name: /^select all$/i }));
-    await user.click(screen.getByRole('button', { name: /export selected/i }));
+    await user.click(screen.getByRole('button', { name: /^export$/i }));
 
     await waitFor(() => {
       expect(mockCreateObjectURL).toHaveBeenCalled();
@@ -484,7 +488,7 @@ describe('Home Page - Multi-Select Feature', () => {
 
     await user.click(screen.getByRole('button', { name: /select mode/i }));
     await user.click(screen.getByRole('button', { name: /^select all$/i }));
-    await user.click(screen.getByRole('button', { name: /delete selected/i }));
+    await user.click(screen.getByRole('button', { name: /^delete$/i }));
 
     expect(mockConfirm).toHaveBeenCalledWith('Are you sure you want to delete 2 ADRs?');
     
@@ -506,7 +510,7 @@ describe('Home Page - Multi-Select Feature', () => {
 
     await user.click(screen.getByRole('button', { name: /select mode/i }));
     await user.click(screen.getByRole('button', { name: /^select all$/i }));
-    await user.click(screen.getByRole('button', { name: /delete selected/i }));
+    await user.click(screen.getByRole('button', { name: /^delete$/i }));
 
     expect(apiClient.deleteADR).not.toHaveBeenCalled();
   });

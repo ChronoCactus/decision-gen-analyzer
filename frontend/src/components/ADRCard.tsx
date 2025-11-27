@@ -18,11 +18,12 @@ interface ADRCardProps {
   selectionMode?: boolean;
   isSelected?: boolean;
   onToggleSelection?: (adrId: string) => void;
+  onLongPress?: (adrId: string) => void;
   isNewlyImported?: boolean;
   onRefineQueued?: (taskId: string) => void;
 }
 
-export function ADRCard({ adr, onAnalyze, onDelete, onPushToRAG, onExport, cacheRebuilding, selectionMode = false, isSelected = false, onToggleSelection, isNewlyImported = false, onRefineQueued }: ADRCardProps) {
+export function ADRCard({ adr, onAnalyze, onDelete, onPushToRAG, onExport, cacheRebuilding, selectionMode = false, isSelected = false, onToggleSelection, onLongPress, isNewlyImported = false, onRefineQueued }: ADRCardProps) {
   const [showModal, setShowModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
@@ -138,7 +139,35 @@ export function ADRCard({ adr, onAnalyze, onDelete, onPushToRAG, onExport, cache
     }
   };
 
-  const handleCardClick = () => {
+  const [longPressTimer, setLongPressTimer] = useState<NodeJS.Timeout | null>(null);
+  const [isLongPress, setIsLongPress] = useState(false);
+
+  const handleStart = () => {
+    setIsLongPress(false);
+    const timer = setTimeout(() => {
+      setIsLongPress(true);
+      if (onLongPress) {
+        onLongPress(currentAdr.metadata.id);
+      }
+    }, 500); // 500ms for long press
+    setLongPressTimer(timer);
+  };
+
+  const handleEnd = () => {
+    if (longPressTimer) {
+      clearTimeout(longPressTimer);
+      setLongPressTimer(null);
+    }
+  };
+
+  const handleCardClick = (e: React.MouseEvent) => {
+    if (isLongPress) {
+      // Prevent click if it was a long press
+      e.stopPropagation();
+      setIsLongPress(false);
+      return;
+    }
+    
     if (selectionMode && onToggleSelection) {
       onToggleSelection(currentAdr.metadata.id);
     }
@@ -155,8 +184,13 @@ export function ADRCard({ adr, onAnalyze, onDelete, onPushToRAG, onExport, cache
             : isNewlyImported
               ? 'border-blue-500 dark:border-blue-400 animate-pulse-border'
               : 'border-transparent dark:border-gray-700'
-        }`}
+        } select-none`}
         onClick={handleCardClick}
+        onMouseDown={handleStart}
+        onMouseUp={handleEnd}
+        onMouseLeave={handleEnd}
+        onTouchStart={handleStart}
+        onTouchEnd={handleEnd}
       >
         {/* Selection checkbox - shown in selection mode */}
         {selectionMode && (
