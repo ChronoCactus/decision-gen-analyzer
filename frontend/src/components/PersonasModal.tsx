@@ -136,9 +136,9 @@ export function PersonasModal({ personas, onClose, onRefine }: PersonasModalProp
         <div className="flex-1 overflow-y-auto p-6 space-y-6">
           {personas.map((persona, index) => (
             <div key={index} className="bg-gradient-to-br from-gray-50 to-white dark:from-gray-700 dark:to-gray-800 border border-gray-200 dark:border-gray-600 rounded-lg p-6 shadow-sm">
-              <div className="flex items-center justify-between mb-4">
-                <div className="flex items-center">
-                  <div className="w-12 h-12 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center mr-4">
+              <div className="flex items-start justify-between mb-4">
+                <div className="flex items-start flex-1 pr-4">
+                  <div className="w-12 h-12 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center mr-4 flex-shrink-0">
                     <span className="text-2xl">
                       {persona.persona === 'technical_lead' && '👨‍💻'}
                       {persona.persona === 'architect' && '🏗️'}
@@ -164,7 +164,7 @@ export function PersonasModal({ personas, onClose, onRefine }: PersonasModalProp
                 </div>
                 <button
                   onClick={() => handleToggleRefine(persona.persona)}
-                  className={`px-4 py-2 rounded-md transition-colors font-medium ${refining[persona.persona]
+                  className={`px-4 py-2 rounded-md transition-colors font-medium flex-shrink-0 ${refining[persona.persona]
                       ? 'bg-gray-200 dark:bg-gray-600 text-gray-700 dark:text-gray-300'
                       : 'bg-blue-600 text-white hover:bg-blue-700'
                     }`}
@@ -289,8 +289,8 @@ export function PersonasModal({ personas, onClose, onRefine }: PersonasModalProp
           ))}
         </div>
 
-        <div className="flex-shrink-0 bg-gray-50 dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700 p-4">
-          {hasChanges ? (
+        {hasChanges && (
+          <div className="flex-shrink-0 bg-gray-50 dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700 p-4">
             <div className="space-y-2">
               <button
                 onClick={handleSubmitRefinements}
@@ -300,21 +300,18 @@ export function PersonasModal({ personas, onClose, onRefine }: PersonasModalProp
                 {isSubmitting ? 'Submitting...' : `Submit Changes (${Object.keys(refinementPrompts).length + Object.keys(refinementsToDelete).length})`}
               </button>
               <button
-                onClick={onClose}
-                className="w-full bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 px-6 py-3 rounded-md hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors font-medium"
+                onClick={() => {
+                  setRefining({});
+                  setRefinementPrompts({});
+                  setRefinementsToDelete({});
+                }}
+                className="w-full bg-transparent text-gray-600 dark:text-gray-400 px-6 py-2 rounded-md hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors text-sm"
               >
-                Cancel
+                Cancel Changes
               </button>
             </div>
-          ) : (
-              <button
-                onClick={onClose}
-                className="w-full bg-blue-600 text-white px-6 py-3 rounded-md hover:bg-blue-700 transition-colors font-medium"
-              >
-                Close
-              </button>
-          )}
-        </div>
+          </div>
+        )}
       </div>
     </div>
   );
