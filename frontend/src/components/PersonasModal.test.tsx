@@ -453,7 +453,8 @@ describe('PersonasModal', () => {
 
       // Find the modal container
       const backdrop = screen.getByText('Individual Persona Responses').closest('.fixed');
-      const modalContainer = backdrop?.querySelector('.max-w-4xl');
+      // The container now has sm:max-w-4xl instead of max-w-4xl
+      const modalContainer = backdrop?.querySelector('.w-full.h-full');
 
       expect(modalContainer).toHaveClass('flex', 'flex-col');
     });
@@ -469,8 +470,8 @@ describe('PersonasModal', () => {
     it('should have sticky footer with close button', () => {
       render(<PersonasModal {...mockProps} />);
 
-      // Footer should contain the close button
-      const closeButton = screen.getByRole('button', { name: 'Close' });
+      // Footer should contain the close button (the one with text "Close", not the icon)
+      const closeButton = screen.getByText('Close', { selector: 'button' });
       const footer = closeButton.closest('.flex-shrink-0');
 
       expect(footer).toBeInTheDocument();
