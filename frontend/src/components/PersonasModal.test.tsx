@@ -104,7 +104,7 @@ describe('PersonasModal', () => {
     render(<PersonasModal {...mockProps} />);
 
     // Get the close button in the header (first button) or by text
-    const closeButton = screen.getByText('Close');
+    const closeButton = screen.getByRole('button', { name: /close/i });
     await user.click(closeButton);
 
     expect(mockProps.onClose).toHaveBeenCalledTimes(1);
@@ -467,16 +467,15 @@ describe('PersonasModal', () => {
       expect(contentArea).toHaveClass('flex-1', 'overflow-y-auto');
     });
 
-    it('should have sticky footer with close button', () => {
+    it('should not have sticky footer when no changes', () => {
       render(<PersonasModal {...mockProps} />);
 
-      // Footer should contain the close button (the one with text "Close", not the icon)
-      const closeButton = screen.getByText('Close', { selector: 'button' });
-      const footer = closeButton.closest('.flex-shrink-0');
+      // Footer should not be present when there are no changes
+      const submitButton = screen.queryByText(/Submit Changes/);
+      const cancelButton = screen.queryByText('Cancel Changes');
 
-      expect(footer).toBeInTheDocument();
-      expect(footer).toHaveClass('flex-shrink-0');
-      expect(footer).toContainElement(closeButton);
+      expect(submitButton).not.toBeInTheDocument();
+      expect(cancelButton).not.toBeInTheDocument();
     });
 
     it('should show submit button in footer when there are changes', async () => {
