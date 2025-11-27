@@ -186,40 +186,73 @@ export function ADRModal({ adr, onClose, onAnalyze, isAnalyzing, onADRUpdate, on
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 dark:bg-opacity-70 flex items-center justify-center sm:p-4 z-50">
-      <div className="bg-white dark:bg-gray-800 sm:rounded-lg w-full h-full sm:h-auto sm:max-w-4xl sm:max-h-[90vh] flex flex-col">
-        <div className="flex-1 overflow-y-auto p-4 sm:p-6">
-          <div className="flex justify-between items-start mb-6">
-            <div className="flex-1">
-              <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100 mb-2">
-                {currentAdr.metadata.title}
-              </h2>
-              <div className="flex items-center gap-4 text-sm text-gray-600 dark:text-gray-400">
-                <span>By {currentAdr.metadata.author}</span>
-                <span>{new Date(currentAdr.metadata.created_at).toLocaleDateString()}</span>
-                <div className="relative">
-                  <select
-                    value={currentAdr.metadata.status}
-                    onChange={(e) => handleStatusChange(e.target.value)}
-                    disabled={isUpdatingStatus}
-                    className={`px-3 py-1 rounded-full border cursor-pointer text-sm font-medium transition-colors ${getStatusColor(currentAdr.metadata.status)} ${
-                      isUpdatingStatus ? 'opacity-50 cursor-wait' : 'hover:opacity-80'
+      <div className="bg-white dark:bg-gray-800 w-full h-full flex flex-col sm:h-auto sm:max-w-4xl sm:max-h-[90vh] sm:rounded-lg overflow-hidden">
+        {/* Sticky Header */}
+        <div className="relative flex-shrink-0 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 p-4 sm:p-6 flex justify-between items-start">
+          <div className="flex-1 hidden sm:block pr-12">
+            <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100 mb-2">
+              {currentAdr.metadata.title}
+            </h2>
+            <div className="flex items-center gap-4 text-sm text-gray-600 dark:text-gray-400">
+              <span>By {currentAdr.metadata.author}</span>
+              <span>{new Date(currentAdr.metadata.created_at).toLocaleDateString()}</span>
+              <div className="relative">
+                <select
+                  value={currentAdr.metadata.status}
+                  onChange={(e) => handleStatusChange(e.target.value)}
+                  disabled={isUpdatingStatus}
+                  className={`px-3 py-1 rounded-full border cursor-pointer text-sm font-medium transition-colors ${getStatusColor(currentAdr.metadata.status)} ${isUpdatingStatus ? 'opacity-50 cursor-wait' : 'hover:opacity-80'
                     } focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 dark:focus:ring-offset-gray-800`}
-                  >
-                    <option value={ADRStatus.PROPOSED}>proposed</option>
-                    <option value={ADRStatus.ACCEPTED}>accepted</option>
-                    <option value={ADRStatus.REJECTED}>rejected</option>
-                    <option value={ADRStatus.DEPRECATED}>deprecated</option>
-                    <option value={ADRStatus.SUPERSEDED}>superseded</option>
-                  </select>
-                </div>
+                >
+                  <option value={ADRStatus.PROPOSED}>proposed</option>
+                  <option value={ADRStatus.ACCEPTED}>accepted</option>
+                  <option value={ADRStatus.REJECTED}>rejected</option>
+                  <option value={ADRStatus.DEPRECATED}>deprecated</option>
+                  <option value={ADRStatus.SUPERSEDED}>superseded</option>
+                </select>
               </div>
             </div>
-            <button
-              onClick={onClose}
-              className="text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 text-2xl"
-            >
-              ×
-            </button>
+          </div>
+          {/* Mobile Header Title (Minimal) */}
+          <div className="flex-1 sm:hidden pr-12">
+             <h2 className="text-lg font-bold text-gray-900 dark:text-gray-100 truncate">
+              {currentAdr.metadata.title}
+            </h2>
+          </div>
+          <button
+            onClick={onClose}
+            className="absolute top-4 right-4 p-2 rounded-full bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors z-10"
+            aria-label="Close"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto p-4 sm:p-6 min-h-0">
+          {/* Mobile Title & Metadata (Scrolls with content) */}
+          <div className="sm:hidden mb-6 space-y-4">
+            <div className="flex flex-wrap items-center gap-3 text-sm text-gray-600 dark:text-gray-400">
+              <span>By {currentAdr.metadata.author}</span>
+              <span>•</span>
+              <span>{new Date(currentAdr.metadata.created_at).toLocaleDateString()}</span>
+            </div>
+            <div className="relative inline-block">
+              <select
+                value={currentAdr.metadata.status}
+                onChange={(e) => handleStatusChange(e.target.value)}
+                disabled={isUpdatingStatus}
+                className={`px-3 py-1 rounded-full border cursor-pointer text-sm font-medium transition-colors ${getStatusColor(currentAdr.metadata.status)} ${isUpdatingStatus ? 'opacity-50 cursor-wait' : 'hover:opacity-80'
+                  } focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 dark:focus:ring-offset-gray-800`}
+              >
+                <option value={ADRStatus.PROPOSED}>proposed</option>
+                <option value={ADRStatus.ACCEPTED}>accepted</option>
+                <option value={ADRStatus.REJECTED}>rejected</option>
+                <option value={ADRStatus.DEPRECATED}>deprecated</option>
+                <option value={ADRStatus.SUPERSEDED}>superseded</option>
+              </select>
+            </div>
           </div>
 
           <div className="space-y-6">
@@ -523,37 +556,49 @@ export function ADRModal({ adr, onClose, onAnalyze, isAnalyzing, onADRUpdate, on
 
         </div>
 
-        {/* Sticky Footer with Buttons */}
-        <div className="flex-shrink-0 border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-4 sm:p-6">
-          <div className="flex flex-col sm:flex-row gap-3 sm:gap-4">
+        {/* Footer with Buttons (Sticky on all screens) */}
+        <div className="flex-shrink-0 border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-3 sm:p-6">
+          <div className="flex gap-2 sm:gap-4">
             {currentAdr.persona_responses && currentAdr.persona_responses.length > 0 && (
               <>
                 <button
                   onClick={() => setShowPersonas(true)}
-                  className="flex-1 bg-purple-600 text-white px-6 py-3 rounded-md hover:bg-purple-700 transition-colors font-medium"
+                  className="flex-1 bg-purple-600 text-white px-3 py-2 sm:px-6 sm:py-3 rounded-md hover:bg-purple-700 transition-colors font-medium flex items-center justify-center gap-2"
+                  title="Show Personas"
                 >
-                  Show Personas ({currentAdr.persona_responses.length})
+                  <span className="sm:hidden relative">
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M15 19.128a9.38 9.38 0 0 0 2.625.372 9.337 9.337 0 0 0 4.121-.952 4.125 4.125 0 0 0-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 0 1 8.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0 1 11.964-3.07M12 6.375a3.375 3.375 0 1 1-6.75 0 3.375 3.375 0 0 1 6.75 0Zm8.25 2.25a2.625 2.625 0 1 1-5.25 0 2.625 2.625 0 0 1 5.25 0Z" />
+                    </svg>
+                    <span className="absolute -top-2 -right-2 bg-red-500 text-white text-[10px] rounded-full w-4 h-4 flex items-center justify-center">
+                      {currentAdr.persona_responses.length}
+                    </span>
+                  </span>
+                  <span className="hidden sm:inline">Show Personas ({currentAdr.persona_responses.length})</span>
                 </button>
                 <button
                   onClick={() => setShowBulkRefine(!showBulkRefine)}
-                  className="flex-1 bg-blue-600 text-white px-6 py-3 rounded-md hover:bg-blue-700 transition-colors font-medium"
+                  className="flex-1 bg-blue-600 text-white px-3 py-2 sm:px-6 sm:py-3 rounded-md hover:bg-blue-700 transition-colors font-medium flex items-center justify-center gap-2"
+                  title="Refine All Personas"
                 >
-                  {showBulkRefine ? 'Hide Bulk Refine' : 'Refine All Personas'}
+                  <span className="sm:hidden flex items-center gap-1">
+                    <span>Refine</span>
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M15 19.128a9.38 9.38 0 0 0 2.625.372 9.337 9.337 0 0 0 4.121-.952 4.125 4.125 0 0 0-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 0 1 8.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0 1 11.964-3.07M12 6.375a3.375 3.375 0 1 1-6.75 0 3.375 3.375 0 0 1 6.75 0Zm8.25 2.25a2.625 2.625 0 1 1-5.25 0 2.625 2.625 0 0 1 5.25 0Z" />
+                    </svg>
+                  </span>
+                  <span className="hidden sm:inline">{showBulkRefine ? 'Hide Bulk Refine' : 'Refine All Personas'}</span>
                 </button>
               </>
             )}
             <button
               onClick={onAnalyze}
               disabled={isAnalyzing}
-              className="flex-1 bg-green-600 text-white px-6 py-3 rounded-md hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors font-medium"
+              className="flex-1 bg-green-600 text-white px-3 py-2 sm:px-6 sm:py-3 rounded-md hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors font-medium flex items-center justify-center gap-2"
+              title="Analyze ADR"
             >
-              {isAnalyzing ? 'Analyzing...' : 'Analyze ADR'}
-            </button>
-            <button
-              onClick={onClose}
-              className="px-6 py-3 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 rounded-md hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors font-medium"
-            >
-              Close
+              <span className="sm:hidden">Analyze</span>
+              <span className="hidden sm:inline">{isAnalyzing ? 'Analyzing...' : 'Analyze ADR'}</span>
             </button>
           </div>
         </div>
