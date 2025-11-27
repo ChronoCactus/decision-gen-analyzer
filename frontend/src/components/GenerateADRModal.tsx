@@ -149,10 +149,10 @@ export function GenerateADRModal({ onClose, onGenerate, isGenerating, generation
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 dark:bg-opacity-70 flex items-center justify-center sm:p-4 z-50">
-      <div className="bg-white dark:bg-gray-800 sm:rounded-lg w-full h-full sm:h-auto sm:max-w-2xl sm:max-h-[90vh] overflow-y-auto">
+      <div className="bg-white dark:bg-gray-800 w-full h-full sm:h-auto sm:max-w-2xl sm:max-h-[90vh] sm:rounded-lg overflow-y-auto relative">
         <div className="p-4 sm:p-6">
           <div className="flex justify-between items-start mb-6">
-            <div className="flex-1">
+            <div className="flex-1 pr-12">
               <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Generate New ADR</h2>
               {providers.length > 0 && (
                 <div className="mt-2 flex items-center gap-2">
@@ -177,9 +177,12 @@ export function GenerateADRModal({ onClose, onGenerate, isGenerating, generation
             </div>
             <button
               onClick={onClose}
-              className="text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300 text-2xl ml-4"
+              className="absolute top-4 right-4 p-2 rounded-full bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors z-10"
+              aria-label="Close"
             >
-              ×
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+              </svg>
             </button>
           </div>
 

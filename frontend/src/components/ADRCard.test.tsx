@@ -133,7 +133,7 @@ describe('ADRCard', () => {
     render(<ADRCard adr={mockADR} {...defaultProps} />);
 
     // Analyze button is now disabled, so this test should verify it's disabled
-    const analyzeButton = screen.getByText('Analyze');
+    const analyzeButton = screen.getByRole('button', { name: /Analyze/i });
     expect(analyzeButton).toBeDisabled();
   });
 
@@ -144,7 +144,7 @@ describe('ADRCard', () => {
     render(<ADRCard adr={mockADR} {...defaultProps} />);
 
     // Analyze button is now always disabled
-    const analyzeButton = screen.getByText('Analyze');
+    const analyzeButton = screen.getByRole('button', { name: /Analyze/i });
     expect(analyzeButton).toBeDisabled();
   });
 
