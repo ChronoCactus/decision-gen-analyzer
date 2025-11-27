@@ -64,6 +64,7 @@ describe('GenerateADRModal', () => {
   });
 
   it('should render modal with form fields', async () => {
+    const user = userEvent.setup();
     render(<GenerateADRModal {...mockProps} />);
 
     await waitFor(() => {
@@ -71,6 +72,14 @@ describe('GenerateADRModal', () => {
     });
 
     expect(screen.getByPlaceholderText(/Describe the decision/)).toBeInTheDocument();
+    
+    // Context is initially hidden
+    expect(screen.queryByPlaceholderText(/Any additional context/)).not.toBeInTheDocument();
+    
+    // Click to expand context
+    const contextButton = screen.getByText(/Additional Context/);
+    await user.click(contextButton);
+    
     expect(screen.getByPlaceholderText(/Any additional context/)).toBeInTheDocument();
   });
 
@@ -109,6 +118,10 @@ describe('GenerateADRModal', () => {
   it('should handle context input', async () => {
     const user = userEvent.setup();
     render(<GenerateADRModal {...mockProps} />);
+
+    // Expand context section
+    const contextButton = screen.getByText(/Additional Context/);
+    await user.click(contextButton);
 
     const contextInput = screen.getByPlaceholderText(/Any additional context/);
     await user.type(contextInput, 'Test context');

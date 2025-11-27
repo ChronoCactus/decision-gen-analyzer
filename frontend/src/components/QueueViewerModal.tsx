@@ -225,20 +225,20 @@ export function QueueViewerModal({
           </div>
 
           {/* Queue Stats */}
-          <div className="grid grid-cols-4 gap-4 mt-4">
-            <div className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-3">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mt-4">
+            <div className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-4">
               <div className="text-sm text-gray-500 dark:text-gray-400">Total Tasks</div>
               <div className="text-2xl font-semibold text-gray-900 dark:text-gray-100">{totalTasks}</div>
             </div>
-            <div className="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-3">
+            <div className="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-4">
               <div className="text-sm text-blue-600 dark:text-blue-400">Active</div>
               <div className="text-2xl font-semibold text-blue-900 dark:text-blue-300">{activeTasks}</div>
             </div>
-            <div className="bg-yellow-50 dark:bg-yellow-900/20 rounded-lg p-3">
+            <div className="bg-yellow-50 dark:bg-yellow-900/20 rounded-lg p-4">
               <div className="text-sm text-yellow-600 dark:text-yellow-400">Pending</div>
               <div className="text-2xl font-semibold text-yellow-900 dark:text-yellow-300">{pendingTasks}</div>
             </div>
-            <div className="bg-green-50 dark:bg-green-900/20 rounded-lg p-3">
+            <div className="bg-green-50 dark:bg-green-900/20 rounded-lg p-4">
               <div className="text-sm text-green-600 dark:text-green-400">Workers</div>
               <div className="text-2xl font-semibold text-green-900 dark:text-green-300">{workersOnline}</div>
             </div>
