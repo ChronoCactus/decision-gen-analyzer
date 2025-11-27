@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, fireEvent, act } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { ADRCard } from './ADRCard';
 import { ADR, ADRStatus } from '@/types/api';
@@ -224,5 +224,58 @@ describe('ADRCard', () => {
     await user.click(screen.getByText('Cancel Delete'));
     expect(screen.queryByTestId('delete-modal')).not.toBeInTheDocument();
     expect(mockCallbacks.onDelete).not.toHaveBeenCalled();
+  });
+
+  it('should trigger onLongPress after holding down', async () => {
+    const onLongPress = vi.fn();
+    vi.useFakeTimers();
+    
+    render(<ADRCard adr={mockADR} {...defaultProps} onLongPress={onLongPress} />);
+    
+    const card = screen.getByText('Database Selection Decision').closest('div');
+    if (!card) throw new Error('Card not found');
+
+    // Simulate mouse down
+    fireEvent.mouseDown(card);
+    
+    // Fast-forward time by 500ms
+    act(() => {
+      vi.advanceTimersByTime(500);
+    });
+
+    expect(onLongPress).toHaveBeenCalledWith(mockADR.metadata.id);
+    
+    // Cleanup
+    fireEvent.mouseUp(card);
+    vi.useRealTimers();
+  });
+
+  it('should not trigger onLongPress if released early', async () => {
+    const onLongPress = vi.fn();
+    vi.useFakeTimers();
+    
+    render(<ADRCard adr={mockADR} {...defaultProps} onLongPress={onLongPress} />);
+    
+    const card = screen.getByText('Database Selection Decision').closest('div');
+    if (!card) throw new Error('Card not found');
+
+    // Simulate mouse down
+    fireEvent.mouseDown(card);
+    
+    // Fast-forward time by 200ms (less than 500ms threshold)
+    act(() => {
+      vi.advanceTimersByTime(200);
+    });
+    
+    // Release mouse
+    fireEvent.mouseUp(card);
+    
+    // Fast-forward remaining time
+    act(() => {
+      vi.advanceTimersByTime(300);
+    });
+
+    expect(onLongPress).not.toHaveBeenCalled();
+    vi.useRealTimers();
   });
 });
