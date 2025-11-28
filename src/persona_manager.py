@@ -74,6 +74,19 @@ class PersonaConfig:
             model_config=model_config,
         )
 
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert PersonaConfig to a dictionary."""
+        result = {
+            "name": self.name,
+            "description": self.description,
+            "instructions": self.instructions,
+            "focus_areas": self.focus_areas,
+            "evaluation_criteria": self.evaluation_criteria,
+        }
+        if self.model_config:
+            result["model_config"] = self.model_config.to_dict()
+        return result
+
 
 class PersonaManager:
     """Manages persona configurations dynamically from filesystem."""
@@ -92,7 +105,19 @@ class PersonaManager:
             project_root = Path(__file__).parent.parent
             config_dir = project_root / "config" / "personas"
 
-        self.config_dir = Path(config_dir)
+        # Ensure we have an absolute path to avoid CWD issues
+        if isinstance(config_dir, str):
+            config_dir = Path(config_dir)
+
+        if not config_dir.is_absolute():
+            # If relative, make it relative to project root if possible, or resolve it
+            project_root = Path(__file__).parent.parent
+            if str(config_dir).startswith("config/"):
+                config_dir = project_root / config_dir
+            else:
+                config_dir = config_dir.resolve()
+
+        self.config_dir = config_dir
         self.defaults_dir = self.config_dir / "defaults"
         self.include_defaults = include_defaults
 
@@ -170,6 +195,43 @@ class PersonaManager:
                     personas[persona_value] = config
 
         return personas
+
+    def save_persona(self, persona_value: str, config: PersonaConfig) -> Path:
+        """
+        Save a persona configuration to a JSON file.
+
+        Args:
+            persona_value: The identifier for the persona (filename without .json)
+            config: The configuration object to save
+
+        Returns:
+            Path to the saved file
+        """
+        # Always save to custom config dir, never defaults
+        if not self.config_dir.exists():
+            try:
+                self.config_dir.mkdir(parents=True, exist_ok=True)
+            except Exception as e:
+                print(f"Error creating config directory {self.config_dir}: {e}")
+                raise
+
+        file_path = self.config_dir / f"{persona_value}.json"
+
+        with open(file_path, "w", encoding="utf-8") as f:
+            json.dump(config.to_dict(), f, indent=2, ensure_ascii=False)
+
+        return file_path
+
+    def delete_persona(self, persona_value: str) -> bool:
+        """
+        Delete a custom persona configuration file.
+        Returns True if deleted, False if not found or if it's a default persona (which can't be deleted).
+        """
+        file_path = self.config_dir / f"{persona_value}.json"
+        if file_path.exists():
+            file_path.unlink()
+            return True
+        return False
 
 
 # Global persona manager instance

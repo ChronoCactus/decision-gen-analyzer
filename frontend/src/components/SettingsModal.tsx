@@ -30,7 +30,7 @@ type ProviderFormData = {
 export function SettingsModal({ onClose, interfaceSettings, onUpdateInterfaceSettings }: SettingsModalProps) {
   useEscapeKey(onClose);
 
-  const [activeTab, setActiveTab] = useState<'providers' | 'general' | 'interface'>('providers');
+  const [activeTab, setActiveTab] = useState<'providers' | 'interface'>('providers');
   const [toast, setToast] = useState<{ message: string; type: 'info' | 'success' | 'warning' | 'error' } | null>(null);
   const [providers, setProviders] = useState<LLMProvider[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -272,16 +272,6 @@ export function SettingsModal({ onClose, interfaceSettings, onUpdateInterfaceSet
               }`}
             >
               LLM Providers
-            </button>
-            <button
-              onClick={() => setActiveTab('general')}
-              className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
-                activeTab === 'general'
-                  ? 'border-blue-500 text-blue-600 dark:text-blue-400'
-                  : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
-              }`}
-            >
-              General
             </button>
             <button
               onClick={() => setActiveTab('interface')}
@@ -618,17 +608,6 @@ export function SettingsModal({ onClose, interfaceSettings, onUpdateInterfaceSet
                   )}
                 </div>
               )}
-            </div>
-          )}
-
-          {activeTab === 'general' && (
-            <div>
-              <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">
-                General Settings
-              </h3>
-              <p className="text-gray-600 dark:text-gray-400">
-                General settings will be added here in a future update.
-              </p>
             </div>
           )}
 
