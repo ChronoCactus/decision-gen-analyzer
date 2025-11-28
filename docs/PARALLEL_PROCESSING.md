@@ -1,177 +1,72 @@
-# Parallel Processing with Multiple Llama.cpp Backends
+# Parallel Processing Configuration
 
 ## Overview
 
-The Decision Analyzer now supports using multiple llama.cpp backends for parallel processing, significantly improving ADR generation performance.
+The Decision Analyzer supports parallel processing to significantly improve ADR generation performance. This can be achieved in two ways:
 
-## Configuration
+1. **Provider-Based Parallelism**: Enabling parallel requests for a single provider (e.g., sending multiple requests to OpenAI or a robust local server concurrently).
+2. **Multi-Backend Parallelism**: Using multiple distinct backend URLs (legacy method for local llama.cpp instances).
 
-### Environment Variables
+## 1. Provider-Based Parallelism (Recommended)
 
-Three environment variables control the backend configuration:
+This method allows you to send multiple requests in parallel to a single provider. This is ideal for cloud providers (OpenAI, OpenRouter) or high-performance local servers (vLLM, Ollama with concurrency enabled).
 
-1. **`LLAMA_CPP_URL`** (Required)
-   - Primary llama.cpp server URL
-   - Default: `http://localhost:11434`
-   - Used for: Primary generation requests, synthesis, and polishing
+### Configuration
 
-2. **`LLAMA_CPP_URL_1`** (Optional)
-   - Secondary llama.cpp server URL for parallel processing
-   - Default: Not set (single backend mode)
-   - Used for: Parallel persona perspective generation
+You can configure parallel processing settings per provider.
 
-3. **`LLAMA_CPP_URL_EMBEDDING`** (Optional)
-   - Dedicated server for embedding requests
-   - Default: Uses `LLAMA_CPP_URL` if not set
-   - Used for: All embedding operations (future feature)
+#### Environment Variables (Default Provider)
 
-### Example Configuration
+For the default provider configured via environment variables, use:
 
-#### Single Backend (Default)
+- **`LLM_PARALLEL_REQUESTS_ENABLED`** (Default: `false`)
+  - Set to `true` to enable parallel execution.
+- **`LLM_MAX_PARALLEL_REQUESTS`** (Default: `2`)
+  - Maximum number of concurrent requests to send to the provider.
+
+**Example `.env`:**
 ```bash
-LLAMA_CPP_URL=http://192.168.0.118:11434
+LLM_PROVIDER=openai
+LLM_API_KEY=sk-...
+LLM_PARALLEL_REQUESTS_ENABLED=true
+LLM_MAX_PARALLEL_REQUESTS=5
 ```
 
-#### Dual Backend (Parallel Generation)
-```bash
-LLAMA_CPP_URL=http://192.168.0.118:11434
-LLAMA_CPP_URL_1=http://192.168.0.119:11434
-```
+#### Custom Providers
 
-#### Triple Backend (Parallel + Dedicated Embeddings)
-```bash
-LLAMA_CPP_URL=http://192.168.0.118:11434
-LLAMA_CPP_URL_1=http://192.168.0.119:11434
-LLAMA_CPP_URL_EMBEDDING=http://192.168.0.120:11434
-```
+When adding or editing providers via the UI/API, you can toggle "Enable Parallel Requests" and set the "Max Parallel Requests" value for each provider independently.
 
-## How It Works
+### How It Works
 
-### Architecture
+When generating an ADR with multiple personas (e.g., Technical Lead, Architect, Business Analyst):
+1. The system checks if the active provider has parallel requests enabled.
+2. If enabled, it launches generation tasks for all personas simultaneously.
+3. A semaphore limits the number of concurrent requests to `LLM_MAX_PARALLEL_REQUESTS`.
+4. As tasks complete, new ones are started until all personas are generated.
 
-- **Single Client Mode**: When only `LLAMA_CPP_URL` is set, the system uses a single `LlamaCppClient` and processes requests sequentially.
+## 2. Multi-Backend Parallelism (Legacy)
 
-- **Client Pool Mode**: When `LLAMA_CPP_URL_1` or `LLAMA_CPP_URL_EMBEDDING` is set, the system uses `LlamaCppClientPool` which:
-  - Initializes multiple client connections
-  - Distributes requests across backends in round-robin fashion
-  - Executes parallel requests using `asyncio.gather()`
+This method is designed for local setups where a single GPU/server cannot handle concurrent requests efficiently, so you run multiple instances of llama.cpp on different ports/machines.
 
-### Performance Benefits
+### Configuration
 
-With **N personas** and **2 backends**:
+- **`LLAMA_CPP_URL`** (Required): Primary backend.
+- **`LLAMA_CPP_URL_1`** (Optional): Secondary backend.
+- **`LLAMA_CPP_URL_EMBEDDING`** (Optional): Dedicated embedding backend.
+
+### How It Works
+
+The system uses a `LlamaCppClientPool` to distribute requests round-robin across the configured backends.
+
+## Performance Benefits
+
+With **N personas** and parallel processing enabled:
 
 - **Sequential**: N × ~10s = ~30-40s for 3 personas
-- **Parallel**: max(N/2) × ~10s = ~15-20s for 3 personas
+- **Parallel (2 concurrent)**: max(N/2) × ~10s = ~15-20s for 3 personas
+- **Parallel (N concurrent)**: ~10s (all in parallel)
 
-With **3 polishing steps** and **2 backends**:
-
-- **Sequential**: 3 × ~5s = ~15s
-- **Parallel**: ~5s (all three in parallel)
-
-**Total improvement**: ~50% faster ADR generation with dual backends
-
-### Request Distribution
-
-1. **Persona Perspective Generation** (Parallel)
-   - Persona 1 → Backend 0 (LLAMA_CPP_URL)
-   - Persona 2 → Backend 1 (LLAMA_CPP_URL_1)
-   - Persona 3 → Backend 0 (LLAMA_CPP_URL)
-   - And so on...
-
-2. **Synthesis** (Single)
-   - Always uses primary backend (LLAMA_CPP_URL)
-   - Requires all persona perspectives to be complete
-
-3. **Polishing** (Parallel)
-   - Section 1 → Backend 0
-   - Section 2 → Backend 1
-   - Section 3 → Backend 0
-
-4. **Embeddings** (Future)
-   - Will use `LLAMA_CPP_URL_EMBEDDING` if set
-   - Otherwise uses `LLAMA_CPP_URL`
-
-## Docker Compose Configuration
-
-The environment variables are automatically passed through in `docker-compose.yml`:
-
-```yaml
-environment:
-  - LLAMA_CPP_URL=${LLAMA_CPP_URL:-http://192.168.0.118:11434}
-  - LLAMA_CPP_URL_1=${LLAMA_CPP_URL_1:-}
-  - LLAMA_CPP_URL_EMBEDDING=${LLAMA_CPP_URL_EMBEDDING:-}
-```
-
-Set them in your `.env` file or export them before running:
-
-```bash
-export LLAMA_CPP_URL=http://192.168.0.118:11434
-export LLAMA_CPP_URL_1=http://192.168.0.119:11434
-docker compose up
-```
-
-## Future Enhancements
-
-### Authentication Support
-
-When authentication is needed, the pattern will extend to:
-
-```bash
-LLAMA_CPP_URL=http://server1:11434
-LLAMA_CPP_URL_AUTH=Bearer token1
-
-LLAMA_CPP_URL_1=http://server2:11434
-LLAMA_CPP_URL_1_AUTH=Bearer token2
-
-LLAMA_CPP_URL_EMBEDDING=http://server3:11434
-LLAMA_CPP_URL_EMBEDDING_AUTH=Bearer token3
-```
-
-This naming convention keeps credentials paired with their corresponding URLs.
-
-### Dynamic Scaling
-
-For more than 2 backends, you could extend the pattern:
-
-```bash
-LLAMA_CPP_URL=http://server1:11434
-LLAMA_CPP_URL_1=http://server2:11434
-LLAMA_CPP_URL_2=http://server3:11434
-LLAMA_CPP_URL_3=http://server4:11434
-```
-
-However, the current implementation is optimized for 2 generation backends, as most ADR generations use 2-3 personas.
-
-## Monitoring
-
-The system logs which mode is being used:
-
-```
-INFO: Using LlamaCppClientPool for parallel generation
-INFO: Initialized LlamaCppClientPool generation_backends=2 generation_urls=['http://192.168.0.118:11434', 'http://192.168.0.119:11434']
-INFO: Using parallel generation for persona perspectives persona_count=3
-```
-
-Or in single client mode:
-
-```
-INFO: Using single LlamaCppClient
-INFO: Using sequential generation for persona perspectives persona_count=3
-```
-
-## Troubleshooting
-
-### Problem: Requests failing intermittently
-
-**Solution**: Check that all backend URLs are accessible and have sufficient resources. Each backend needs to handle full-size model inference.
-
-### Problem: No performance improvement
-
-**Solution**: Verify that `LLAMA_CPP_URL_1` is set and pointing to a different server. Check logs to confirm pool mode is active.
-
-### Problem: Embeddings are slow
-
-**Solution**: Set `LLAMA_CPP_URL_EMBEDDING` to a dedicated backend, potentially running a smaller model optimized for embeddings.
+**Total improvement**: 50-70% faster ADR generation depending on concurrency limits.
 
 ## Implementation Details
 

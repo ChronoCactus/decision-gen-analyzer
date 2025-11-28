@@ -42,6 +42,18 @@ class Settings(BaseSettings):
         alias="LLM_TIMEOUT",
     )
 
+    # Parallel Processing Configuration
+    llm_parallel_requests_enabled: bool = Field(
+        default=False,
+        description="Enable parallel requests for the primary provider",
+        alias="LLM_PARALLEL_REQUESTS_ENABLED",
+    )
+    llm_max_parallel_requests: int = Field(
+        default=2,
+        description="Maximum number of parallel requests for the primary provider",
+        alias="LLM_MAX_PARALLEL_REQUESTS",
+    )
+
     # Ollama-specific parameters (only used when llm_provider is "ollama")
     ollama_num_ctx: int = Field(
         default=64000,
