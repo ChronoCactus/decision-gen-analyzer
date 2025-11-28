@@ -289,3 +289,57 @@ export interface UpdateProviderRequest {
 export interface ProvidersListResponse {
   providers: LLMProvider[];
 }
+
+// Persona Management types
+export interface ModelConfigInfo {
+  name: string;
+  provider?: string;
+  base_url?: string;
+  temperature?: number;
+  num_ctx?: number;
+}
+
+export interface PersonaConfig {
+  name: string;
+  description: string;
+  instructions: string;
+  focus_areas: string[];
+  evaluation_criteria: string[];
+  model_config?: ModelConfigInfo;
+}
+
+export interface PersonaInfo {
+  value: string;
+  label: string;
+  description: string;
+  llm_config?: ModelConfigInfo;
+}
+
+export interface PersonaCreateRequest {
+  name: string;
+  description: string;
+  instructions: string;
+  focus_areas: string[];
+  evaluation_criteria: string[];
+  llm_config?: ModelConfigInfo;
+}
+
+export interface PersonaUpdateRequest {
+  name?: string;
+  description?: string;
+  instructions?: string;
+  focus_areas?: string[];
+  evaluation_criteria?: string[];
+  llm_config?: ModelConfigInfo;
+}
+
+export interface PersonaGenerateRequest {
+  prompt: string;
+  provider_id?: string;
+}
+
+export interface PersonaRefineRequest {
+  prompt: string;
+  current_persona: PersonaConfig;
+  provider_id?: string;
+}

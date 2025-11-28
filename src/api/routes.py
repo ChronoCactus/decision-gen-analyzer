@@ -3,7 +3,7 @@
 import asyncio
 import io
 import json
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 from fastapi import (
     APIRouter,
@@ -1738,3 +1738,233 @@ async def delete_provider(provider_id: str):
         raise HTTPException(
             status_code=500, detail=f"Failed to delete provider: {str(e)}"
         )
+
+
+class PersonaCreateRequest(BaseModel):
+    """Request model for creating a new persona."""
+
+    name: str
+    description: str
+    instructions: str
+    focus_areas: List[str]
+    evaluation_criteria: List[str]
+    llm_config: Optional[ModelConfigInfo] = None
+
+
+class PersonaUpdateRequest(BaseModel):
+    """Request model for updating an existing persona."""
+
+    name: Optional[str] = None
+    description: Optional[str] = None
+    instructions: Optional[str] = None
+    focus_areas: Optional[List[str]] = None
+    evaluation_criteria: Optional[List[str]] = None
+    llm_config: Optional[ModelConfigInfo] = None
+
+
+class PersonaGenerateRequest(BaseModel):
+    """Request model for generating a persona from a prompt."""
+
+    prompt: str
+    provider_id: Optional[str] = None
+
+
+class PersonaRefineRequest(BaseModel):
+    """Request model for refining a persona using LLM."""
+
+    prompt: str
+    current_persona: Dict[str, Any]
+    provider_id: Optional[str] = None
+
+
+@adr_router.get("/personas/{name}")
+async def get_persona(name: str):
+    """Get a specific persona configuration."""
+    from src.persona_manager import get_persona_manager
+
+    manager = get_persona_manager()
+    config = manager.get_persona_config(name)
+    if not config:
+        raise HTTPException(status_code=404, detail="Persona not found")
+
+    return config.to_dict()
+
+
+@adr_router.post("/personas")
+async def create_persona(request: PersonaCreateRequest):
+    """Create a new persona."""
+    from src.persona_manager import ModelConfig, PersonaConfig, get_persona_manager
+
+    manager = get_persona_manager()
+
+    # Check if exists (using name as ID)
+    # Note: get_persona_config uses the value/filename, not the display name.
+    # We'll assume request.name is the identifier for now.
+    # Ideally we should separate ID (filename) from Name (display name).
+    # But existing code uses them somewhat interchangeably or uses filename as ID.
+    # Let's use a slugified version of name as ID if we want to be safe,
+    # but for now let's assume the user provides a valid filename-safe name
+    # or we just use it as is.
+    if manager.get_persona_config(request.name):
+        raise HTTPException(status_code=400, detail="Persona already exists")
+
+    model_config = None
+    if request.llm_config:
+        model_config = ModelConfig(**request.llm_config.model_dump())
+
+    config = PersonaConfig(
+        name=request.name,
+        description=request.description,
+        instructions=request.instructions,
+        focus_areas=request.focus_areas,
+        evaluation_criteria=request.evaluation_criteria,
+        model_config=model_config,
+    )
+
+    manager.save_persona(request.name, config)
+    return {"message": "Persona created successfully", "persona": config.to_dict()}
+
+
+@adr_router.put("/personas/{name}")
+async def update_persona(name: str, request: PersonaUpdateRequest):
+    """Update an existing persona."""
+    from src.persona_manager import ModelConfig, PersonaConfig, get_persona_manager
+
+    manager = get_persona_manager()
+    existing = manager.get_persona_config(name)
+    if not existing:
+        raise HTTPException(status_code=404, detail="Persona not found")
+
+    # Update fields
+    new_name = request.name or existing.name
+    description = request.description or existing.description
+    instructions = request.instructions or existing.instructions
+    focus_areas = (
+        request.focus_areas if request.focus_areas is not None else existing.focus_areas
+    )
+    evaluation_criteria = (
+        request.evaluation_criteria
+        if request.evaluation_criteria is not None
+        else existing.evaluation_criteria
+    )
+
+    model_config = existing.model_config
+    if request.llm_config:
+        model_config = ModelConfig(**request.llm_config.model_dump())
+
+    config = PersonaConfig(
+        name=new_name,
+        description=description,
+        instructions=instructions,
+        focus_areas=focus_areas,
+        evaluation_criteria=evaluation_criteria,
+        model_config=model_config,
+    )
+
+    # If name changed, we treat it as a rename (new file, delete old)
+    # Note: 'name' param is the old ID/filename. request.name is the new display name.
+    # If we use display name as ID, then ID changes.
+    # This is a bit fragile if name != filename.
+    # For this implementation, we assume ID == Name.
+
+    if request.name and request.name != name:
+        manager.save_persona(request.name, config)
+        manager.delete_persona(name)
+    else:
+        manager.save_persona(name, config)
+
+    return {"message": "Persona updated successfully", "persona": config.to_dict()}
+
+
+@adr_router.delete("/personas/{name}")
+async def delete_persona(name: str):
+    """Delete a persona."""
+    from src.persona_manager import get_persona_manager
+
+    manager = get_persona_manager()
+    if manager.delete_persona(name):
+        return {"message": "Persona deleted successfully"}
+    else:
+        raise HTTPException(
+            status_code=404, detail="Persona not found or cannot be deleted"
+        )
+
+
+@adr_router.post("/personas/generate")
+async def generate_persona(request: PersonaGenerateRequest):
+    """Generate a persona from a prompt."""
+    from src.llama_client import create_client_from_provider_id
+    from src.prompts import PERSONA_GENERATION_SYSTEM_PROMPT
+
+    # Create client
+    client_cm = await create_client_from_provider_id(request.provider_id)
+    async with client_cm as client:
+        # Construct prompt
+        messages = [
+            {"role": "system", "content": PERSONA_GENERATION_SYSTEM_PROMPT},
+            {
+                "role": "user",
+                "content": f"Create a persona based on this description: {request.prompt}",
+            },
+        ]
+
+        # Call LLM
+        response = await client.generate(messages=messages)
+
+        # Parse JSON
+        try:
+            # Clean up markdown code blocks if present
+            content = response.strip()
+            if content.startswith("```json"):
+                content = content[7:]
+            if content.startswith("```"):
+                content = content[3:]
+            if content.endswith("```"):
+                content = content[:-3]
+            content = content.strip()
+
+            data = json.loads(content)
+            return data
+        except json.JSONDecodeError:
+            logger.error(f"Failed to parse generated persona JSON: {response}")
+            raise HTTPException(
+                status_code=500, detail="Failed to generate valid JSON for persona"
+            )
+
+
+@adr_router.post("/personas/refine")
+async def refine_persona(request: PersonaRefineRequest):
+    """Refine a persona using LLM."""
+    from src.llama_client import create_client_from_provider_id
+    from src.prompts import PERSONA_REFINEMENT_SYSTEM_PROMPT
+
+    client_cm = await create_client_from_provider_id(request.provider_id)
+    async with client_cm as client:
+        messages = [
+            {"role": "system", "content": PERSONA_REFINEMENT_SYSTEM_PROMPT},
+            {
+                "role": "user",
+                "content": f"Current Persona:\n{json.dumps(request.current_persona, indent=2)}\n\nUser Request: {request.prompt}",
+            },
+        ]
+
+        response = await client.generate(messages=messages)
+
+        try:
+            content = response.strip()
+            if content.startswith("```json"):
+                content = content[7:]
+            if content.startswith("```"):
+                content = content[3:]
+            if content.endswith("```"):
+                content = content[:-3]
+            content = content.strip()
+
+            data = json.loads(content)
+            return data
+        except json.JSONDecodeError:
+            logger.error(f"Failed to parse refined persona JSON: {response}")
+            raise HTTPException(
+                status_code=500,
+                detail="Failed to generate valid JSON for persona refinement",
+            )

@@ -13,6 +13,7 @@
     "test:coverage": "vitest --coverage --run"
   },
   "dependencies": {
+    "diff": "^8.0.2",
     "next": "16.0.0",
     "react": "19.2.0",
     "react-dom": "19.2.0"
@@ -22,6 +23,7 @@
     "@testing-library/jest-dom": "^6.1.0",
     "@testing-library/react": "^16.0.0",
     "@testing-library/user-event": "^14.5.0",
+    "@types/diff": "^8.0.0",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",

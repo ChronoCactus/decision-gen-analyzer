@@ -446,6 +446,50 @@ class ApiClient {
       method: 'DELETE',
     });
   }
+
+  // ==================== Persona Management ====================
+
+  async getPersona(name: string): Promise<import('@/types/api').PersonaConfig> {
+    return this.request(`/api/v1/adrs/personas/${name}`);
+  }
+
+  async createPersona(request: import('@/types/api').PersonaCreateRequest): Promise<{ message: string; persona: import('@/types/api').PersonaConfig }> {
+    return this.request('/api/v1/adrs/personas', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(request),
+    });
+  }
+
+  async updatePersona(name: string, request: import('@/types/api').PersonaUpdateRequest): Promise<{ message: string; persona: import('@/types/api').PersonaConfig }> {
+    return this.request(`/api/v1/adrs/personas/${name}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(request),
+    });
+  }
+
+  async deletePersona(name: string): Promise<{ message: string }> {
+    return this.request(`/api/v1/adrs/personas/${name}`, {
+      method: 'DELETE',
+    });
+  }
+
+  async generatePersona(request: import('@/types/api').PersonaGenerateRequest): Promise<import('@/types/api').PersonaConfig> {
+    return this.request('/api/v1/adrs/personas/generate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(request),
+    });
+  }
+
+  async refinePersona(request: import('@/types/api').PersonaRefineRequest): Promise<import('@/types/api').PersonaConfig> {
+    return this.request('/api/v1/adrs/personas/refine', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(request),
+    });
+  }
 }
 
 export const apiClient = new ApiClient();

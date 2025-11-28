@@ -124,6 +124,49 @@ class TestLlamaCppClient:
             assert isinstance(response, str)
             assert len(response) > 0
 
+    @pytest.mark.asyncio
+    async def test_generate_with_prompt_only_real_mode(self):
+        """Test generate method with prompt only (no messages) in real mode.
+
+        This specifically tests the code path that failed with UnboundLocalError
+        when HumanMessage was imported inside the 'if messages:' block.
+        """
+        from unittest.mock import AsyncMock, MagicMock
+
+        # Use demo_mode=False to bypass the early return
+        # Use provider="openai" to avoid ChatOllama validation if possible,
+        # or just mock the internal _llm immediately.
+        async with LlamaCppClient(
+            demo_mode=False, provider="openai", api_key="test"
+        ) as client:
+            # Mock the internal LangChain client
+            mock_llm = AsyncMock()
+            mock_response = MagicMock()
+            mock_response.content = "Generated response"
+            mock_llm.ainvoke.return_value = mock_response
+
+            # Replace the real _llm with our mock
+            client._llm = mock_llm
+
+            # This call would fail with UnboundLocalError if the import is misplaced
+            response = await client.generate(prompt="Test prompt")
+
+            assert response == "Generated response"
+            # Verify ainvoke was called
+            mock_llm.ainvoke.assert_called_once()
+
+            # Verify the argument passed to ainvoke was a list containing a HumanMessage
+            call_args = mock_llm.ainvoke.call_args
+            assert call_args is not None
+            messages_arg = call_args[0][0]  # First arg is the list of messages
+            assert isinstance(messages_arg, list)
+            assert len(messages_arg) == 1
+
+            # We can check the class name of the message object
+            msg = messages_arg[0]
+            assert msg.__class__.__name__ == "HumanMessage"
+            assert msg.content == "Test prompt"
+
 
 class TestLlamaCppClientPool:
     """Test LlamaCppClientPool class."""
