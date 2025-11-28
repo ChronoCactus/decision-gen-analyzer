@@ -130,4 +130,61 @@ describe('SettingsModal', () => {
       expect(screen.getByText(/usually require '\/v1'/i)).toBeInTheDocument();
     });
   });
+
+  it('handles parallel request settings', async () => {
+    const user = userEvent.setup();
+    render(
+      <SettingsModal
+        onClose={() => { }}
+        interfaceSettings={mockInterfaceSettings}
+        onUpdateInterfaceSettings={mockUpdateInterfaceSettings}
+      />
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Ollama Local')).toBeInTheDocument();
+    });
+
+    // Click Add Provider
+    await user.click(screen.getByText('+ Add Provider'));
+
+    // Check for parallel requests checkbox
+    const parallelCheckbox = screen.getByLabelText(/Enable Parallel Requests/i);
+    expect(parallelCheckbox).toBeInTheDocument();
+    expect(parallelCheckbox).not.toBeChecked();
+
+    // Max parallel requests input should not be visible yet
+    expect(screen.queryByText(/Max Parallel Requests/i)).not.toBeInTheDocument();
+
+    // Enable parallel requests
+    await user.click(parallelCheckbox);
+    expect(parallelCheckbox).toBeChecked();
+
+    // Max parallel requests input should now be visible
+    const maxRequestsInput = screen.getByLabelText(/Max Parallel Requests/i);
+    expect(maxRequestsInput).toBeInTheDocument();
+    expect(maxRequestsInput).toHaveValue(2); // Default value
+
+    // Change max requests
+    // Note: The input enforces min=1, so clearing it resets to 1.
+    // We append 4 (making it 24) then delete the 2 to get 4.
+    await user.type(maxRequestsInput, '4{arrowleft}{backspace}');
+
+    // Fill out other required fields
+    await user.type(screen.getByLabelText(/^Name \*/i), 'Parallel Provider');
+    await user.type(screen.getByLabelText(/^Base URL \*/i), 'http://localhost:11434');
+    await user.type(screen.getByLabelText(/^Model Name \*/i), 'llama3');
+
+    // Submit form
+    await user.click(screen.getByText('Add Provider'));
+
+    // Verify API call
+    await waitFor(() => {
+      expect(apiClient.createProvider).toHaveBeenCalledWith(expect.objectContaining({
+        name: 'Parallel Provider',
+        parallel_requests_enabled: true,
+        max_parallel_requests: 4,
+      }));
+    });
+  });
 });

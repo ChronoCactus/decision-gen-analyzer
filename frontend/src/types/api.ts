@@ -250,6 +250,8 @@ export interface LLMProvider {
   temperature: number;
   num_ctx?: number;
   num_predict?: number;
+  parallel_requests_enabled: boolean;
+  max_parallel_requests: number;
   is_default: boolean;
   is_env_based: boolean;
   created_at: string;
@@ -265,6 +267,8 @@ export interface CreateProviderRequest {
   temperature?: number;
   num_ctx?: number;
   num_predict?: number;
+  parallel_requests_enabled?: boolean;
+  max_parallel_requests?: number;
   is_default?: boolean;
 }
 
@@ -277,6 +281,8 @@ export interface UpdateProviderRequest {
   temperature?: number;
   num_ctx?: number;
   num_predict?: number;
+  parallel_requests_enabled?: boolean;
+  max_parallel_requests?: number;
   is_default?: boolean;
 }
 
