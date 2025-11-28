@@ -11,6 +11,7 @@ from src.llama_client import (
     create_client_from_persona_config,
     create_client_from_provider_id,
 )
+from src.llm_provider_storage import get_provider_storage
 from src.logger import get_logger
 from src.models import (
     ADR,
@@ -1048,12 +1049,40 @@ class ADRGenerationService:
             config.model_config is not None for _, config in persona_configs
         )
 
-        if self.use_pool or has_custom_models:
+        # Check provider parallel settings
+        parallel_enabled = False
+        max_parallel = 2
+
+        storage = get_provider_storage()
+        if provider_id:
+            provider_config = await storage.get(provider_id)
+            if provider_config:
+                parallel_enabled = provider_config.parallel_requests_enabled
+                max_parallel = provider_config.max_parallel_requests
+        else:
+            # Check default provider
+            default_provider = await storage.get_default()
+            if default_provider:
+                parallel_enabled = default_provider.parallel_requests_enabled
+                max_parallel = default_provider.max_parallel_requests
+
+        should_run_parallel = self.use_pool or has_custom_models or parallel_enabled
+
+        if should_run_parallel:
+            # Determine concurrency limit
+            concurrency_limit = total_personas
+            if parallel_enabled and not self.use_pool and not has_custom_models:
+                concurrency_limit = max_parallel
+
             logger.info(
                 "Using parallel generation for persona perspectives",
                 persona_count=total_personas,
                 has_custom_models=has_custom_models,
+                provider_parallel_enabled=parallel_enabled,
+                concurrency_limit=concurrency_limit,
             )
+
+            semaphore = asyncio.Semaphore(concurrency_limit)
 
             # Create tasks with indices for parallel execution with progress tracking
             async def generate_with_index(
@@ -1061,10 +1090,11 @@ class ADRGenerationService:
             ) -> tuple[int, str]:
                 """Generate response and return with index for ordering."""
                 try:
-                    async with client:
-                        response = await client.generate(
-                            prompt=prompt_text, temperature=0.7, num_predict=2000
-                        )
+                    async with semaphore:
+                        async with client:
+                            response = await client.generate(
+                                prompt=prompt_text, temperature=0.7, num_predict=2000
+                            )
                     return (idx, response)
                 except Exception as e:
                     logger.warning(

@@ -22,6 +22,8 @@ type ProviderFormData = {
   temperature: number;
   num_ctx: number | null;
   num_predict: number | null;
+  parallel_requests_enabled: boolean;
+  max_parallel_requests: number;
   is_default: boolean;
 };
 
@@ -44,6 +46,8 @@ export function SettingsModal({ onClose, interfaceSettings, onUpdateInterfaceSet
     temperature: 0.7,
     num_ctx: null,
     num_predict: null,
+    parallel_requests_enabled: false,
+    max_parallel_requests: 2,
     is_default: false,
   });
   const [isSaving, setIsSaving] = useState(false);
@@ -123,6 +127,8 @@ export function SettingsModal({ onClose, interfaceSettings, onUpdateInterfaceSet
       temperature: 0.7,
       num_ctx: null,
       num_predict: null,
+      parallel_requests_enabled: false,
+      max_parallel_requests: 2,
       is_default: false,
     });
     setEditingProvider(null);
@@ -139,6 +145,8 @@ export function SettingsModal({ onClose, interfaceSettings, onUpdateInterfaceSet
       temperature: provider.temperature,
       num_ctx: provider.num_ctx || null,
       num_predict: provider.num_predict || null,
+      parallel_requests_enabled: provider.parallel_requests_enabled || false,
+      max_parallel_requests: provider.max_parallel_requests || 2,
       is_default: provider.is_default,
     });
     setEditingProvider(provider);
@@ -157,6 +165,8 @@ export function SettingsModal({ onClose, interfaceSettings, onUpdateInterfaceSet
       temperature: 0.7,
       num_ctx: null,
       num_predict: null,
+      parallel_requests_enabled: false,
+      max_parallel_requests: 2,
       is_default: false,
     });
   };
@@ -176,6 +186,8 @@ export function SettingsModal({ onClose, interfaceSettings, onUpdateInterfaceSet
         temperature: formData.temperature,
         ...(formData.num_ctx ? { num_ctx: formData.num_ctx } : {}),
         ...(formData.num_predict ? { num_predict: formData.num_predict } : {}),
+        parallel_requests_enabled: formData.parallel_requests_enabled,
+        max_parallel_requests: formData.max_parallel_requests,
         is_default: formData.is_default,
       };
 
@@ -442,6 +454,43 @@ export function SettingsModal({ onClose, interfaceSettings, onUpdateInterfaceSet
                         placeholder="Optional"
                       />
                     </div>
+
+                    <div className="col-span-2 border-t border-gray-200 dark:border-gray-700 pt-4 mt-2">
+                      <h5 className="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-3">Parallel Processing</h5>
+                      <div className="flex items-start gap-4">
+                        <div className="flex-1">
+                          <label className="flex items-center mb-2">
+                            <input
+                              type="checkbox"
+                              checked={formData.parallel_requests_enabled}
+                              onChange={(e) => setFormData({ ...formData, parallel_requests_enabled: e.target.checked })}
+                              className="mr-2"
+                            />
+                            <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Enable Parallel Requests</span>
+                          </label>
+                          <p className="text-xs text-gray-500 dark:text-gray-400">
+                            Allow multiple persona generation requests to run simultaneously on this provider.
+                          </p>
+                        </div>
+
+                        {formData.parallel_requests_enabled && (
+                          <div className="w-48">
+                            <label htmlFor="max-parallel-requests" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                              Max Parallel Requests
+                            </label>
+                            <input
+                              id="max-parallel-requests"
+                              type="number"
+                              min="1"
+                              max="10"
+                              value={formData.max_parallel_requests}
+                              onChange={(e) => setFormData({ ...formData, max_parallel_requests: Math.max(1, parseInt(e.target.value) || 1) })}
+                              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                            />
+                          </div>
+                        )}
+                      </div>
+                    </div>
                   </div>
 
                   <div className="mt-4">
@@ -522,6 +571,11 @@ export function SettingsModal({ onClose, interfaceSettings, onUpdateInterfaceSet
                               {provider.num_ctx && (
                                 <div>
                                   <span className="font-medium">Context:</span> {provider.num_ctx}
+                                </div>
+                              )}
+                              {provider.parallel_requests_enabled && (
+                                <div>
+                                  <span className="font-medium">Parallel:</span> {provider.max_parallel_requests} requests
                                 </div>
                               )}
                               {provider.has_api_key && (

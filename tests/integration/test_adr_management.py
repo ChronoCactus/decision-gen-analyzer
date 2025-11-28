@@ -460,9 +460,17 @@ class TestADRGenerationService:
             evaluation_criteria=["test"],
         )
 
-        result = await generation_service.generate_adr(
-            sample_generation_prompt, personas=["technical_lead"]
-        )
+        from unittest.mock import patch
+
+        with patch("src.adr_generation.get_provider_storage") as mock_get_storage:
+            mock_storage = AsyncMock()
+            mock_get_storage.return_value = mock_storage
+            mock_storage.get.return_value = None
+            mock_storage.get_default.return_value = None
+
+            result = await generation_service.generate_adr(
+                sample_generation_prompt, personas=["technical_lead"]
+            )
 
         assert isinstance(result, ADRGenerationResult)
         assert result.generated_title == sample_generation_prompt.title
