@@ -42,6 +42,12 @@ class LLMProviderConfig(BaseModel):
     num_predict: Optional[int] = Field(
         default=None, description="Max tokens to predict"
     )
+    parallel_requests_enabled: bool = Field(
+        default=False, description="Enable parallel requests"
+    )
+    max_parallel_requests: int = Field(
+        default=2, description="Maximum number of parallel requests"
+    )
     is_default: bool = Field(
         default=False, description="Whether this is the default provider"
     )
@@ -63,6 +69,8 @@ class CreateProviderRequest(BaseModel):
     temperature: float = 0.7
     num_ctx: Optional[int] = None
     num_predict: Optional[int] = None
+    parallel_requests_enabled: bool = False
+    max_parallel_requests: int = 2
     is_default: bool = False
 
 
@@ -77,6 +85,8 @@ class UpdateProviderRequest(BaseModel):
     temperature: Optional[float] = None
     num_ctx: Optional[int] = None
     num_predict: Optional[int] = None
+    parallel_requests_enabled: Optional[bool] = None
+    max_parallel_requests: Optional[int] = None
     is_default: Optional[bool] = None
 
 
@@ -92,6 +102,8 @@ class ProviderResponse(BaseModel):
     temperature: float
     num_ctx: Optional[int] = None
     num_predict: Optional[int] = None
+    parallel_requests_enabled: bool
+    max_parallel_requests: int
     is_default: bool
     is_env_based: bool
     created_at: str
@@ -217,6 +229,8 @@ class LLMProviderStorage:
                 temperature=config.temperature,
                 num_ctx=config.num_ctx,
                 num_predict=config.num_predict,
+                parallel_requests_enabled=config.parallel_requests_enabled,
+                max_parallel_requests=config.max_parallel_requests,
                 is_default=config.is_default,
                 is_env_based=config.is_env_based,
                 created_at=config.created_at,
@@ -266,6 +280,8 @@ class LLMProviderStorage:
             temperature=request.temperature,
             num_ctx=request.num_ctx,
             num_predict=request.num_predict,
+            parallel_requests_enabled=request.parallel_requests_enabled,
+            max_parallel_requests=request.max_parallel_requests,
             is_default=request.is_default,
             is_env_based=False,
         )
@@ -285,6 +301,8 @@ class LLMProviderStorage:
             temperature=config.temperature,
             num_ctx=config.num_ctx,
             num_predict=config.num_predict,
+            parallel_requests_enabled=config.parallel_requests_enabled,
+            max_parallel_requests=config.max_parallel_requests,
             is_default=config.is_default,
             is_env_based=config.is_env_based,
             created_at=config.created_at,
@@ -324,6 +342,10 @@ class LLMProviderStorage:
             config.num_ctx = request.num_ctx
         if request.num_predict is not None:
             config.num_predict = request.num_predict
+        if request.parallel_requests_enabled is not None:
+            config.parallel_requests_enabled = request.parallel_requests_enabled
+        if request.max_parallel_requests is not None:
+            config.max_parallel_requests = request.max_parallel_requests
 
         # Handle default flag
         if request.is_default is not None and request.is_default:
@@ -349,6 +371,8 @@ class LLMProviderStorage:
             temperature=config.temperature,
             num_ctx=config.num_ctx,
             num_predict=config.num_predict,
+            parallel_requests_enabled=config.parallel_requests_enabled,
+            max_parallel_requests=config.max_parallel_requests,
             is_default=config.is_default,
             is_env_based=config.is_env_based,
             created_at=config.created_at,
@@ -391,6 +415,8 @@ class LLMProviderStorage:
                     temperature=config.temperature,
                     num_ctx=config.num_ctx,
                     num_predict=config.num_predict,
+                    parallel_requests_enabled=config.parallel_requests_enabled,
+                    max_parallel_requests=config.max_parallel_requests,
                     is_default=config.is_default,
                     is_env_based=config.is_env_based,
                     created_at=config.created_at,
@@ -410,6 +436,8 @@ class LLMProviderStorage:
                     temperature=config.temperature,
                     num_ctx=config.num_ctx,
                     num_predict=config.num_predict,
+                    parallel_requests_enabled=config.parallel_requests_enabled,
+                    max_parallel_requests=config.max_parallel_requests,
                     is_default=config.is_default,
                     is_env_based=config.is_env_based,
                     created_at=config.created_at,
@@ -439,6 +467,10 @@ class LLMProviderStorage:
             env_provider.temperature = settings.llm_temperature
             env_provider.num_ctx = settings.ollama_num_ctx
             env_provider.num_predict = settings.ollama_num_predict
+            env_provider.parallel_requests_enabled = (
+                settings.llm_parallel_requests_enabled
+            )
+            env_provider.max_parallel_requests = settings.llm_max_parallel_requests
             env_provider.updated_at = datetime.utcnow().isoformat()
         else:
             # Create new
@@ -452,6 +484,8 @@ class LLMProviderStorage:
                 temperature=settings.llm_temperature,
                 num_ctx=settings.ollama_num_ctx,
                 num_predict=settings.ollama_num_predict,
+                parallel_requests_enabled=settings.llm_parallel_requests_enabled,
+                max_parallel_requests=settings.llm_max_parallel_requests,
                 is_default=True,
                 is_env_based=True,
             )

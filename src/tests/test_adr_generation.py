@@ -75,9 +75,15 @@ class TestADRGenerationService:
             patch(
                 "src.adr_generation.create_client_from_provider_id"
             ) as mock_provider_factory,
+            patch("src.adr_generation.get_provider_storage") as mock_get_storage,
         ):
             mock_factory.return_value = mock_llama_client
             mock_provider_factory.return_value = mock_llama_client
+
+            mock_storage = AsyncMock()
+            mock_get_storage.return_value = mock_storage
+            mock_storage.get.return_value = None
+            mock_storage.get_default.return_value = None
 
             service = ADRGenerationService(
                 mock_llama_client, mock_lightrag_client, mock_persona_manager
@@ -98,18 +104,29 @@ class TestADRGenerationService:
         mock_persona_manager,
         generation_prompt,
     ):
-        """Test ADR generation with personas."""
-        # Mock the client factory to return our mock client
-        with patch(
-            "src.adr_generation.create_client_from_persona_config"
-        ) as mock_factory:
+        """Test ADR generation with specific personas."""
+        personas = ["technical_lead", "business_analyst"]
+
+        with (
+            patch(
+                "src.adr_generation.create_client_from_persona_config"
+            ) as mock_factory,
+            patch(
+                "src.adr_generation.create_client_from_provider_id"
+            ) as mock_provider_factory,
+            patch("src.adr_generation.get_provider_storage") as mock_get_storage,
+        ):
             mock_factory.return_value = mock_llama_client
+            mock_provider_factory.return_value = mock_llama_client
+
+            mock_storage = AsyncMock()
+            mock_get_storage.return_value = mock_storage
+            mock_storage.get.return_value = None
+            mock_storage.get_default.return_value = None
 
             service = ADRGenerationService(
                 mock_llama_client, mock_lightrag_client, mock_persona_manager
             )
-
-            personas = ["technical_lead", "business_analyst"]
 
             result = await service.generate_adr(generation_prompt, personas=personas)
 
@@ -140,9 +157,15 @@ class TestADRGenerationService:
             patch(
                 "src.adr_generation.create_client_from_provider_id"
             ) as mock_provider_factory,
+            patch("src.adr_generation.get_provider_storage") as mock_get_storage,
         ):
             mock_factory.return_value = mock_llama_client
             mock_provider_factory.return_value = mock_llama_client
+
+            mock_storage = AsyncMock()
+            mock_get_storage.return_value = mock_storage
+            mock_storage.get.return_value = None
+            mock_storage.get_default.return_value = None
 
             service = ADRGenerationService(
                 mock_llama_client, mock_lightrag_client, mock_persona_manager
@@ -161,11 +184,9 @@ class TestADRGenerationService:
         mock_persona_manager,
         generation_prompt,
     ):
-        """Test generation handles LLM errors gracefully."""
-        # Make generate raise an exception
-        mock_llama_client.generate = AsyncMock(side_effect=Exception("LLM Error"))
+        """Test error handling during generation."""
+        mock_llama_client.generate.side_effect = Exception("LLM Error")
 
-        # Mock the client factory functions to return our mock client
         with (
             patch(
                 "src.adr_generation.create_client_from_persona_config"
@@ -173,9 +194,15 @@ class TestADRGenerationService:
             patch(
                 "src.adr_generation.create_client_from_provider_id"
             ) as mock_provider_factory,
+            patch("src.adr_generation.get_provider_storage") as mock_get_storage,
         ):
             mock_factory.return_value = mock_llama_client
             mock_provider_factory.return_value = mock_llama_client
+
+            mock_storage = AsyncMock()
+            mock_get_storage.return_value = mock_storage
+            mock_storage.get.return_value = None
+            mock_storage.get_default.return_value = None
 
             service = ADRGenerationService(
                 mock_llama_client, mock_lightrag_client, mock_persona_manager

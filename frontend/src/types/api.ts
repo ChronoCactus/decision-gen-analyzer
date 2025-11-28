@@ -250,6 +250,8 @@ export interface LLMProvider {
   temperature: number;
   num_ctx?: number;
   num_predict?: number;
+  parallel_requests_enabled: boolean;
+  max_parallel_requests: number;
   is_default: boolean;
   is_env_based: boolean;
   created_at: string;
@@ -265,6 +267,8 @@ export interface CreateProviderRequest {
   temperature?: number;
   num_ctx?: number;
   num_predict?: number;
+  parallel_requests_enabled?: boolean;
+  max_parallel_requests?: number;
   is_default?: boolean;
 }
 
@@ -277,9 +281,65 @@ export interface UpdateProviderRequest {
   temperature?: number;
   num_ctx?: number;
   num_predict?: number;
+  parallel_requests_enabled?: boolean;
+  max_parallel_requests?: number;
   is_default?: boolean;
 }
 
 export interface ProvidersListResponse {
   providers: LLMProvider[];
+}
+
+// Persona Management types
+export interface ModelConfigInfo {
+  name: string;
+  provider?: string;
+  base_url?: string;
+  temperature?: number;
+  num_ctx?: number;
+}
+
+export interface PersonaConfig {
+  name: string;
+  description: string;
+  instructions: string;
+  focus_areas: string[];
+  evaluation_criteria: string[];
+  model_config?: ModelConfigInfo;
+}
+
+export interface PersonaInfo {
+  value: string;
+  label: string;
+  description: string;
+  llm_config?: ModelConfigInfo;
+}
+
+export interface PersonaCreateRequest {
+  name: string;
+  description: string;
+  instructions: string;
+  focus_areas: string[];
+  evaluation_criteria: string[];
+  llm_config?: ModelConfigInfo;
+}
+
+export interface PersonaUpdateRequest {
+  name?: string;
+  description?: string;
+  instructions?: string;
+  focus_areas?: string[];
+  evaluation_criteria?: string[];
+  llm_config?: ModelConfigInfo;
+}
+
+export interface PersonaGenerateRequest {
+  prompt: string;
+  provider_id?: string;
+}
+
+export interface PersonaRefineRequest {
+  prompt: string;
+  current_persona: PersonaConfig;
+  provider_id?: string;
 }
