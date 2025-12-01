@@ -170,8 +170,8 @@ export interface ExportRequest {
 export interface ImportResponse {
   message: string;
   imported_count: number;
-  skipped_count?: number;
-  errors?: string[];
+  skipped_count: number;
+  errors: string[];
   imported_ids?: string[];
 }
 
