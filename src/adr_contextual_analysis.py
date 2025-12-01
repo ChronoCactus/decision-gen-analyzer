@@ -256,7 +256,7 @@ class ContextualAnalysisService:
         Returns:
             Conflict analysis results
         """
-        prompt = f"""Analyze if these two Architectural Decision Records have conflicts or contradictions.
+        prompt = f"""Analyze if these two Decision Records have conflicts or contradictions.
 
 ADR 1:
 Title: {adr1.metadata.title}
