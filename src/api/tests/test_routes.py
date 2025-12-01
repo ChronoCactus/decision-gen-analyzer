@@ -143,9 +143,8 @@ class TestADRRoutes:
         # Endpoint may not be fully implemented, accept various codes
         assert response.status_code in [200, 404, 405]
 
-    @patch("src.lightrag_client.LightRAGClient")
     @patch("src.adr_file_storage.get_adr_storage")
-    def test_delete_adr(self, mock_get_storage, mock_rag_client):
+    def test_delete_adr(self, mock_get_storage):
         """Test deleting an ADR."""
         mock_storage = MagicMock()
         mock_storage.delete_adr.return_value = True

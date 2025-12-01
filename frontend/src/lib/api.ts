@@ -1,4 +1,10 @@
-import { ADR, ADRListResponse, AnalyzeADRRequest, GenerateADRRequest, RefinePersonasRequest, RefineOriginalPromptRequest, TaskResponse, TaskStatus, Persona, DefaultModelConfig } from '@/types/api';
+import {
+  ADR, ADRListResponse, AnalyzeADRRequest, GenerateADRRequest, RefinePersonasRequest, RefineOriginalPromptRequest,
+  TaskResponse, TaskStatus, Persona, DefaultModelConfig,
+  ProvidersListResponse, LLMProvider, CreateProviderRequest, UpdateProviderRequest,
+  PersonaConfig, PersonaCreateRequest, PersonaUpdateRequest, PersonaGenerateRequest, PersonaRefineRequest,
+  ExportRequest, ImportResponse, ExportFormat
+} from '@/types/api';
 
 const DEFAULT_API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
@@ -240,7 +246,7 @@ class ApiClient {
   }
 
   // Export/Import operations
-  async exportSingleADR(adrId: string, format: string = 'versioned_json'): Promise<Blob> {
+  async exportSingleADR(adrId: string, format: ExportFormat | string = ExportFormat.VERSIONED_JSON): Promise<Blob> {
     await this.fetchConfig();
     const url = `${this.apiBaseUrl}/api/v1/adrs/${adrId}/export?format=${format}`;
     const response = await fetch(url);
@@ -252,18 +258,21 @@ class ApiClient {
     return response.blob();
   }
 
-  async exportAllADRs(format: string = 'versioned_json', adrIds?: string[]): Promise<Blob> {
+  async exportAllADRs(format: ExportFormat | string = ExportFormat.VERSIONED_JSON, adrIds?: string[]): Promise<Blob> {
     await this.fetchConfig();
     const url = `${this.apiBaseUrl}/api/v1/adrs/export`;
+
+    const requestBody: ExportRequest = {
+      format,
+      adr_ids: adrIds,
+    };
+
     const response = await fetch(url, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({
-        format,
-        adr_ids: adrIds,
-      }),
+      body: JSON.stringify(requestBody),
     });
 
     if (!response.ok) {
@@ -273,19 +282,13 @@ class ApiClient {
     return response.blob();
   }
 
-  async importADRsFromFiles(files: File[], overwriteExisting: boolean = false): Promise<{
-    message: string;
-    imported_count: number;
-    skipped_count: number;
-    errors: string[];
-    imported_ids: string[];
-  }> {
-    const results = {
+  async importADRsFromFiles(files: File[], overwriteExisting: boolean = false): Promise<ImportResponse> {
+    const results: ImportResponse = {
       message: '',
       imported_count: 0,
       skipped_count: 0,
-      errors: [] as string[],
-      imported_ids: [] as string[],
+      errors: [],
+      imported_ids: [],
     };
 
     for (const file of files) {
@@ -304,13 +307,17 @@ class ApiClient {
           throw new Error(`Import failed for ${file.name}: ${response.status} ${response.statusText}`);
         }
 
-        const result = await response.json();
+        const result: ImportResponse = await response.json();
         results.imported_count += result.imported_count;
-        results.skipped_count += result.skipped_count;
-        results.errors.push(...result.errors.map((e: string) => `${file.name}: ${e}`));
-        results.imported_ids.push(...(result.imported_ids || []));
+        results.skipped_count = (results.skipped_count || 0) + (result.skipped_count || 0);
+        if (result.errors) {
+          results.errors = [...(results.errors || []), ...result.errors.map((e: string) => `${file.name}: ${e}`)];
+        }
+        if (result.imported_ids) {
+          results.imported_ids = [...(results.imported_ids || []), ...result.imported_ids];
+        }
       } catch (error) {
-        results.errors.push(`${file.name}: ${error instanceof Error ? error.message : 'Unknown error'}`);
+        results.errors = [...(results.errors || []), `${file.name}: ${error instanceof Error ? error.message : 'Unknown error'}`];
       }
     }
 
@@ -403,19 +410,19 @@ class ApiClient {
 
   // ==================== LLM Provider Management ====================
 
-  async listProviders(): Promise<import('@/types/api').ProvidersListResponse> {
+  async listProviders(): Promise<ProvidersListResponse> {
     return this.request('/api/v1/llm-providers');
   }
 
-  async getProvider(providerId: string): Promise<import('@/types/api').LLMProvider> {
+  async getProvider(providerId: string): Promise<LLMProvider> {
     return this.request(`/api/v1/llm-providers/${providerId}`);
   }
 
-  async getDefaultProvider(): Promise<import('@/types/api').LLMProvider | null> {
+  async getDefaultProvider(): Promise<LLMProvider | null> {
     return this.request('/api/v1/llm-providers/default');
   }
 
-  async createProvider(request: import('@/types/api').CreateProviderRequest): Promise<import('@/types/api').LLMProvider> {
+  async createProvider(request: CreateProviderRequest): Promise<LLMProvider> {
     return this.request('/api/v1/llm-providers', {
       method: 'POST',
       headers: {
@@ -427,8 +434,8 @@ class ApiClient {
 
   async updateProvider(
     providerId: string,
-    request: import('@/types/api').UpdateProviderRequest
-  ): Promise<import('@/types/api').LLMProvider> {
+    request: UpdateProviderRequest
+  ): Promise<LLMProvider> {
     return this.request(`/api/v1/llm-providers/${providerId}`, {
       method: 'PUT',
       headers: {
@@ -449,11 +456,11 @@ class ApiClient {
 
   // ==================== Persona Management ====================
 
-  async getPersona(name: string): Promise<import('@/types/api').PersonaConfig> {
+  async getPersona(name: string): Promise<PersonaConfig> {
     return this.request(`/api/v1/adrs/personas/${name}`);
   }
 
-  async createPersona(request: import('@/types/api').PersonaCreateRequest): Promise<{ message: string; persona: import('@/types/api').PersonaConfig }> {
+  async createPersona(request: PersonaCreateRequest): Promise<{ message: string; persona: PersonaConfig }> {
     return this.request('/api/v1/adrs/personas', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -461,7 +468,7 @@ class ApiClient {
     });
   }
 
-  async updatePersona(name: string, request: import('@/types/api').PersonaUpdateRequest): Promise<{ message: string; persona: import('@/types/api').PersonaConfig }> {
+  async updatePersona(name: string, request: PersonaUpdateRequest): Promise<{ message: string; persona: PersonaConfig }> {
     return this.request(`/api/v1/adrs/personas/${name}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
@@ -475,7 +482,7 @@ class ApiClient {
     });
   }
 
-  async generatePersona(request: import('@/types/api').PersonaGenerateRequest): Promise<import('@/types/api').PersonaConfig> {
+  async generatePersona(request: PersonaGenerateRequest): Promise<PersonaConfig> {
     return this.request('/api/v1/adrs/personas/generate', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -483,7 +490,7 @@ class ApiClient {
     });
   }
 
-  async refinePersona(request: import('@/types/api').PersonaRefineRequest): Promise<import('@/types/api').PersonaConfig> {
+  async refinePersona(request: PersonaRefineRequest): Promise<PersonaConfig> {
     return this.request('/api/v1/adrs/personas/refine', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
