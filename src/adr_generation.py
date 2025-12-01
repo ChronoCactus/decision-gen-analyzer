@@ -23,6 +23,7 @@ from src.models import (
     PersonaSynthesisInput,
 )
 from src.persona_manager import PersonaConfig, PersonaManager
+from src.prompts import ADR_SYNTHESIS_SYSTEM_PROMPT
 
 logger = get_logger(__name__)
 
@@ -828,7 +829,7 @@ class ADRGenerationService:
             all_entities = []
             all_relationships = []
 
-            related_context.append("**Related Architectural Decision Records (ADRs):**")
+            related_context.append("**Related Decision Records:**")
             for doc in documents:
                 # Extract structured data if available (entities and relationships)
                 if "structured_data" in doc:
@@ -1539,57 +1540,17 @@ Ensure your response is practical, considers the constraints, and reflects your 
             ]
         )
 
-        return f"""You are synthesizing multiple expert perspectives into a comprehensive Architectural Decision Record (ADR).
+        related_context_str = (
+            "\n".join(related_context) if related_context else "None available"
+        )
 
-**Original Request**:
-Title: {prompt.title}
-Problem: {prompt.problem_statement}
-Context: {prompt.context}
-
-**Expert Perspectives**:
-{perspectives_str}
-
->>>>>Related Context>>>>>
-{chr(10).join(related_context) if related_context else "None available"}
-<<<<<End Related Context<<<<<
-
-Based on these perspectives, create a complete ADR. You must respond with a JSON object containing:
-
-{{
-  "title": "Clear, descriptive ADR title (update if the problem statement has changed)",
-  "context_and_problem": "Comprehensive context and problem statement",
-  "considered_options": [
-    {{
-      "option_name": "Name of option 1",
-      "description": "Description of option 1",
-      "pros": ["pro 1", "pro 2", "..."],
-      "cons": ["con 1", "con 2", "..."]
-    }},
-    {{
-      "option_name": "Name of option 2",
-      "description": "Description of option 2",
-      "pros": ["pro 1", "pro 2", "..."],
-      "cons": ["con 1", "con 2", "..."]
-    }}
-  ],
-  "decision_outcome": "The chosen option and detailed justification",
-  "consequences": {{
-    "positive": ["positive point", "positive point", "..."],
-    "negative": ["negative point", "negative point", "..."]
-  }},
-  "decision_drivers": ["driver1", "driver2", "driver3"],
-  "confidence_score": 0.85
-}}
-
-**CRITICAL FORMATTING RULES**:
-1. Each item in "pros", "cons", "positive" and "negative" arrays MUST be a single, brief and to the point complete sentence
-2. Each array is not limited to only 2-3 items; include all relevant points - ensure only relevant points are included.
-3. Do NOT use bullet points (-, •, *) inside array items
-4. Do NOT concatenate multiple items into one string
-5. Each item should be a separate string in the array
-6. The "consequences" field MUST be an object with "positive" and "negative" arrays
-
-Ensure the ADR is well-structured, balanced, and considers all perspectives."""
+        return ADR_SYNTHESIS_SYSTEM_PROMPT.format(
+            title=prompt.title,
+            problem_statement=prompt.problem_statement,
+            context=prompt.context,
+            perspectives_str=perspectives_str,
+            related_context_str=related_context_str,
+        )
 
     def _clean_list_items(self, items: List[str]) -> List[str]:
         """Clean up list items that may have concatenated bullet points.
@@ -1799,7 +1760,7 @@ Ensure the ADR is well-structured, balanced, and considers all perspectives."""
         if not text or len(text.strip()) < 10:
             return text
 
-        polish_prompt = f"""Polish the formatting of the following text for an Architectural Decision Record.
+        polish_prompt = f"""Polish the formatting of the following text for a Decision Record.
 
 **CRITICAL FORMATTING RULES**:
 1. Each bullet point should be on its own line starting with "- "
