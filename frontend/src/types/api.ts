@@ -167,23 +167,12 @@ export interface ExportRequest {
   exported_by?: string;
 }
 
-export interface ExportResponse {
-  message: string;
-  count: number;
-  format: string;
-  download_ready?: boolean;
-}
-
-export interface ImportRequest {
-  data: any;
-  overwrite_existing?: boolean;
-}
-
 export interface ImportResponse {
   message: string;
   imported_count: number;
   skipped_count?: number;
   errors?: string[];
+  imported_ids?: string[];
 }
 
 export interface ExportSchemaMetadata {
@@ -229,11 +218,13 @@ export interface ADRExportV1 {
   persona_responses?: any[];
 }
 
+/** @public */
 export interface SingleADRExport {
   schema: ExportSchemaMetadata;
   adr: ADRExportV1;
 }
 
+/** @public */
 export interface BulkADRExport {
   schema: ExportSchemaMetadata;
   adrs: ADRExportV1[];

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 
-export type UploadStatus = 'processing' | 'completed' | 'failed' | null;
+type UploadStatus = 'processing' | 'completed' | 'failed' | null;
 
 interface UploadStatusInfo {
   status: UploadStatus;

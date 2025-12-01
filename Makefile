@@ -31,6 +31,7 @@ help:
 	@echo "  test-coverage-frontend    - Run frontend tests with coverage"
 	@echo "  install-frontend-deps     - Install frontend test dependencies"
 	@echo "  clean                     - Clean up cache files and build artifacts"
+	@echo "  dead-code-clean           - Find dead code in backend (vulture) and frontend (knip)"
 	@echo ""
 	@echo "Docker targets:"
 	@echo "  docker-build                 - Build Docker images (backend + frontend)"
@@ -323,3 +324,9 @@ lint-frontend:
 	cd frontend && npm run lint -- --fix
 
 lint: lint-backend lint-frontend
+
+dead-code-clean:
+	@echo "Checking for dead code in backend (vulture)..."
+	vulture src/ --min-confidence 100
+	@echo "Checking for dead code in frontend (knip)..."
+	cd frontend && npm run knip
