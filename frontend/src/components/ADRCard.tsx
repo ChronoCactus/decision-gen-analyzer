@@ -378,6 +378,7 @@ export function ADRCard({ adr, onAnalyze, onDelete, onPushToRAG, onExport, cache
       {showDeleteModal && (
         <DeleteConfirmationModal
           adrTitle={currentAdr.metadata.title}
+          recordType={currentAdr.metadata.record_type}
           onConfirm={handleDelete}
           onCancel={() => setShowDeleteModal(false)}
           isDeleting={isDeleting}
