@@ -4,6 +4,7 @@ import { useEscapeKey } from '@/hooks/useEscapeKey';
 
 interface DeleteConfirmationModalProps {
   adrTitle: string;
+  recordType?: 'decision' | 'principle';
   onConfirm: () => void;
   onCancel: () => void;
   isDeleting: boolean;
@@ -11,10 +12,13 @@ interface DeleteConfirmationModalProps {
 
 export function DeleteConfirmationModal({
   adrTitle,
+  recordType = 'decision',
   onConfirm,
   onCancel,
   isDeleting,
 }: DeleteConfirmationModalProps) {
+  const recordLabel = recordType === 'principle' ? 'Principle' : 'Decision';
+
   // Close with ESC key (unless we're in the middle of deleting)
   useEscapeKey(onCancel, !isDeleting);
 
@@ -39,18 +43,18 @@ export function DeleteConfirmationModal({
               </svg>
             </div>
             <h3 className="ml-4 text-lg font-semibold text-gray-900 dark:text-gray-100">
-              Delete ADR
+              Delete {recordLabel}
             </h3>
           </div>
 
           <p className="text-gray-600 dark:text-gray-400 mb-2">
-            Are you sure you want to delete this ADR?
+            Are you sure you want to delete this {recordLabel.toLowerCase()}?
           </p>
           <p className="text-sm text-gray-700 dark:text-gray-300 font-medium mb-4 p-3 bg-gray-50 dark:bg-gray-700 rounded-md">
             &quot;{adrTitle}&quot;
           </p>
           <p className="text-sm text-gray-600 dark:text-gray-400 mb-6">
-            This action will delete the ADR from local storage and from LightRAG (if it exists there). 
+            This action will delete the {recordLabel.toLowerCase()} from local storage and from LightRAG (if it exists there). 
             This action cannot be undone.
           </p>
 
@@ -67,7 +71,7 @@ export function DeleteConfirmationModal({
               disabled={isDeleting}
               className="px-4 py-2 text-white bg-red-600 rounded-md hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
-              {isDeleting ? 'Deleting...' : 'Delete ADR'}
+              {isDeleting ? 'Deleting...' : `Delete ${recordLabel}`}
             </button>
           </div>
         </div>

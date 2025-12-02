@@ -374,7 +374,7 @@ export function GenerateADRModal({ onClose, onGenerate, isGenerating, generation
                   <span className="text-white">
                     {isGenerating
                       ? `Generating... ${elapsedTime > 0 ? `(${elapsedTime}s)` : ''}`
-                      : 'Generate ADR'}
+                      : 'Generate'}
                   </span>
                   {!isGenerating && (isMac || isWin) && (
                     <>
