@@ -201,6 +201,7 @@ class ADRStorageService:
             "updated_at": adr.metadata.updated_at.isoformat(),
             "author": adr.metadata.author,
             "tags": adr.metadata.tags or [],
+            "record_type": adr.metadata.record_type,
             "related_adrs": [str(adr_id) for adr_id in adr.metadata.related_adrs],
         }
 
@@ -220,6 +221,7 @@ class ADRStorageService:
             updated_at=metadata["updated_at"],
             author=metadata.get("author"),
             tags=metadata.get("tags", []),
+            record_type=metadata.get("record_type", "decision"),
             related_adrs=[UUID(adr_id) for adr_id in metadata.get("related_adrs", [])],
         )
 

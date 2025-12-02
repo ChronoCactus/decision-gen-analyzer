@@ -50,6 +50,7 @@ class GenerateADRRequest(BaseModel):
     personas: Optional[List[str]] = None  # List of persona names
     retrieval_mode: Optional[str] = "naive"  # RAG retrieval mode
     provider_id: Optional[str] = None  # Optional LLM provider ID
+    record_type: Optional[str] = "decision"
 
 
 class PersonaRefinementItem(BaseModel):
@@ -873,6 +874,7 @@ async def generate_adr(request: GenerateADRRequest, background_tasks: Background
             personas=request.personas or [],
             retrieval_mode=request.retrieval_mode or "naive",
             provider_id=request.provider_id,
+            record_type=request.record_type,
         )
 
         return TaskResponse(

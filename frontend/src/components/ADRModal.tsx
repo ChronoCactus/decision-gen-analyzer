@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { ADR, ADRStatus, PersonaRefinementItem } from '@/types/api';
 import { PersonasModal } from './PersonasModal';
+import { HoverCard } from './HoverCard';
 import { useEscapeKey } from '@/hooks/useEscapeKey';
 import { apiClient } from '@/lib/api';
 import { Toast } from './Toast';
@@ -32,6 +33,8 @@ export function ADRModal({ adr, onClose, onAnalyze, isAnalyzing, onADRUpdate, on
   });
   const bulkRefineRef = useRef<HTMLDivElement>(null);
   const originalPromptEditRef = useRef<HTMLDivElement>(null);
+
+  const isPrinciple = currentAdr.metadata.record_type === 'principle';
 
   // Close this modal with ESC, but only if personas modal is not open
   useEscapeKey(onClose, !showPersonas && !showBulkRefine && !showOriginalPromptEdit);
@@ -264,9 +267,72 @@ export function ADRModal({ adr, onClose, onAnalyze, isAnalyzing, onADRUpdate, on
 
             {/* Decision Outcome */}
             <div>
-              <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2">Decision Outcome</h3>
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2">
+                {isPrinciple ? 'Principle Statement' : 'Decision Outcome'}
+              </h3>
               <div className="text-gray-700 dark:text-gray-300 leading-relaxed whitespace-pre-wrap">{currentAdr.content.decision_outcome}</div>
             </div>
+
+            {/* Principle Details */}
+            {currentAdr.content.principle_details && (
+              <div className="space-y-6">
+                {/* Rationale */}
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2">Rationale</h3>
+                  <p className="text-gray-700 dark:text-gray-300 leading-relaxed whitespace-pre-wrap">
+                    {currentAdr.content.principle_details.rationale}
+                  </p>
+                </div>
+
+                {/* Implications */}
+                {currentAdr.content.principle_details.implications.length > 0 && (
+                  <div>
+                    <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2">Implications</h3>
+                    <ul className="list-disc list-inside text-gray-700 dark:text-gray-300 space-y-1">
+                      {currentAdr.content.principle_details.implications.map((item, index) => (
+                        <li key={index}>{item}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {/* Proof Statements */}
+                {currentAdr.content.principle_details.proof_statements.length > 0 && (
+                  <div>
+                    <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2">Proof Statements</h3>
+                    <ul className="list-disc list-inside text-gray-700 dark:text-gray-300 space-y-1">
+                      {currentAdr.content.principle_details.proof_statements.map((item, index) => (
+                        <li key={index}>{item}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {/* Counter Arguments */}
+                {currentAdr.content.principle_details.counter_arguments.length > 0 && (
+                  <div>
+                    <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2">Counter Arguments</h3>
+                    <ul className="list-disc list-inside text-gray-700 dark:text-gray-300 space-y-1">
+                      {currentAdr.content.principle_details.counter_arguments.map((item, index) => (
+                        <li key={index}>{item}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {/* Exceptions */}
+                {currentAdr.content.principle_details.exceptions.length > 0 && (
+                  <div>
+                    <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2">Exceptions</h3>
+                    <ul className="list-disc list-inside text-gray-700 dark:text-gray-300 space-y-1">
+                      {currentAdr.content.principle_details.exceptions.map((item, index) => (
+                        <li key={index}>{item}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* Consequences - Structured or plain text */}
             <div>
@@ -327,7 +393,7 @@ export function ADRModal({ adr, onClose, onAnalyze, isAnalyzing, onADRUpdate, on
             </div>
 
             {/* Considered Options */}
-            {currentAdr.content.considered_options && currentAdr.content.considered_options.length > 0 && (
+            {!currentAdr.content.principle_details && currentAdr.content.considered_options && currentAdr.content.considered_options.length > 0 && (
               <div>
                 <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2">Considered Options</h3>
                 <ul className="list-disc list-inside text-gray-700 dark:text-gray-300 space-y-1">
@@ -339,7 +405,7 @@ export function ADRModal({ adr, onClose, onAnalyze, isAnalyzing, onADRUpdate, on
             )}
 
             {/* Options Details with Pros and Cons */}
-            {currentAdr.content.options_details && currentAdr.content.options_details.length > 0 && (
+            {!currentAdr.content.principle_details && currentAdr.content.options_details && currentAdr.content.options_details.length > 0 && (
               <div>
                 <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-3">Pros & Cons of Options</h3>
                 <div className="space-y-4">
@@ -386,7 +452,9 @@ export function ADRModal({ adr, onClose, onAnalyze, isAnalyzing, onADRUpdate, on
             {/* Decision Drivers */}
             {currentAdr.content.decision_drivers && currentAdr.content.decision_drivers.length > 0 && (
               <div>
-                <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2">Decision Drivers</h3>
+                <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2">
+                  {isPrinciple ? 'Principle Drivers' : 'Decision Drivers'}
+                </h3>
                 <ul className="list-disc list-inside text-gray-700 dark:text-gray-300 space-y-1">
                   {currentAdr.content.decision_drivers.map((driver, index) => (
                     <li key={index}>{driver}</li>
@@ -403,23 +471,66 @@ export function ADRModal({ adr, onClose, onAnalyze, isAnalyzing, onADRUpdate, on
               </div>
             )}
 
-            {/* Referenced ADRs */}
+            {/* References */}
             {currentAdr.content.referenced_adrs && currentAdr.content.referenced_adrs.length > 0 && (
               <div>
-                <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2">Referenced ADRs</h3>
-                <p className="text-sm text-gray-600 dark:text-gray-400 mb-2">This ADR was generated with context from the following ADRs:</p>
+                <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2">References</h3>
+                <p className="text-sm text-gray-600 dark:text-gray-400 mb-2">
+                  This {isPrinciple ? 'principle' : 'ADR'} was generated with context from the following records:
+                </p>
                 <ul className="space-y-2">
-                  {currentAdr.content.referenced_adrs.map((ref, index) => (
-                    <li key={index} className="border-l-2 border-blue-300 dark:border-blue-700 pl-3 py-1">
-                      {/* <div className="font-mono text-sm text-blue-700 font-semibold">{ref.id}</div>
-                      {ref.title && ref.title !== ref.id && (
-                        <div className="text-xs text-gray-600 mt-0.5">{ref.title}</div>
-                      )} */}
-                      {ref.summary && (
-                        <div className="text-xs text-gray-500 dark:text-gray-400 mt-1 italic">{ref.summary}</div>
-                      )}
-                    </li>
-                  ))}
+                  {currentAdr.content.referenced_adrs.map((ref, index) => {
+                    // Check if title looks like a UUID (with or without hyphens/spaces)
+                    const isUuidTitle = /^[0-9a-fA-F\-\s]{32,}$/.test(ref.title || '');
+
+                    // If title is a UUID, try to extract real title from summary
+                    let displayTitle = ref.title || ref.id;
+                    let displaySummary = ref.summary;
+
+                    if (isUuidTitle && ref.summary && ref.summary.startsWith('Title: ')) {
+                      // Extract title from summary (e.g. "Title: My Title...")
+                      // Remove "Title: " prefix
+                      const cleanSummary = ref.summary.substring(7);
+                      // Use the summary as the title since it contains the title
+                      displayTitle = cleanSummary;
+                      // Don't show summary separately if it's just the title
+                      displaySummary = '';
+                    }
+
+                    return (
+                      <li key={index} className="border-l-2 border-blue-300 dark:border-blue-700 pl-3 py-1">
+                        <div className="text-sm text-gray-800 dark:text-gray-200 font-medium flex items-center gap-2">
+                          <HoverCard
+                            trigger={
+                              <span className={`px-2 py-0.5 rounded text-xs font-medium cursor-help transition-colors ${ref.type === 'principle'
+                                  ? 'bg-purple-100 text-purple-800 dark:bg-purple-900/50 dark:text-purple-300'
+                                  : 'bg-blue-100 text-blue-800 dark:bg-blue-900/50 dark:text-blue-300'
+                                }`}>
+                                {ref.type === 'principle' ? 'Principle' : 'Decision'}
+                              </span>
+                            }
+                          >
+                            <div
+                              className="bg-gray-900 text-white text-xs rounded py-1 px-2 shadow-lg whitespace-nowrap cursor-pointer hover:bg-gray-800 transition-colors"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                navigator.clipboard.writeText(ref.id);
+                                // Visual feedback could be added here, but for now the action is performed
+                              }}
+                              title="Click to copy ID"
+                            >
+                              <div className="font-mono mb-1">ID: {ref.id}</div>
+                              <div className="text-gray-400 text-[10px]">Click to copy</div>
+                            </div>
+                          </HoverCard>
+                          <span>{displayTitle}</span>
+                        </div>
+                        {displaySummary && (
+                          <div className="text-xs text-gray-500 dark:text-gray-400 mt-1 italic">{displaySummary}</div>
+                        )}
+                      </li>
+                    );
+                  })}
                 </ul>
               </div>
             )}
@@ -480,7 +591,7 @@ export function ADRModal({ adr, onClose, onAnalyze, isAnalyzing, onADRUpdate, on
             <div className="mt-6 p-4 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg">
               <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2">Original Request</h3>
               <p className="text-xs text-gray-600 dark:text-gray-400 mb-3">
-                View and refine the original prompt that was used to generate this ADR. Refining the context will regenerate all personas with the updated prompt.
+                View and refine the original prompt that was used to generate this {isPrinciple ? 'principle' : 'ADR'}. Refining the context will regenerate all personas with the updated prompt.
               </p>
 
               {!showOriginalPromptEdit ? (
@@ -595,10 +706,10 @@ export function ADRModal({ adr, onClose, onAnalyze, isAnalyzing, onADRUpdate, on
               onClick={onAnalyze}
               disabled={isAnalyzing}
               className="flex-1 bg-green-600 text-white px-3 py-2 sm:px-6 sm:py-3 rounded-md hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors font-medium flex items-center justify-center gap-2"
-              title="Analyze ADR"
+              title={isPrinciple ? "Analyze Principle" : "Analyze ADR"}
             >
               <span className="sm:hidden">Analyze</span>
-              <span className="hidden sm:inline">{isAnalyzing ? 'Analyzing...' : 'Analyze ADR'}</span>
+              <span className="hidden sm:inline">{isAnalyzing ? 'Analyzing...' : (isPrinciple ? 'Analyze Principle' : 'Analyze ADR')}</span>
             </button>
           </div>
         </div>

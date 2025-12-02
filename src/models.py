@@ -18,6 +18,13 @@ class ADRStatus(str, Enum):
     REJECTED = "rejected"
 
 
+class RecordType(str, Enum):
+    """Type of record (Decision or Principle)."""
+
+    DECISION = "decision"
+    PRINCIPLE = "principle"
+
+
 class RetrievalMode(str, Enum):
     """RAG retrieval modes for LightRAG queries.
 
@@ -66,6 +73,9 @@ class ADRMetadata(BaseModel):
     id: UUID = Field(default_factory=uuid4, description="Unique identifier")
     title: str = Field(..., description="ADR title")
     status: ADRStatus = Field(default=ADRStatus.PROPOSED, description="Current status")
+    record_type: RecordType = Field(
+        default=RecordType.DECISION, description="Type of record"
+    )
     created_at: datetime = Field(
         default_factory=lambda: datetime.now(UTC), description="Creation timestamp"
     )
@@ -108,6 +118,27 @@ class OptionDetails(BaseModel):
     )
 
 
+class PrincipleDetails(BaseModel):
+    """Details specific to Guiding Principles."""
+
+    statement: str = Field(..., description="The core principle statement")
+    rationale: str = Field(..., description="Why this principle is true/important")
+    implications: List[str] = Field(
+        default_factory=list, description="What this means for the organization"
+    )
+    counter_arguments: List[str] = Field(
+        default_factory=list, description="Why it might not be true or exceptions"
+    )
+    proof_statements: List[str] = Field(
+        default_factory=list,
+        description="Examples or evidence supporting the principle",
+    )
+    exceptions: List[str] = Field(
+        default_factory=list,
+        description="Situations where this principle might not apply",
+    )
+
+
 class ADRContent(BaseModel):
     """Content structure for an ADR following the standard ADR template."""
 
@@ -133,6 +164,9 @@ class ADRContent(BaseModel):
     )
     consequences_structured: Optional[ConsequencesStructured] = Field(
         default=None, description="Structured consequences"
+    )
+    principle_details: Optional[PrincipleDetails] = Field(
+        default=None, description="Details specific to Guiding Principles"
     )
     referenced_adrs: Optional[List[Dict[str, str]]] = Field(
         default=None,
@@ -170,12 +204,14 @@ class ADR(BaseModel):
         pros_and_cons: Optional[Dict[str, List[str]]] = None,
         more_information: Optional[str] = None,
         tags: Optional[List[str]] = None,
+        record_type: RecordType = RecordType.DECISION,
     ) -> "ADR":
         """Create a new ADR."""
         metadata = ADRMetadata(
             title=title,
             author=author,
             tags=tags or [],
+            record_type=record_type,
         )
         content = ADRContent(
             context_and_problem=context_and_problem,
@@ -478,6 +514,9 @@ class ADRGenerationPrompt(BaseModel):
     problem_statement: str = Field(
         ..., description="The problem that needs to be solved"
     )
+    record_type: RecordType = Field(
+        default=RecordType.DECISION, description="Type of record to generate"
+    )
     constraints: Optional[List[str]] = Field(
         default=None, description="Constraints or requirements"
     )
@@ -525,6 +564,9 @@ class ADRGenerationResult(BaseModel):
         default=None,
         description="Structured consequences with positive and negative arrays",
     )
+    principle_details: Optional[PrincipleDetails] = Field(
+        default=None, description="Details specific to Guiding Principles"
+    )
     decision_drivers: List[str] = Field(
         default_factory=list, description="Forces driving the decision"
     )
@@ -559,12 +601,32 @@ class PersonaSynthesisInput(BaseModel):
     recommended_option: Optional[str] = Field(
         default=None, description="Option recommended by this persona"
     )
-    reasoning: str = Field(..., description="Detailed reasoning from this persona")
+    proposed_principle: Optional[str] = Field(
+        default=None, description="Principle proposed by this persona (for Principles)"
+    )
+    reasoning: Optional[str] = Field(
+        default=None, description="Detailed reasoning from this persona"
+    )
+    rationale: Optional[str] = Field(
+        default=None, description="Rationale for the principle (alias for reasoning)"
+    )
     concerns: List[str] = Field(
         default_factory=list, description="Key concerns raised by this persona"
     )
     requirements: List[str] = Field(
         default_factory=list, description="Requirements identified by this persona"
+    )
+    implications: List[str] = Field(
+        default_factory=list, description="Implications identified by this persona"
+    )
+    counter_arguments: List[str] = Field(
+        default_factory=list, description="Counter arguments identified by this persona"
+    )
+    proof_statements: List[str] = Field(
+        default_factory=list, description="Proof statements identified by this persona"
+    )
+    exceptions: List[str] = Field(
+        default_factory=list, description="Exceptions identified by this persona"
     )
     original_prompt_text: Optional[str] = Field(
         default=None,
