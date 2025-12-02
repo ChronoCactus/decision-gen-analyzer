@@ -154,7 +154,7 @@ describe('GenerateADRModal', () => {
     const promptInput = screen.getByPlaceholderText(/Describe the decision/);
     await user.type(promptInput, 'Test decision');
 
-    const generateButton = screen.getByText('Generate ADR');
+    const generateButton = screen.getByText('Generate');
     await user.click(generateButton);
 
     expect(mockProps.onGenerate).toHaveBeenCalledWith(
@@ -203,11 +203,11 @@ describe('GenerateADRModal', () => {
 
     // Wait briefly for component to stabilize
     await waitFor(() => {
-      expect(screen.getByText('Generate ADR')).toBeInTheDocument();
+      expect(screen.getByText('Generate')).toBeInTheDocument();
     });
 
     // Try to click generate button (with empty prompt)
-    const generateButton = screen.getByText('Generate ADR');
+    const generateButton = screen.getByText('Generate');
     await user.click(generateButton);
 
     // onGenerate should not be called because prompt is empty (form validation prevents it)

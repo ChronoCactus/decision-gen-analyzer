@@ -131,11 +131,18 @@ class TestLightRAGClient:
             result = await client.delete_document("test-123")
 
             assert result is True
-            # Verify it falls back to using filename
+            # Verify it falls back to trying multiple filename formats
             client._client.request.assert_called_once_with(
                 "DELETE",
                 "/documents/delete_document",
-                json={"doc_ids": ["test-123.txt"], "delete_file": True},
+                json={
+                    "doc_ids": [
+                        "test-123.txt",
+                        "test-123__decision.txt",
+                        "test-123__principle.txt",
+                    ],
+                    "delete_file": True,
+                },
             )
 
     @pytest.mark.asyncio
