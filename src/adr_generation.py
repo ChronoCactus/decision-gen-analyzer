@@ -868,6 +868,31 @@ class ADRGenerationService:
                 doc_title = doc.get("title") or doc_metadata.get("title") or doc_id
                 doc_content = doc.get("content", "")
 
+                # Initialize record_type with default from metadata
+                record_type = doc_metadata.get("record_type", "decision")
+
+                # Try to extract real title and record type from content if available
+                # Content usually starts with "Title: ..." and contains "Record Type: ..."
+                if doc_content:
+                    # Extract Title
+                    if doc_content.startswith("Title: "):
+                        first_line = doc_content.split("\n")[0]
+                        real_title = first_line[7:].strip()
+                        if real_title:
+                            doc_title = real_title
+
+                    # Extract Record Type
+                    import re
+
+                    type_match = re.search(
+                        r"Record Type: (decision|principle)", doc_content, re.IGNORECASE
+                    )
+                    if type_match:
+                        record_type = type_match.group(1).lower()
+                    # Fallback: Check if title contains "principle" (case insensitive)
+                    elif "principle" in doc_title.lower():
+                        record_type = "principle"
+
                 # Add the document content as context
                 if doc_content:
                     related_context.append(f"**{doc_title}**:\n{doc_content}")
@@ -876,9 +901,6 @@ class ADRGenerationService:
                 summary = doc_content[:60]
                 if len(doc_content) > 60:
                     summary += "..."
-
-                doc_metadata = doc.get("metadata", {})
-                record_type = doc_metadata.get("record_type", "decision")
 
                 referenced_adr_info.append(
                     {
@@ -2079,6 +2101,7 @@ Ensure your response is practical, considers the constraints, and reflects your 
             title=generation_result.generated_title,
             author=author,
             tags=generation_result.prompt.tags or [],
+            record_type=generation_result.prompt.record_type,
         )
 
         return ADR(metadata=metadata, content=content)

@@ -450,7 +450,7 @@ Considered Options:
                         doc_id=str(adr.metadata.id),
                         content=adr_content,
                         metadata={
-                            "type": adr.metadata.record_type.value,
+                            "record_type": adr.metadata.record_type.value,
                             "title": adr.metadata.title,
                             "status": adr.metadata.status,
                             "tags": adr.metadata.tags,
@@ -952,7 +952,7 @@ Considered Options:
                         doc_id=refined_adr_id,
                         content=adr_content,
                         metadata={
-                            "type": "adr",
+                            "record_type": refined_adr.metadata.record_type.value,
                             "title": refined_adr.metadata.title,
                             "status": refined_adr.metadata.status,
                             "tags": refined_adr.metadata.tags,
