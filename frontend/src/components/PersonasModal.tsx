@@ -176,17 +176,85 @@ export function PersonasModal({ personas, onClose, onRefine }: PersonasModalProp
               <div className="space-y-4">
                 <div>
                   <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wide mb-2">
-                    Perspective
+                    {persona.proposed_principle ? 'Proposed Principle' : 'Perspective'}
                   </h4>
-                  <p className="text-gray-700 dark:text-gray-300 leading-relaxed">{persona.perspective}</p>
+                  <p className="text-gray-700 dark:text-gray-300 leading-relaxed">
+                    {persona.proposed_principle || persona.perspective}
+                  </p>
                 </div>
 
                 <div>
                   <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wide mb-2">
-                    Reasoning
+                    {persona.rationale ? 'Rationale' : 'Reasoning'}
                   </h4>
-                  <p className="text-gray-700 dark:text-gray-300 leading-relaxed">{persona.reasoning}</p>
+                  <p className="text-gray-700 dark:text-gray-300 leading-relaxed">
+                    {persona.rationale || persona.reasoning}
+                  </p>
                 </div>
+
+                {persona.implications && persona.implications.length > 0 && (
+                  <div>
+                    <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wide mb-2">
+                      Implications
+                    </h4>
+                    <ul className="space-y-1">
+                      {persona.implications.map((item, i) => (
+                        <li key={i} className="flex items-start">
+                          <span className="text-blue-500 mr-2 mt-1">•</span>
+                          <span className="text-gray-700 dark:text-gray-300">{item}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {persona.counter_arguments && persona.counter_arguments.length > 0 && (
+                  <div>
+                    <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wide mb-2">
+                      Counter Arguments
+                    </h4>
+                    <ul className="space-y-1">
+                      {persona.counter_arguments.map((item, i) => (
+                        <li key={i} className="flex items-start">
+                          <span className="text-red-500 mr-2 mt-1">✗</span>
+                          <span className="text-gray-700 dark:text-gray-300">{item}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {persona.proof_statements && persona.proof_statements.length > 0 && (
+                  <div>
+                    <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wide mb-2">
+                      Proof Statements
+                    </h4>
+                    <ul className="space-y-1">
+                      {persona.proof_statements.map((item, i) => (
+                        <li key={i} className="flex items-start">
+                          <span className="text-green-500 mr-2 mt-1">✓</span>
+                          <span className="text-gray-700 dark:text-gray-300">{item}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {persona.exceptions && persona.exceptions.length > 0 && (
+                  <div>
+                    <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wide mb-2">
+                      Exceptions
+                    </h4>
+                    <ul className="space-y-1">
+                      {persona.exceptions.map((item, i) => (
+                        <li key={i} className="flex items-start">
+                          <span className="text-yellow-500 mr-2 mt-1">!</span>
+                          <span className="text-gray-700 dark:text-gray-300">{item}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
 
                 {persona.concerns && persona.concerns.length > 0 && (
                   <div>

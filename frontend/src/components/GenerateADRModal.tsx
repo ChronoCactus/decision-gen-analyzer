@@ -10,9 +10,10 @@ interface GenerateADRModalProps {
   onGenerate: (request: GenerateADRRequest) => void;
   isGenerating: boolean;
   generationStartTime?: number;
+  initialRecordType?: 'decision' | 'principle';
 }
 
-export function GenerateADRModal({ onClose, onGenerate, isGenerating, generationStartTime }: GenerateADRModalProps) {
+export function GenerateADRModal({ onClose, onGenerate, isGenerating, generationStartTime, initialRecordType = 'decision' }: GenerateADRModalProps) {
   const [prompt, setPrompt] = useState('');
   const [context, setContext] = useState('');
   const [tags, setTags] = useState('');
@@ -24,6 +25,7 @@ export function GenerateADRModal({ onClose, onGenerate, isGenerating, generation
   const [selectedProviderId, setSelectedProviderId] = useState<string>('');
   const [elapsedTime, setElapsedTime] = useState(0);
   const [showContext, setShowContext] = useState(false);
+  const [recordType, setRecordType] = useState<'decision' | 'principle'>(initialRecordType);
 
   // Detect OS for keyboard shortcut display (computed once on mount)
   const [isMac] = useState(() => {
@@ -77,8 +79,9 @@ export function GenerateADRModal({ onClose, onGenerate, isGenerating, generation
       personas: selectedPersonas.length > 0 ? selectedPersonas : undefined,
       retrieval_mode: retrievalMode,
       provider_id: selectedProviderId || undefined,
+      record_type: recordType,
     });
-  }, [prompt, context, tags, selectedPersonas, retrievalMode, selectedProviderId, onGenerate]);
+  }, [prompt, context, tags, selectedPersonas, retrievalMode, selectedProviderId, recordType, onGenerate]);
 
   // Handle keyboard shortcuts (Cmd/Ctrl + Enter)
   useEffect(() => {
@@ -154,7 +157,33 @@ export function GenerateADRModal({ onClose, onGenerate, isGenerating, generation
         <div className="p-4 sm:p-6">
           <div className="flex justify-between items-start mb-6">
             <div className="flex-1 pr-12">
-              <h2 className="text-xl sm:text-2xl font-bold text-gray-900 dark:text-gray-100">Generate New ADR</h2>
+              <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 mb-2">
+                <h2 className="text-xl sm:text-2xl font-bold text-gray-900 dark:text-gray-100">
+                  Generate New {recordType === 'decision' ? 'ADR' : 'Principle'}
+                </h2>
+                <div className="flex bg-gray-100 dark:bg-gray-700 rounded-lg p-1 w-fit">
+                  <button
+                    type="button"
+                    onClick={() => setRecordType('decision')}
+                    className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${recordType === 'decision'
+                      ? 'bg-white dark:bg-gray-600 text-gray-900 dark:text-gray-100 shadow-sm'
+                      : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'
+                      }`}
+                  >
+                    Decision
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setRecordType('principle')}
+                    className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${recordType === 'principle'
+                      ? 'bg-white dark:bg-gray-600 text-gray-900 dark:text-gray-100 shadow-sm'
+                      : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'
+                      }`}
+                  >
+                    Principle
+                  </button>
+                </div>
+              </div>
               {providers.length > 0 && (
                 <div className="mt-2 flex items-center gap-2">
                   <label htmlFor="provider-select" className="text-xs text-gray-600 dark:text-gray-400">

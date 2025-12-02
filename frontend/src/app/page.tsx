@@ -45,6 +45,11 @@ export default function Home() {
   // Track newly imported ADRs for pulsing outline effect
   const [newlyImportedADRs, setNewlyImportedADRs] = useState<Set<string>>(new Set());
 
+  // Record type selection state
+  const [selectedRecordType, setSelectedRecordType] = useState<'decision' | 'principle'>('decision');
+  const [showGenerateDropdown, setShowGenerateDropdown] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
   // Use WebSocket for real-time cache status updates
   const { isRebuilding: cacheRebuilding, lastSyncTime, isConnected: wsConnected } = useCacheStatusWebSocket();
 
@@ -53,6 +58,14 @@ export default function Home() {
 
   useEffect(() => {
     loadADRs();
+  }, []);
+
+  // Load selected record type from localStorage
+  useEffect(() => {
+    const savedType = localStorage.getItem('selectedRecordType');
+    if (savedType === 'decision' || savedType === 'principle') {
+      setSelectedRecordType(savedType);
+    }
   }, []);
 
   // Auto-dismiss completed tasks based on settings
@@ -346,6 +359,27 @@ export default function Home() {
     return new Date(timestamp).toLocaleString();
   };
 
+  // Save selected record type to localStorage
+  const handleRecordTypeChange = (type: 'decision' | 'principle') => {
+    setSelectedRecordType(type);
+    localStorage.setItem('selectedRecordType', type);
+    setShowGenerateDropdown(false);
+  };
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setShowGenerateDropdown(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, []);
+
   // Multi-select handlers
   const toggleSelectionMode = () => {
     setSelectionMode(!selectionMode);
@@ -594,12 +628,43 @@ export default function Home() {
                 >
                   Select Mode
                 </button>
-                <button
-                  onClick={() => setShowGenerateModal(true)}
-                  className="bg-blue-600 text-white px-6 py-2 rounded-md hover:bg-blue-700 font-semibold animate-pulse-border whitespace-nowrap"
-                >
-                  Generate New ADR
-                </button>
+                <div className="relative inline-flex rounded-md shadow-sm" ref={dropdownRef}>
+                  <button
+                    type="button"
+                    onClick={() => setShowGenerateModal(true)}
+                    className="relative inline-flex items-center bg-blue-600 text-white px-4 py-2 rounded-l-md hover:bg-blue-700 font-semibold animate-pulse-border whitespace-nowrap border-r border-blue-700"
+                  >
+                    Generate {selectedRecordType === 'decision' ? 'ADR' : 'Principle'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowGenerateDropdown(!showGenerateDropdown)}
+                    className="relative inline-flex items-center bg-blue-600 text-white px-2 py-2 rounded-r-md hover:bg-blue-700 focus:z-10"
+                  >
+                    <span className="sr-only">Open options</span>
+                    <svg className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                      <path fillRule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clipRule="evenodd" />
+                    </svg>
+                  </button>
+                  {showGenerateDropdown && (
+                    <div className="absolute right-0 top-full mt-1 w-48 origin-top-right rounded-md bg-white dark:bg-gray-800 shadow-lg ring-1 ring-black ring-opacity-5 focus:outline-none z-20">
+                      <div className="py-1">
+                        <button
+                          onClick={() => handleRecordTypeChange('decision')}
+                          className={`block w-full px-4 py-2 text-left text-sm ${selectedRecordType === 'decision' ? 'bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-white' : 'text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700'}`}
+                        >
+                          Generate ADR
+                        </button>
+                        <button
+                          onClick={() => handleRecordTypeChange('principle')}
+                          className={`block w-full px-4 py-2 text-left text-sm ${selectedRecordType === 'principle' ? 'bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-white' : 'text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700'}`}
+                        >
+                          Generate Principle
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
               </>
             )}
             {selectionMode && (
@@ -624,7 +689,7 @@ export default function Home() {
                   onClick={() => { setShowGenerateModal(true); setMobileMenuOpen(false); }}
                   className="bg-blue-600 text-white px-4 py-3 rounded-md hover:bg-blue-700 font-semibold text-center"
                 >
-                  Generate New ADR
+                  Generate New {selectedRecordType === 'decision' ? 'ADR' : 'Principle'}
                 </button>
                 <div className="grid grid-cols-2 gap-3">
                   <button
@@ -842,12 +907,12 @@ export default function Home() {
         {/* ADR Grid */}
         {adrs.length === 0 ? (
           <div className="text-center py-12">
-            <p className="text-gray-500 dark:text-gray-400 text-lg mb-4">No ADRs found</p>
+            <p className="text-gray-500 dark:text-gray-400 text-lg mb-4">No records found</p>
             <button
               onClick={() => setShowGenerateModal(true)}
               className="bg-blue-600 text-white px-6 py-3 rounded-md hover:bg-blue-700 font-medium"
             >
-              Create Your First ADR
+              Create Your First {selectedRecordType === 'decision' ? 'ADR' : 'Principle'}
             </button>
           </div>
         ) : (
@@ -879,10 +944,9 @@ export default function Home() {
             onGenerate={handleGenerateADR}
             isGenerating={isGenerating}
             generationStartTime={generationStartTime}
+            initialRecordType={selectedRecordType}
           />
-        )}
-
-        {/* Import/Export Modal */}
+        )}        {/* Import/Export Modal */}
         {showImportExportModal && (
           <ImportExportModal
             onClose={() => setShowImportExportModal(false)}

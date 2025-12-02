@@ -633,4 +633,22 @@ describe('ADRModal', () => {
       expect(Element.prototype.scrollIntoView).not.toHaveBeenCalled();
     });
   });
+
+  it('should display principle-specific labels when record_type is principle', () => {
+    const principleADR: ADR = {
+      ...mockADR,
+      metadata: {
+        ...mockADR.metadata,
+        record_type: 'principle',
+      },
+    };
+
+    render(<ADRModal {...mockProps} adr={principleADR} />);
+
+    expect(screen.getByText('Principle Statement')).toBeInTheDocument();
+    expect(screen.getByText('Principle Drivers')).toBeInTheDocument();
+    expect(screen.getByTitle('Analyze Principle')).toBeInTheDocument();
+    expect(screen.queryByText('Decision Outcome')).not.toBeInTheDocument();
+    expect(screen.queryByText('Decision Drivers')).not.toBeInTheDocument();
+  });
 });
