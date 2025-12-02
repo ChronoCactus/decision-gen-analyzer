@@ -209,9 +209,19 @@ export function ADRCard({ adr, onAnalyze, onDelete, onPushToRAG, onExport, cache
             {currentAdr.metadata.title}
           </h3>
           {!selectionMode && (
-            <span className={`flex-shrink-0 px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(currentAdr.metadata.status)}`}>
-              {currentAdr.metadata.status}
-            </span>
+            <div className="flex flex-col items-end gap-1">
+              <span className={`flex-shrink-0 px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(currentAdr.metadata.status)}`}>
+                {currentAdr.metadata.status}
+              </span>
+              {currentAdr.metadata.record_type && (
+                <span className={`flex-shrink-0 px-2 py-1 rounded-full text-xs font-medium ${currentAdr.metadata.record_type === 'principle'
+                    ? 'bg-teal-100 dark:bg-teal-900/30 text-teal-800 dark:text-teal-300'
+                    : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400'
+                  }`}>
+                  {currentAdr.metadata.record_type}
+                </span>
+              )}
+            </div>
           )}
         </div>
 
@@ -368,6 +378,7 @@ export function ADRCard({ adr, onAnalyze, onDelete, onPushToRAG, onExport, cache
       {showDeleteModal && (
         <DeleteConfirmationModal
           adrTitle={currentAdr.metadata.title}
+          recordType={currentAdr.metadata.record_type}
           onConfirm={handleDelete}
           onCancel={() => setShowDeleteModal(false)}
           isDeleting={isDeleting}

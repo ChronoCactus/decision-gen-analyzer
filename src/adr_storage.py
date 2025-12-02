@@ -161,6 +161,7 @@ class ADRStorageService:
         """Convert ADR to searchable content string."""
         content_parts = [
             f"Title: {adr.metadata.title}",
+            f"Record Type: {adr.metadata.record_type or 'decision'}",
             f"Status: {adr.metadata.status.value}",
             f"Context and Problem: {adr.content.context_and_problem}",
             f"Decision Outcome: {adr.content.decision_outcome}",
@@ -201,6 +202,11 @@ class ADRStorageService:
             "updated_at": adr.metadata.updated_at.isoformat(),
             "author": adr.metadata.author,
             "tags": adr.metadata.tags or [],
+            "record_type": (
+                adr.metadata.record_type.value
+                if hasattr(adr.metadata.record_type, "value")
+                else str(adr.metadata.record_type)
+            ),
             "related_adrs": [str(adr_id) for adr_id in adr.metadata.related_adrs],
         }
 
@@ -220,6 +226,7 @@ class ADRStorageService:
             updated_at=metadata["updated_at"],
             author=metadata.get("author"),
             tags=metadata.get("tags", []),
+            record_type=metadata.get("record_type", "decision"),
             related_adrs=[UUID(adr_id) for adr_id in metadata.get("related_adrs", [])],
         )
 

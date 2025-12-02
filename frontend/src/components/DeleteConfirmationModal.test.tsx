@@ -23,16 +23,16 @@ describe('DeleteConfirmationModal', () => {
   it('should render modal with ADR title', () => {
     render(<DeleteConfirmationModal {...mockProps} />);
 
-    // "Delete ADR" appears in both heading and button
-    expect(screen.getAllByText('Delete ADR').length).toBeGreaterThan(0);
+    // "Delete Decision" appears in both heading and button (default recordType is 'decision')
+    expect(screen.getAllByText('Delete Decision').length).toBeGreaterThan(0);
     expect(screen.getByText('"Test ADR Title"')).toBeInTheDocument();
-    expect(screen.getByText(/Are you sure you want to delete this ADR/)).toBeInTheDocument();
+    expect(screen.getByText(/Are you sure you want to delete this decision/)).toBeInTheDocument();
   });
 
   it('should display warning message', () => {
     render(<DeleteConfirmationModal {...mockProps} />);
 
-    expect(screen.getByText(/This action will delete the ADR from local storage/)).toBeInTheDocument();
+    expect(screen.getByText(/This action will delete the decision from local storage/)).toBeInTheDocument();
     expect(screen.getByText(/This action cannot be undone/)).toBeInTheDocument();
   });
 
@@ -46,13 +46,13 @@ describe('DeleteConfirmationModal', () => {
     expect(mockProps.onConfirm).not.toHaveBeenCalled();
   });
 
-  it('should call onConfirm when Delete ADR button is clicked', async () => {
+  it('should call onConfirm when Delete Decision button is clicked', async () => {
     const user = userEvent.setup();
     render(<DeleteConfirmationModal {...mockProps} />);
 
     // Get the delete button by role to avoid ambiguity
     const buttons = screen.getAllByRole('button');
-    const deleteButton = buttons.find(btn => btn.textContent === 'Delete ADR');
+    const deleteButton = buttons.find(btn => btn.textContent === 'Delete Decision');
     await user.click(deleteButton!);
 
     expect(mockProps.onConfirm).toHaveBeenCalledTimes(1);
@@ -63,8 +63,8 @@ describe('DeleteConfirmationModal', () => {
     render(<DeleteConfirmationModal {...mockProps} isDeleting={true} />);
 
     expect(screen.getByText('Deleting...')).toBeInTheDocument();
-    // "Delete ADR" still appears in the heading even when deleting
-    const deleteButton = screen.queryByRole('button', { name: /Delete ADR/i });
+    // "Delete Decision" still appears in the heading even when deleting
+    const deleteButton = screen.queryByRole('button', { name: /Delete Decision/i });
     expect(deleteButton).not.toBeInTheDocument(); // Button text changes to "Deleting..."
   });
 
@@ -83,7 +83,7 @@ describe('DeleteConfirmationModal', () => {
 
     const cancelButton = screen.getByText('Cancel');
     const buttons = screen.getAllByRole('button');
-    const deleteButton = buttons.find(btn => btn.textContent === 'Delete ADR');
+    const deleteButton = buttons.find(btn => btn.textContent === 'Delete Decision');
 
     expect(cancelButton).not.toBeDisabled();
     expect(deleteButton).not.toBeDisabled();

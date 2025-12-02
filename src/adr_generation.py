@@ -21,8 +21,14 @@ from src.models import (
     ADRGenerationResult,
     ADRMetadata,
     PersonaSynthesisInput,
+    RecordType,
 )
 from src.persona_manager import PersonaConfig, PersonaManager
+from src.prompts import (
+    ADR_SYNTHESIS_SYSTEM_PROMPT,
+    PRINCIPLE_PERSONA_GENERATION_SYSTEM_PROMPT,
+    PRINCIPLE_SYNTHESIS_SYSTEM_PROMPT,
+)
 
 logger = get_logger(__name__)
 
@@ -715,7 +721,12 @@ class ADRGenerationService:
 
         # Re-synthesize the ADR with regenerated persona responses
         if progress_callback:
-            progress_callback("Re-synthesizing ADR with regenerated perspectives...")
+            record_type_label = (
+                "Principle" if adr.metadata.record_type == "principle" else "ADR"
+            )
+            progress_callback(
+                f"Re-synthesizing {record_type_label} with regenerated perspectives..."
+            )
 
         result = await self._synthesize_adr(
             refined_prompt,
@@ -828,7 +839,7 @@ class ADRGenerationService:
             all_entities = []
             all_relationships = []
 
-            related_context.append("**Related Architectural Decision Records (ADRs):**")
+            related_context.append("**Related Decision Records:**")
             for doc in documents:
                 # Extract structured data if available (entities and relationships)
                 if "structured_data" in doc:
@@ -853,8 +864,34 @@ class ADRGenerationService:
                     )
                     continue
 
-                doc_title = doc.get("title", doc_id)
+                doc_metadata = doc.get("metadata", {})
+                doc_title = doc.get("title") or doc_metadata.get("title") or doc_id
                 doc_content = doc.get("content", "")
+
+                # Initialize record_type with default from metadata
+                record_type = doc_metadata.get("record_type", "decision")
+
+                # Try to extract real title and record type from content if available
+                # Content usually starts with "Title: ..." and contains "Record Type: ..."
+                if doc_content:
+                    # Extract Title
+                    if doc_content.startswith("Title: "):
+                        first_line = doc_content.split("\n")[0]
+                        real_title = first_line[7:].strip()
+                        if real_title:
+                            doc_title = real_title
+
+                    # Extract Record Type
+                    import re
+
+                    type_match = re.search(
+                        r"Record Type: (decision|principle)", doc_content, re.IGNORECASE
+                    )
+                    if type_match:
+                        record_type = type_match.group(1).lower()
+                    # Fallback: Check if title contains "principle" (case insensitive)
+                    elif "principle" in doc_title.lower():
+                        record_type = "principle"
 
                 # Add the document content as context
                 if doc_content:
@@ -866,7 +903,12 @@ class ADRGenerationService:
                     summary += "..."
 
                 referenced_adr_info.append(
-                    {"id": doc_id, "title": doc_title, "summary": summary}
+                    {
+                        "id": doc_id,
+                        "title": doc_title,
+                        "summary": summary,
+                        "type": record_type,
+                    }
                 )
 
             # Format entities and relationships as additional context
@@ -1221,6 +1263,19 @@ class ADRGenerationService:
             else "None specified."
         )
 
+        if prompt.record_type == RecordType.PRINCIPLE:
+            return PRINCIPLE_PERSONA_GENERATION_SYSTEM_PROMPT.format(
+                persona_name=persona_config.name,
+                persona_description=persona_config.description,
+                focus_areas=", ".join(persona_config.focus_areas),
+                evaluation_criteria=", ".join(persona_config.evaluation_criteria),
+                problem_statement=prompt.problem_statement,
+                context=prompt.context,
+                constraints=constraints_str,
+                stakeholders=stakeholders_str,
+                related_context=context_str,
+            )
+
         return f"""You are a {persona_config.name} analyzing a decision that needs to be made.
 
 **Your Role**: {persona_config.description}
@@ -1272,12 +1327,21 @@ Ensure your response is practical, considers the constraints, and reflects your 
                 parsed = json.loads(json_str)
 
                 # Validate required fields
-                required_fields = [
-                    "perspective",
-                    "reasoning",
-                    "concerns",
-                    "requirements",
-                ]
+                if "proposed_principle" in parsed:
+                    # Principle generation response
+                    required_fields = [
+                        "perspective",
+                        "proposed_principle",
+                        "rationale",
+                    ]
+                else:
+                    # Standard ADR generation response
+                    required_fields = [
+                        "perspective",
+                        "reasoning",
+                        "concerns",
+                        "requirements",
+                    ]
                 missing_fields = [f for f in required_fields if f not in parsed]
 
                 if missing_fields:
@@ -1486,6 +1550,7 @@ Ensure your response is practical, considers the constraints, and reflects your 
                         "consequences_structured"
                     ),
                     decision_drivers=synthesis_data.get("decision_drivers", []),
+                    principle_details=synthesis_data.get("principle_details"),
                     confidence_score=synthesis_data.get("confidence_score"),
                     related_context=related_context,
                     referenced_adrs=referenced_adr_info,
@@ -1539,57 +1604,23 @@ Ensure your response is practical, considers the constraints, and reflects your 
             ]
         )
 
-        return f"""You are synthesizing multiple expert perspectives into a comprehensive Architectural Decision Record (ADR).
+        related_context_str = (
+            "\n".join(related_context) if related_context else "None available"
+        )
 
-**Original Request**:
-Title: {prompt.title}
-Problem: {prompt.problem_statement}
-Context: {prompt.context}
+        system_prompt = (
+            PRINCIPLE_SYNTHESIS_SYSTEM_PROMPT
+            if prompt.record_type == RecordType.PRINCIPLE
+            else ADR_SYNTHESIS_SYSTEM_PROMPT
+        )
 
-**Expert Perspectives**:
-{perspectives_str}
-
->>>>>Related Context>>>>>
-{chr(10).join(related_context) if related_context else "None available"}
-<<<<<End Related Context<<<<<
-
-Based on these perspectives, create a complete ADR. You must respond with a JSON object containing:
-
-{{
-  "title": "Clear, descriptive ADR title (update if the problem statement has changed)",
-  "context_and_problem": "Comprehensive context and problem statement",
-  "considered_options": [
-    {{
-      "option_name": "Name of option 1",
-      "description": "Description of option 1",
-      "pros": ["pro 1", "pro 2", "..."],
-      "cons": ["con 1", "con 2", "..."]
-    }},
-    {{
-      "option_name": "Name of option 2",
-      "description": "Description of option 2",
-      "pros": ["pro 1", "pro 2", "..."],
-      "cons": ["con 1", "con 2", "..."]
-    }}
-  ],
-  "decision_outcome": "The chosen option and detailed justification",
-  "consequences": {{
-    "positive": ["positive point", "positive point", "..."],
-    "negative": ["negative point", "negative point", "..."]
-  }},
-  "decision_drivers": ["driver1", "driver2", "driver3"],
-  "confidence_score": 0.85
-}}
-
-**CRITICAL FORMATTING RULES**:
-1. Each item in "pros", "cons", "positive" and "negative" arrays MUST be a single, brief and to the point complete sentence
-2. Each array is not limited to only 2-3 items; include all relevant points - ensure only relevant points are included.
-3. Do NOT use bullet points (-, •, *) inside array items
-4. Do NOT concatenate multiple items into one string
-5. Each item should be a separate string in the array
-6. The "consequences" field MUST be an object with "positive" and "negative" arrays
-
-Ensure the ADR is well-structured, balanced, and considers all perspectives."""
+        return system_prompt.format(
+            title=prompt.title,
+            problem_statement=prompt.problem_statement,
+            context=prompt.context,
+            perspectives_str=perspectives_str,
+            related_context_str=related_context_str,
+        )
 
     def _clean_list_items(self, items: List[str]) -> List[str]:
         """Clean up list items that may have concatenated bullet points.
@@ -1716,6 +1747,27 @@ Ensure the ADR is well-structured, balanced, and considers all perspectives."""
                 json_str = response[start_idx:end_idx]
                 data = json.loads(json_str)
 
+                # Handle principle details
+                if "principle_details" in data:
+                    # Ensure lists are cleaned
+                    pd = data["principle_details"]
+                    if "counter_arguments" in pd and isinstance(
+                        pd["counter_arguments"], list
+                    ):
+                        pd["counter_arguments"] = self._clean_list_items(
+                            pd["counter_arguments"]
+                        )
+                    if "proof_statements" in pd and isinstance(
+                        pd["proof_statements"], list
+                    ):
+                        pd["proof_statements"] = self._clean_list_items(
+                            pd["proof_statements"]
+                        )
+                    if "implications" in pd and isinstance(pd["implications"], list):
+                        pd["implications"] = self._clean_list_items(pd["implications"])
+                    if "exceptions" in pd and isinstance(pd["exceptions"], list):
+                        pd["exceptions"] = self._clean_list_items(pd["exceptions"])
+
                 # Convert options to proper format
                 if "considered_options" in data:
                     options = []
@@ -1799,7 +1851,7 @@ Ensure the ADR is well-structured, balanced, and considers all perspectives."""
         if not text or len(text.strip()) < 10:
             return text
 
-        polish_prompt = f"""Polish the formatting of the following text for an Architectural Decision Record.
+        polish_prompt = f"""Polish the formatting of the following text for a Decision Record.
 
 **CRITICAL FORMATTING RULES**:
 1. Each bullet point should be on its own line starting with "- "
@@ -2049,6 +2101,7 @@ Ensure the ADR is well-structured, balanced, and considers all perspectives."""
             title=generation_result.generated_title,
             author=author,
             tags=generation_result.prompt.tags or [],
+            record_type=generation_result.prompt.record_type,
         )
 
         return ADR(metadata=metadata, content=content)

@@ -189,7 +189,7 @@ class Settings(BaseSettings):
             populate_by_name=True,  # Allow populating by field name or alias
         )
 
-    def model_post_init(self, __context) -> None:
+    def model_post_init(self, __context) -> None:  # noqa: F841
         """Handle post-initialization configuration."""
         # Handle provider-specific API keys
         if self.openrouter_api_key and not self.llm_api_key:

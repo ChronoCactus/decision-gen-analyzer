@@ -134,6 +134,7 @@ def generate_adr_task(
     personas: list = None,
     retrieval_mode: str = "local",
     provider_id: str = None,
+    record_type: str = "decision",
 ):
     """Celery task for ADR generation."""
     try:
@@ -150,6 +151,7 @@ def generate_adr_task(
             ADRGenerationPrompt,
             ADRMetadata,
             ADRStatus,
+            RecordType,
         )
         from src.persona_manager import PersonaManager
         from src.websocket_broadcaster import get_broadcaster
@@ -223,6 +225,7 @@ def generate_adr_task(
                 problem_statement=prompt,  # The prompt IS the problem statement
                 tags=tags or [],
                 retrieval_mode=retrieval_mode or "naive",
+                record_type=RecordType(record_type),
             )
 
             # Default personas if none provided
@@ -373,6 +376,7 @@ def generate_adr_task(
                     status=ADRStatus.PROPOSED,
                     author="AI Assistant",
                     tags=tags or [],
+                    record_type=RecordType(record_type),
                     created_at=datetime.now(UTC),
                     updated_at=datetime.now(UTC),
                 ),
@@ -390,6 +394,7 @@ def generate_adr_task(
                     ),
                     options_details=options_details,
                     consequences_structured=consequences_structured,
+                    principle_details=result.principle_details,
                     referenced_adrs=(
                         result.referenced_adrs if result.referenced_adrs else None
                     ),
@@ -445,7 +450,7 @@ Considered Options:
                         doc_id=str(adr.metadata.id),
                         content=adr_content,
                         metadata={
-                            "type": "adr",
+                            "record_type": adr.metadata.record_type.value,
                             "title": adr.metadata.title,
                             "status": adr.metadata.status,
                             "tags": adr.metadata.tags,
@@ -947,7 +952,7 @@ Considered Options:
                         doc_id=refined_adr_id,
                         content=adr_content,
                         metadata={
-                            "type": "adr",
+                            "record_type": refined_adr.metadata.record_type.value,
                             "title": refined_adr.metadata.title,
                             "status": refined_adr.metadata.status,
                             "tags": refined_adr.metadata.tags,

@@ -9,9 +9,15 @@ export interface PersonaResponse {
   persona: string;
   perspective: string;
   recommended_option?: string;
-  reasoning: string;
+  proposed_principle?: string;
+  reasoning?: string;
+  rationale?: string;
   concerns: string[];
   requirements: string[];
+  implications?: string[];
+  counter_arguments?: string[];
+  proof_statements?: string[];
+  exceptions?: string[];
   refinement_history?: string[];
 }
 
@@ -19,6 +25,7 @@ export interface ADRMetadata {
   id: string;
   title: string;
   status: ADRStatus;
+  record_type?: 'decision' | 'principle';
   author: string;
   created_at: string;
   updated_at: string;
@@ -39,10 +46,20 @@ export interface ConsequencesStructured {
   negative: string[];
 }
 
+export interface PrincipleDetails {
+  statement: string;
+  rationale: string;
+  implications: string[];
+  counter_arguments: string[];
+  proof_statements: string[];
+  exceptions: string[];
+}
+
 export interface ReferencedADR {
   id: string;
   title: string;
   summary: string;
+  type?: 'decision' | 'principle';
 }
 
 export interface ADRContent {
@@ -54,6 +71,7 @@ export interface ADRContent {
   pros_and_cons?: string;
   options_details?: OptionDetails[];
   consequences_structured?: ConsequencesStructured;
+  principle_details?: PrincipleDetails;
   referenced_adrs?: ReferencedADR[];
   more_information?: string;
   original_generation_prompt?: OriginalGenerationPrompt;
@@ -94,6 +112,7 @@ export interface GenerateADRRequest {
   personas?: string[];
   retrieval_mode?: string;
   provider_id?: string;
+  record_type?: 'decision' | 'principle';
 }
 
 export interface PersonaRefinementItem {
@@ -167,23 +186,12 @@ export interface ExportRequest {
   exported_by?: string;
 }
 
-export interface ExportResponse {
-  message: string;
-  count: number;
-  format: string;
-  download_ready?: boolean;
-}
-
-export interface ImportRequest {
-  data: any;
-  overwrite_existing?: boolean;
-}
-
 export interface ImportResponse {
   message: string;
   imported_count: number;
-  skipped_count?: number;
-  errors?: string[];
+  skipped_count: number;
+  errors: string[];
+  imported_ids?: string[];
 }
 
 export interface ExportSchemaMetadata {
@@ -229,11 +237,13 @@ export interface ADRExportV1 {
   persona_responses?: any[];
 }
 
+/** @public */
 export interface SingleADRExport {
   schema: ExportSchemaMetadata;
   adr: ADRExportV1;
 }
 
+/** @public */
 export interface BulkADRExport {
   schema: ExportSchemaMetadata;
   adrs: ADRExportV1[];

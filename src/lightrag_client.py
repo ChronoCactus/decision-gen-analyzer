@@ -76,7 +76,12 @@ class LightRAGClient:
 
         # Create a virtual filename for the document
         # LightRAG expects documents to have file paths for its internal tracking
-        filename = f"{doc_id}.txt"
+        # Encode record type in filename for retrieval: {doc_id}__{record_type}.txt
+        record_type = "decision"
+        if metadata and "record_type" in metadata:
+            record_type = metadata["record_type"]
+
+        filename = f"{doc_id}__{record_type}.txt"
 
         # LightRAG expects 'text' and optional 'description' fields
         payload = {
@@ -314,7 +319,22 @@ class LightRAGClient:
                         # Extract document ID from file_path (e.g., "/documents/adr-2024-001.txt" -> "adr-2024-001")
                         import os
 
-                        doc_id = os.path.splitext(os.path.basename(file_path))[0]
+                        basename = os.path.basename(file_path)
+                        # Remove .txt extension
+                        if basename.endswith(".txt"):
+                            basename = basename[:-4]
+
+                        # Extract record type if present (format: {doc_id}__{record_type})
+                        record_type = "decision"
+                        if "__" in basename:
+                            parts = basename.split("__")
+                            doc_id = parts[0]
+                            # Handle case where ID itself might contain __ (unlikely for UUIDs but possible)
+                            if len(parts) > 2:
+                                doc_id = "__".join(parts[:-1])
+                            record_type = parts[-1]
+                        else:
+                            doc_id = basename
 
                         # Combine all content chunks for this document
                         combined_content = "\n\n".join(chunk_data["contents"])
@@ -329,6 +349,7 @@ class LightRAGClient:
                                 "title": title,
                                 "metadata": {
                                     "type": "adr",
+                                    "record_type": record_type,
                                     "file_path": file_path,
                                     "reference_id": chunk_data["reference_id"],
                                 },
@@ -617,12 +638,16 @@ class LightRAGClient:
                 )
             else:
                 # Fallback: try using file_path (may not work with current LightRAG API)
-                filename = f"{doc_id}.txt"
-                doc_ids_to_delete = [filename]
+                # Try all possible filename formats
+                doc_ids_to_delete = [
+                    f"{doc_id}.txt",  # Legacy format
+                    f"{doc_id}__decision.txt",  # New format (decision)
+                    f"{doc_id}__principle.txt",  # New format (principle)
+                ]
                 logger.warning(
-                    "Deleting document without LightRAG doc ID - may fail",
+                    "Deleting document without LightRAG doc ID - attempting multiple filename formats",
                     doc_id=doc_id,
-                    filename=filename,
+                    filenames=doc_ids_to_delete,
                     note="Consider using cache to get proper doc ID",
                 )
 

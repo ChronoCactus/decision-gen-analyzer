@@ -141,7 +141,7 @@ describe('Home Page', () => {
       expect(screen.getByTestId('adr-card-adr-1')).toBeInTheDocument();
     });
 
-    const generateButton = screen.getByText(/Generate New ADR/i);
+    const generateButton = screen.getByRole('button', { name: /Generate ADR/i });
     await user.click(generateButton);
 
     expect(screen.getByTestId('generate-modal')).toBeInTheDocument();
@@ -155,7 +155,7 @@ describe('Home Page', () => {
       expect(screen.getByTestId('adr-card-adr-1')).toBeInTheDocument();
     });
 
-    const generateButton = screen.getByText(/Generate New ADR/i);
+    const generateButton = screen.getByRole('button', { name: /Generate ADR/i });
     await user.click(generateButton);
     
     const closeButton = screen.getByText('Close');
@@ -255,7 +255,7 @@ describe('Home Page', () => {
     });
 
     // Open modal
-    const generateButton = screen.getByText(/Generate New ADR/i);
+    const generateButton = screen.getByRole('button', { name: /Generate ADR/i });
     await user.click(generateButton);
 
     // Submit generation
