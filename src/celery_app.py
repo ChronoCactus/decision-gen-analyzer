@@ -135,6 +135,8 @@ def generate_adr_task(
     retrieval_mode: str = "local",
     provider_id: str = None,
     record_type: str = "decision",
+    mcp_tools: list = None,
+    use_mcp: bool = False,
 ):
     """Celery task for ADR generation."""
     try:
@@ -265,6 +267,8 @@ def generate_adr_task(
                     personas=persona_list,
                     progress_callback=update_progress,
                     provider_id=provider_id,
+                    mcp_tools=mcp_tools,
+                    use_mcp=use_mcp,
                 )
 
             self.update_state(

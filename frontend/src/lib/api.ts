@@ -3,7 +3,10 @@ import {
   TaskResponse, TaskStatus, Persona, DefaultModelConfig,
   ProvidersListResponse, LLMProvider, CreateProviderRequest, UpdateProviderRequest,
   PersonaConfig, PersonaCreateRequest, PersonaUpdateRequest, PersonaGenerateRequest, PersonaRefineRequest,
-  ExportRequest, ImportResponse, ExportFormat
+  ExportRequest, ImportResponse, ExportFormat,
+  MCPServersListResponse, MCPServerConfig, CreateMCPServerRequest, UpdateMCPServerRequest,
+  MCPToolsListResponse, UpdateMCPToolRequest, DiscoverToolsResponse,
+  MCPStoredResult, MCPResultsListResponse
 } from '@/types/api';
 
 const DEFAULT_API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
@@ -495,6 +498,81 @@ class ApiClient {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(request),
+    });
+  }
+
+  // ==================== MCP Server Management ====================
+
+  async listMcpServers(): Promise<MCPServersListResponse> {
+    return this.request('/api/v1/mcp-servers');
+  }
+
+  async getMcpServer(serverId: string): Promise<MCPServerConfig> {
+    return this.request(`/api/v1/mcp-servers/${serverId}`);
+  }
+
+  async createMcpServer(request: CreateMCPServerRequest): Promise<MCPServerConfig> {
+    return this.request('/api/v1/mcp-servers', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(request),
+    });
+  }
+
+  async updateMcpServer(serverId: string, request: UpdateMCPServerRequest): Promise<MCPServerConfig> {
+    return this.request(`/api/v1/mcp-servers/${serverId}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(request),
+    });
+  }
+
+  async deleteMcpServer(serverId: string): Promise<{ message: string; deleted: boolean }> {
+    return this.request(`/api/v1/mcp-servers/${serverId}`, {
+      method: 'DELETE',
+    });
+  }
+
+  async discoverMcpTools(serverId: string): Promise<DiscoverToolsResponse> {
+    return this.request(`/api/v1/mcp-servers/${serverId}/discover-tools`, {
+      method: 'POST',
+    });
+  }
+
+  async listMcpTools(): Promise<MCPToolsListResponse> {
+    return this.request('/api/v1/mcp-servers/tools');
+  }
+
+  async updateMcpTool(serverId: string, toolName: string, request: UpdateMCPToolRequest): Promise<{ message: string }> {
+    return this.request(`/api/v1/mcp-servers/${serverId}/tools/${toolName}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(request),
+    });
+  }
+
+  async testMcpTool(serverId: string, toolName: string, args?: Record<string, any>): Promise<{ success: boolean; result?: any; error?: string }> {
+    return this.request(`/api/v1/mcp-servers/${serverId}/tools/${toolName}/test`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ arguments: args || {} }),
+    });
+  }
+
+  // ==================== MCP Tool Results ====================
+
+  async getMcpResult(resultId: string): Promise<MCPStoredResult> {
+    return this.request(`/api/v1/mcp-results/${resultId}`);
+  }
+
+  async listMcpResults(adrId?: string): Promise<MCPResultsListResponse> {
+    const params = adrId ? `?adr_id=${encodeURIComponent(adrId)}` : '';
+    return this.request(`/api/v1/mcp-results${params}`);
+  }
+
+  async deleteMcpResult(resultId: string): Promise<{ message: string }> {
+    return this.request(`/api/v1/mcp-results/${resultId}`, {
+      method: 'DELETE',
     });
   }
 }

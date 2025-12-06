@@ -51,6 +51,14 @@ class GenerateADRRequest(BaseModel):
     retrieval_mode: Optional[str] = "naive"  # RAG retrieval mode
     provider_id: Optional[str] = None  # Optional LLM provider ID
     record_type: Optional[str] = "decision"
+    mcp_tools: Optional[List[Dict[str, Any]]] = Field(
+        default=None,
+        description="List of MCP tools to use: [{server_id, tool_name, arguments?}] (deprecated)",
+    )
+    use_mcp: Optional[bool] = Field(
+        default=False,
+        description="Whether to use AI-driven MCP tool orchestration for research",
+    )
 
 
 class PersonaRefinementItem(BaseModel):
@@ -166,6 +174,8 @@ generation_router = APIRouter()
 config_router = APIRouter()
 queue_router = APIRouter()
 provider_router = APIRouter()
+mcp_router = APIRouter()
+mcp_results_router = APIRouter()
 
 
 @adr_router.websocket("/ws/cache-status")
@@ -875,6 +885,8 @@ async def generate_adr(request: GenerateADRRequest, background_tasks: Background
             retrieval_mode=request.retrieval_mode or "naive",
             provider_id=request.provider_id,
             record_type=request.record_type,
+            mcp_tools=request.mcp_tools or [],
+            use_mcp=request.use_mcp or False,
         )
 
         return TaskResponse(
@@ -1970,3 +1982,513 @@ async def refine_persona(request: PersonaRefineRequest):
                 status_code=500,
                 detail="Failed to generate valid JSON for persona refinement",
             )
+
+
+# ==================== MCP Server Management Routes ====================
+
+
+class MCPServerCreateRequest(BaseModel):
+    """Request model for creating an MCP server."""
+
+    name: str
+    description: Optional[str] = None
+    transport_type: str = "stdio"  # stdio, http, sse
+    command: Optional[str] = None
+    args: List[str] = []
+    env: Dict[str, str] = {}
+    cwd: Optional[str] = None
+    url: Optional[str] = None
+    headers: Dict[str, str] = {}
+    auth_type: Optional[str] = None
+    auth_token: Optional[str] = None
+    is_enabled: bool = True
+
+
+class MCPServerUpdateRequest(BaseModel):
+    """Request model for updating an MCP server."""
+
+    name: Optional[str] = None
+    description: Optional[str] = None
+    transport_type: Optional[str] = None
+    command: Optional[str] = None
+    args: Optional[List[str]] = None
+    env: Optional[Dict[str, str]] = None
+    cwd: Optional[str] = None
+    url: Optional[str] = None
+    headers: Optional[Dict[str, str]] = None
+    auth_type: Optional[str] = None
+    auth_token: Optional[str] = None
+    is_enabled: Optional[bool] = None
+
+
+class MCPToolUpdateRequest(BaseModel):
+    """Request model for updating MCP tool configuration."""
+
+    display_name: Optional[str] = None
+    description: Optional[str] = None
+    execution_mode: Optional[str] = None  # initial_only, per_persona
+    default_enabled: Optional[bool] = None
+    default_arguments: Optional[Dict[str, Any]] = None
+    context_argument_mappings: Optional[Dict[str, str]] = None
+
+
+@mcp_router.get("")
+async def list_mcp_servers():
+    """List all configured MCP servers.
+
+    Returns:
+        {"servers": List[MCPServerResponse]}
+    """
+    try:
+        from src.mcp_config_storage import get_mcp_storage
+
+        storage = get_mcp_storage()
+        servers = await storage.list_all()
+        return {"servers": servers}
+    except Exception as e:
+        logger.error(f"Failed to list MCP servers: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to list MCP servers: {str(e)}"
+        )
+
+
+@mcp_router.get("/enabled")
+async def list_enabled_mcp_servers():
+    """List only enabled MCP servers.
+
+    Returns:
+        {"servers": List[MCPServerResponse]}
+    """
+    try:
+        from src.mcp_config_storage import get_mcp_storage
+
+        storage = get_mcp_storage()
+        servers = await storage.list_enabled()
+        return {"servers": servers}
+    except Exception as e:
+        logger.error(f"Failed to list enabled MCP servers: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to list enabled MCP servers: {str(e)}"
+        )
+
+
+@mcp_router.get("/tools")
+async def list_all_mcp_tools():
+    """List all available MCP tools from enabled servers.
+
+    Returns:
+        {"tools": List[ToolInfo]}
+    """
+    try:
+        from src.mcp_client import get_mcp_client_manager
+
+        manager = get_mcp_client_manager()
+        tools = await manager.get_all_available_tools()
+        return {"tools": tools}
+    except Exception as e:
+        logger.error(f"Failed to list MCP tools: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to list MCP tools: {str(e)}"
+        )
+
+
+@mcp_router.get("/tools/default")
+async def list_default_enabled_tools():
+    """List MCP tools that are enabled by default.
+
+    Returns:
+        {"tools": List[ToolInfo]}
+    """
+    try:
+        from src.mcp_client import get_mcp_client_manager
+
+        manager = get_mcp_client_manager()
+        tools = await manager.get_default_enabled_tools()
+        return {"tools": tools}
+    except Exception as e:
+        logger.error(f"Failed to list default enabled tools: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to list default enabled tools: {str(e)}"
+        )
+
+
+@mcp_router.get("/{server_id}")
+async def get_mcp_server(server_id: str):
+    """Get a specific MCP server by ID.
+
+    Args:
+        server_id: The server ID
+
+    Returns:
+        MCPServerResponse or 404 if not found
+    """
+    try:
+        from src.mcp_config_storage import get_mcp_storage
+
+        storage = get_mcp_storage()
+        server = await storage.get(server_id)
+
+        if not server:
+            raise HTTPException(
+                status_code=404, detail=f"MCP server {server_id} not found"
+            )
+
+        return storage._to_response(server)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to get MCP server: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to get MCP server: {str(e)}"
+        )
+
+
+@mcp_router.post("")
+async def create_mcp_server(request: MCPServerCreateRequest):
+    """Create a new MCP server configuration.
+
+    Args:
+        request: Server creation parameters
+
+    Returns:
+        MCPServerResponse
+    """
+    try:
+        from src.mcp_config_storage import (
+            CreateMCPServerRequest,
+            MCPTransportType,
+            get_mcp_storage,
+        )
+
+        storage = get_mcp_storage()
+
+        # Convert transport type string to enum
+        try:
+            transport = MCPTransportType(request.transport_type)
+        except ValueError:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid transport_type: {request.transport_type}. Must be one of: stdio, http, sse",
+            )
+
+        create_req = CreateMCPServerRequest(
+            name=request.name,
+            description=request.description,
+            transport_type=transport,
+            command=request.command,
+            args=request.args,
+            env=request.env,
+            cwd=request.cwd,
+            url=request.url,
+            headers=request.headers,
+            auth_type=request.auth_type,
+            auth_token=request.auth_token,
+            is_enabled=request.is_enabled,
+        )
+
+        server = await storage.create(create_req)
+        return server
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to create MCP server: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to create MCP server: {str(e)}"
+        )
+
+
+@mcp_router.put("/{server_id}")
+async def update_mcp_server(server_id: str, request: MCPServerUpdateRequest):
+    """Update an existing MCP server configuration.
+
+    Args:
+        server_id: The server ID
+        request: Update parameters
+
+    Returns:
+        MCPServerResponse or 404 if not found
+    """
+    try:
+        from src.mcp_config_storage import (
+            MCPTransportType,
+            UpdateMCPServerRequest,
+            get_mcp_storage,
+        )
+
+        storage = get_mcp_storage()
+
+        # Build update request with only fields that were explicitly set
+        update_fields = request.model_dump(exclude_unset=True)
+
+        # Convert transport type if provided
+        if "transport_type" in update_fields and update_fields["transport_type"]:
+            try:
+                update_fields["transport_type"] = MCPTransportType(
+                    update_fields["transport_type"]
+                )
+            except ValueError:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Invalid transport_type: {update_fields['transport_type']}",
+                )
+
+        update_req = UpdateMCPServerRequest(**update_fields)
+
+        server = await storage.update(server_id, update_req)
+
+        if not server:
+            raise HTTPException(
+                status_code=404, detail=f"MCP server {server_id} not found"
+            )
+
+        return server
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to update MCP server: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to update MCP server: {str(e)}"
+        )
+
+
+@mcp_router.delete("/{server_id}")
+async def delete_mcp_server(server_id: str):
+    """Delete an MCP server configuration.
+
+    Args:
+        server_id: The server ID
+
+    Returns:
+        {"message": str, "deleted": bool}
+    """
+    try:
+        from src.mcp_config_storage import get_mcp_storage
+
+        storage = get_mcp_storage()
+        success = await storage.delete(server_id)
+
+        if not success:
+            raise HTTPException(
+                status_code=404, detail=f"MCP server {server_id} not found"
+            )
+
+        return {
+            "message": f"MCP server {server_id} deleted successfully",
+            "deleted": True,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to delete MCP server: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to delete MCP server: {str(e)}"
+        )
+
+
+@mcp_router.post("/{server_id}/discover-tools")
+async def discover_mcp_tools(server_id: str):
+    """Connect to an MCP server and discover available tools.
+
+    This endpoint connects to the server, lists all available tools,
+    and syncs them with the stored configuration.
+
+    Args:
+        server_id: The server ID
+
+    Returns:
+        {"tools": List[ToolInfo], "message": str}
+    """
+    try:
+        from src.mcp_client import get_mcp_client_manager
+
+        manager = get_mcp_client_manager()
+        tools = await manager.discover_tools(server_id)
+
+        return {
+            "tools": tools,
+            "message": f"Discovered {len(tools)} tools from server",
+        }
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        logger.error(f"Failed to discover tools: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to discover tools: {str(e)}"
+        )
+
+
+@mcp_router.put("/{server_id}/tools/{tool_name}")
+async def update_mcp_tool(
+    server_id: str, tool_name: str, request: MCPToolUpdateRequest
+):
+    """Update configuration for a specific tool on an MCP server.
+
+    Args:
+        server_id: The server ID
+        tool_name: The tool name
+        request: Tool update parameters
+
+    Returns:
+        MCPServerResponse with updated tool config
+    """
+    try:
+        from src.mcp_config_storage import (
+            MCPToolExecutionMode,
+        )
+        from src.mcp_config_storage import (
+            MCPToolUpdateRequest as StorageToolUpdateRequest,
+        )
+        from src.mcp_config_storage import (
+            get_mcp_storage,
+        )
+
+        storage = get_mcp_storage()
+
+        # Build update request with only fields that were explicitly set
+        update_fields = request.model_dump(exclude_unset=True)
+
+        # Convert execution mode if provided
+        if "execution_mode" in update_fields and update_fields["execution_mode"]:
+            try:
+                update_fields["execution_mode"] = MCPToolExecutionMode(
+                    update_fields["execution_mode"]
+                )
+            except ValueError:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Invalid execution_mode: {update_fields['execution_mode']}. Must be one of: initial_only, per_persona",
+                )
+
+        update_req = StorageToolUpdateRequest(**update_fields)
+
+        server = await storage.update_tool(server_id, tool_name, update_req)
+
+        if not server:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Server {server_id} or tool {tool_name} not found",
+            )
+
+        return server
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to update tool: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to update tool: {str(e)}")
+
+
+@mcp_router.post("/{server_id}/tools/{tool_name}/test")
+async def test_mcp_tool(server_id: str, tool_name: str, arguments: Dict[str, Any] = {}):
+    """Test a specific MCP tool with provided arguments.
+
+    Args:
+        server_id: The server ID
+        tool_name: The tool name
+        arguments: Arguments to pass to the tool
+
+    Returns:
+        {"success": bool, "result": Any, "error": Optional[str]}
+    """
+    try:
+        from src.mcp_client import get_mcp_client_manager
+
+        manager = get_mcp_client_manager()
+        result = await manager.call_tool(server_id, tool_name, arguments)
+
+        return {
+            "success": result.success,
+            "result": result.to_context_string() if result.success else None,
+            "error": result.error,
+        }
+    except Exception as e:
+        logger.error(f"Failed to test tool: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to test tool: {str(e)}")
+
+
+# MCP Results endpoints
+@mcp_results_router.get("/{result_id}")
+async def get_mcp_result(result_id: str):
+    """Get a stored MCP tool result by ID.
+
+    This endpoint retrieves the raw JSON output from an MCP tool execution.
+    Used for viewing tool results referenced in ADRs.
+
+    Args:
+        result_id: The unique ID of the stored result
+
+    Returns:
+        Raw JSON data of the tool result
+    """
+    from src.mcp_result_storage import get_mcp_result_storage
+
+    storage = get_mcp_result_storage()
+    result = await storage.get_raw_json(result_id)
+
+    if result is None:
+        raise HTTPException(status_code=404, detail="MCP result not found")
+
+    return result
+
+
+@mcp_results_router.get("")
+async def list_mcp_results(adr_id: Optional[str] = None):
+    """List stored MCP results, optionally filtered by ADR ID.
+
+    Args:
+        adr_id: Optional ADR ID to filter results by
+
+    Returns:
+        List of stored result metadata
+    """
+    from src.mcp_result_storage import get_mcp_result_storage
+
+    storage = get_mcp_result_storage()
+
+    if adr_id:
+        results = await storage.list_for_adr(adr_id)
+    else:
+        # List all results (limited for now)
+        results = []
+        import os
+
+        for filename in os.listdir(storage.storage_dir):
+            if filename.endswith(".json"):
+                result_id = filename[:-5]  # Remove .json
+                result = await storage.get(result_id)
+                if result:
+                    results.append(result)
+
+    return {
+        "results": [
+            {
+                "id": r.id,
+                "server_name": r.server_name,
+                "tool_name": r.tool_name,
+                "success": r.success,
+                "created_at": r.created_at,
+                "adr_id": r.adr_id,
+            }
+            for r in results
+        ]
+    }
+
+
+@mcp_results_router.delete("/{result_id}")
+async def delete_mcp_result(result_id: str):
+    """Delete a stored MCP result.
+
+    Args:
+        result_id: The unique ID of the result to delete
+
+    Returns:
+        Success message
+    """
+    from src.mcp_result_storage import get_mcp_result_storage
+
+    storage = get_mcp_result_storage()
+    deleted = await storage.delete(result_id)
+
+    if not deleted:
+        raise HTTPException(status_code=404, detail="MCP result not found")
+
+    return {"message": "Result deleted successfully"}
