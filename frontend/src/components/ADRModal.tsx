@@ -31,13 +31,22 @@ export function ADRModal({ adr, onClose, onAnalyze, isAnalyzing, onADRUpdate, on
     message: '',
     type: 'success'
   });
+  const [mcpResultModal, setMcpResultModal] = useState<{ show: boolean; resultId: string; serverName: string; toolName: string; loading: boolean; data: any; error: string | null }>({
+    show: false,
+    resultId: '',
+    serverName: '',
+    toolName: '',
+    loading: false,
+    data: null,
+    error: null
+  });
   const bulkRefineRef = useRef<HTMLDivElement>(null);
   const originalPromptEditRef = useRef<HTMLDivElement>(null);
 
   const isPrinciple = currentAdr.metadata.record_type === 'principle';
 
   // Close this modal with ESC, but only if personas modal is not open
-  useEscapeKey(onClose, !showPersonas && !showBulkRefine && !showOriginalPromptEdit);
+  useEscapeKey(onClose, !showPersonas && !showBulkRefine && !showOriginalPromptEdit && !mcpResultModal.show);
 
   // Scroll to bulk refinement section when it becomes visible
   useEffect(() => {
@@ -74,6 +83,46 @@ export function ADRModal({ adr, onClose, onAnalyze, isAnalyzing, onADRUpdate, on
     } finally {
       setIsUpdatingStatus(false);
     }
+  };
+
+  const handleViewMcpResult = async (resultId: string, serverName: string, toolName: string) => {
+    setMcpResultModal({
+      show: true,
+      resultId,
+      serverName,
+      toolName,
+      loading: true,
+      data: null,
+      error: null
+    });
+
+    try {
+      const result = await apiClient.getMcpResult(resultId);
+      setMcpResultModal(prev => ({
+        ...prev,
+        loading: false,
+        data: result
+      }));
+    } catch (error) {
+      console.error('Failed to fetch MCP result:', error);
+      setMcpResultModal(prev => ({
+        ...prev,
+        loading: false,
+        error: 'Failed to load tool result. It may have been deleted.'
+      }));
+    }
+  };
+
+  const closeMcpResultModal = () => {
+    setMcpResultModal({
+      show: false,
+      resultId: '',
+      serverName: '',
+      toolName: '',
+      loading: false,
+      data: null,
+      error: null
+    });
   };
 
   const handleRefinePersonas = async (refinements: PersonaRefinementItem[], refinementsToDelete?: Record<string, number[]>) => {
@@ -476,10 +525,31 @@ export function ADRModal({ adr, onClose, onAnalyze, isAnalyzing, onADRUpdate, on
               <div>
                 <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2">References</h3>
                 <p className="text-sm text-gray-600 dark:text-gray-400 mb-2">
-                  This {isPrinciple ? 'principle' : 'ADR'} was generated with context from the following records:
+                  This {isPrinciple ? 'principle' : 'ADR'} was generated with context from the following sources:
                 </p>
                 <ul className="space-y-2">
                   {currentAdr.content.referenced_adrs.map((ref, index) => {
+                    // Handle MCP references differently
+                    if (ref.type === 'mcp') {
+                      return (
+                        <li key={index} className="border-l-2 border-purple-400 dark:border-purple-600 pl-3 py-1">
+                          <div className="text-sm text-gray-800 dark:text-gray-200 font-medium flex items-center gap-2">
+                            <button
+                              onClick={() => handleViewMcpResult(ref.id, ref.server_name || 'MCP', ref.title)}
+                              className="px-2 py-0.5 rounded text-xs font-medium cursor-pointer transition-colors bg-purple-100 text-purple-800 dark:bg-purple-900/50 dark:text-purple-300 hover:bg-purple-200 dark:hover:bg-purple-800/50"
+                              title="Click to view tool output"
+                            >
+                              MCP: {ref.server_name || 'Tool'}
+                            </button>
+                            <span>{ref.title}</span>
+                          </div>
+                          {ref.summary && (
+                            <div className="text-xs text-gray-500 dark:text-gray-400 mt-1 italic">{ref.summary}</div>
+                          )}
+                        </li>
+                      );
+                    }
+
                     // Check if title looks like a UUID (with or without hyphens/spaces)
                     const isUuidTitle = /^[0-9a-fA-F\-\s]{32,}$/.test(ref.title || '');
 
@@ -730,6 +800,135 @@ export function ADRModal({ adr, onClose, onAnalyze, isAnalyzing, onADRUpdate, on
           type={refinementToast.type}
           onClose={() => setRefinementToast({ show: false, message: '', type: 'success' })}
         />
+      )}
+
+      {/* MCP Result Modal */}
+      {mcpResultModal.show && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black bg-opacity-50 dark:bg-opacity-70" onClick={closeMcpResultModal}></div>
+          <div className="relative bg-white dark:bg-gray-800 rounded-lg shadow-xl w-full max-w-3xl max-h-[80vh] flex flex-col">
+            {/* Header */}
+            <div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700">
+              <div>
+                <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+                  MCP Tool Result
+                </h3>
+                <p className="text-sm text-gray-500 dark:text-gray-400">
+                  {mcpResultModal.serverName} / {mcpResultModal.toolName}
+                </p>
+              </div>
+              <button
+                onClick={closeMcpResultModal}
+                className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
+              >
+                <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            {/* Content */}
+            <div className="flex-1 overflow-auto p-4">
+              {mcpResultModal.loading && (
+                <div className="flex items-center justify-center py-8">
+                  <svg className="animate-spin h-8 w-8 text-purple-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                  </svg>
+                  <span className="ml-3 text-gray-600 dark:text-gray-400">Loading tool result...</span>
+                </div>
+              )}
+
+              {mcpResultModal.error && (
+                <div className="text-center py-8">
+                  <div className="text-red-500 dark:text-red-400 mb-2">
+                    <svg className="w-12 h-12 mx-auto" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                    </svg>
+                  </div>
+                  <p className="text-gray-600 dark:text-gray-400">{mcpResultModal.error}</p>
+                </div>
+              )}
+
+              {!mcpResultModal.loading && !mcpResultModal.error && mcpResultModal.data && (
+                <div className="space-y-4">
+                  {/* Metadata */}
+                  <div className="bg-gray-50 dark:bg-gray-900/50 rounded-lg p-3 text-sm">
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <span className="text-gray-500 dark:text-gray-400">Server:</span>
+                        <span className="ml-2 text-gray-900 dark:text-gray-100">{mcpResultModal.data.server_name}</span>
+                      </div>
+                      <div>
+                        <span className="text-gray-500 dark:text-gray-400">Tool:</span>
+                        <span className="ml-2 text-gray-900 dark:text-gray-100">{mcpResultModal.data.tool_name}</span>
+                      </div>
+                      <div>
+                        <span className="text-gray-500 dark:text-gray-400">Status:</span>
+                        <span className={`ml-2 ${mcpResultModal.data.success ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
+                          {mcpResultModal.data.success ? 'Success' : 'Failed'}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-gray-500 dark:text-gray-400">Time:</span>
+                        <span className="ml-2 text-gray-900 dark:text-gray-100">
+                          {new Date(mcpResultModal.data.created_at).toLocaleString()}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Arguments */}
+                  {mcpResultModal.data.arguments && Object.keys(mcpResultModal.data.arguments).length > 0 && (
+                    <div>
+                      <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Arguments</h4>
+                      <pre className="bg-gray-100 dark:bg-gray-900 rounded-lg p-3 text-xs overflow-x-auto text-gray-800 dark:text-gray-200">
+                        {JSON.stringify(mcpResultModal.data.arguments, null, 2)}
+                      </pre>
+                    </div>
+                  )}
+
+                  {/* Result */}
+                  <div>
+                    <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Result</h4>
+                    <pre className="bg-gray-100 dark:bg-gray-900 rounded-lg p-3 text-xs overflow-x-auto text-gray-800 dark:text-gray-200 max-h-96">
+                      {JSON.stringify(mcpResultModal.data.result, null, 2)}
+                    </pre>
+                  </div>
+
+                  {/* Error if any */}
+                  {mcpResultModal.data.error && (
+                    <div>
+                      <h4 className="text-sm font-medium text-red-700 dark:text-red-300 mb-2">Error</h4>
+                      <pre className="bg-red-50 dark:bg-red-900/20 rounded-lg p-3 text-xs overflow-x-auto text-red-800 dark:text-red-200">
+                        {mcpResultModal.data.error}
+                      </pre>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Footer */}
+            <div className="flex justify-end gap-2 p-4 border-t border-gray-200 dark:border-gray-700">
+              <button
+                onClick={() => {
+                  navigator.clipboard.writeText(JSON.stringify(mcpResultModal.data, null, 2));
+                }}
+                disabled={!mcpResultModal.data}
+                className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 rounded-md hover:bg-gray-200 dark:hover:bg-gray-600 disabled:opacity-50 transition-colors"
+              >
+                Copy JSON
+              </button>
+              <button
+                onClick={closeMcpResultModal}
+                className="px-4 py-2 text-sm font-medium text-white bg-purple-600 rounded-md hover:bg-purple-700 transition-colors"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

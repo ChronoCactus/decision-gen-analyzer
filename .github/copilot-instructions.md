@@ -196,6 +196,49 @@ The core feature: analyze ADRs through different "personas" (technical lead, bus
 
 **Customization**: See `config/personas/README.md` for instructions on adding custom personas.
 
+### MCP (Model Context Protocol) Integration
+
+**Purpose**: Call external tools during ADR generation to gather additional context from MCP servers.
+
+**Key Files**:
+- `src/mcp_config_storage.py` - MCP server/tool configuration storage (JSON file)
+- `src/mcp_client.py` - FastMCP client wrapper for tool execution
+- `src/api/routes.py` - MCP router with CRUD endpoints
+
+**Execution Modes**:
+- `INITIAL_ONLY` - Tool runs once before all persona generation, results shared with all personas
+- `PER_PERSONA` - Tool runs separately for each persona, enabling persona-specific queries
+
+**Transport Types**:
+- `stdio` - Command-based servers (e.g., `npx -y @modelcontextprotocol/server-memory`)
+- `http` - HTTP-based MCP servers
+- `sse` - Server-Sent Events transport
+
+**Storage**: Configurations stored in `data/mcp_servers.json` (same pattern as LLM providers)
+
+**API Pattern**:
+```python
+from src.mcp_client import get_mcp_client_manager
+
+async def use_mcp_tools():
+    manager = get_mcp_client_manager()
+    
+    # Execute tools for generation
+    results = await manager.execute_tools_for_generation(
+        tools=[{"server_id": "...", "tool_name": "web_search", "arguments": {...}}],
+        execution_mode="initial_only"  # or "per_persona"
+    )
+    
+    # Format results as context string
+    context = manager.format_mcp_results_as_context(results)
+```
+
+**Frontend Integration**:
+- Settings → MCP Servers tab for configuration
+- GenerateADRModal → Expandable MCP Tools section for selection
+
+**Documentation**: See `docs/MCP_INTEGRATION.md` for complete guide.
+
 ## Critical Developer Workflows
 
 ### Starting the Full Stack
@@ -482,7 +525,10 @@ Documents stored with `doc_id` as ADR UUID. Content includes:
 - `src/task_queue_monitor.py` - Redis-based task queue monitoring (replaces slow Celery inspect)
 - `src/websocket_broadcaster.py` - Redis pub/sub for cross-process WebSocket messages
 - `src/websocket_manager.py` - WebSocket connection manager (FastAPI process only)
+- `src/mcp_config_storage.py` - MCP server/tool configuration storage
+- `src/mcp_client.py` - FastMCP client wrapper for MCP tool execution
 - `config/personas/*.json` - Persona configurations
 - `docker-compose.yml` - Service definitions and network config
 - `docs/PARALLEL_PROCESSING.md` - Multi-backend configuration guide
 - `docs/TASK_QUEUE_VISIBILITY.md` - Task queue monitoring implementation details
+- `docs/MCP_INTEGRATION.md` - MCP tool integration guide

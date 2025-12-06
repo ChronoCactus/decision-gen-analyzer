@@ -8,6 +8,7 @@ vi.mock('@/lib/api', () => ({
   apiClient: {
     getPersonas: vi.fn(),
     listProviders: vi.fn(),
+    listMcpServers: vi.fn(),
   },
 }));
 
@@ -57,10 +58,15 @@ describe('GenerateADRModal', () => {
     generationStartTime: undefined,
   };
 
+  const mockMcpServers = {
+    servers: [],
+  };
+
   beforeEach(() => {
     vi.clearAllMocks();
     (apiClient.getPersonas as any).mockResolvedValue(mockPersonas);
     (apiClient.listProviders as any).mockResolvedValue(mockProviders);
+    (apiClient.listMcpServers as any).mockResolvedValue(mockMcpServers);
   });
 
   it('should render modal with form fields', async () => {

@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { GenerateADRRequest, Persona, LLMProvider } from '@/types/api';
+import { GenerateADRRequest, Persona, LLMProvider, MCPServerConfig } from '@/types/api';
 import { apiClient } from '@/lib/api';
 import { useEscapeKey } from '@/hooks/useEscapeKey';
 
@@ -26,6 +26,10 @@ export function GenerateADRModal({ onClose, onGenerate, isGenerating, generation
   const [elapsedTime, setElapsedTime] = useState(0);
   const [showContext, setShowContext] = useState(false);
   const [recordType, setRecordType] = useState<'decision' | 'principle'>(initialRecordType);
+
+  // MCP state - AI-driven tool orchestration
+  const [mcpServers, setMcpServers] = useState<MCPServerConfig[]>([]);
+  const [useMcp, setUseMcp] = useState(false);
 
   // Detect OS for keyboard shortcut display (computed once on mount)
   const [isMac] = useState(() => {
@@ -80,8 +84,9 @@ export function GenerateADRModal({ onClose, onGenerate, isGenerating, generation
       retrieval_mode: retrievalMode,
       provider_id: selectedProviderId || undefined,
       record_type: recordType,
+      use_mcp: useMcp || undefined,
     });
-  }, [prompt, context, tags, selectedPersonas, retrievalMode, selectedProviderId, recordType, onGenerate]);
+  }, [prompt, context, tags, selectedPersonas, retrievalMode, selectedProviderId, recordType, useMcp, onGenerate]);
 
   // Handle keyboard shortcuts (Cmd/Ctrl + Enter)
   useEffect(() => {
@@ -99,14 +104,16 @@ export function GenerateADRModal({ onClose, onGenerate, isGenerating, generation
   }, [prompt, isGenerating, handleSubmit]);
 
   useEffect(() => {
-    // Load available personas and providers
+    // Load available personas, providers, and MCP servers
     Promise.all([
       apiClient.getPersonas(),
-      apiClient.listProviders()
+      apiClient.listProviders(),
+      apiClient.listMcpServers().catch(() => ({ servers: [] })) // Don't fail if MCP servers not available
     ])
-      .then(([personasResponse, providersResponse]) => {
+      .then(([personasResponse, providersResponse, mcpResponse]) => {
         setPersonas(personasResponse.personas);
         setProviders(providersResponse.providers);
+        setMcpServers(mcpResponse.servers);
 
         // Set default provider (the one marked as default)
         const defaultProvider = providersResponse.providers.find(p => p.is_default);
@@ -134,6 +141,10 @@ export function GenerateADRModal({ onClose, onGenerate, isGenerating, generation
         ? prev.filter(p => p !== personaValue)
         : [...prev, personaValue]
     );
+  };
+
+  const getEnabledMcpServers = (): MCPServerConfig[] => {
+    return mcpServers.filter(s => s.is_enabled && s.tools.length > 0);
   };
 
   const getModelDisplay = (persona: Persona): string => {
@@ -310,6 +321,29 @@ export function GenerateADRModal({ onClose, onGenerate, isGenerating, generation
                 💡 <strong>Tip:</strong> Getting unrelated results? Increase the <code className="px-1 py-0.5 bg-gray-100 dark:bg-gray-700 rounded text-xs">COSINE_THRESHOLD</code> environment variable on your LightRAG deployment (default: 0.2, try 0.3-0.5 for stricter matching).
               </p>
             </div>
+
+            {/* MCP Tools Toggle - AI-driven tool orchestration */}
+            {getEnabledMcpServers().length > 0 && (
+              <div className="border border-gray-200 dark:border-gray-700 rounded-md p-4 bg-purple-50 dark:bg-purple-900/20">
+                <label className="flex items-start cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={useMcp}
+                    onChange={(e) => setUseMcp(e.target.checked)}
+                    className="mt-0.5 mr-3 h-4 w-4 text-purple-600 focus:ring-purple-500 border-gray-300 dark:border-gray-600 rounded"
+                  />
+                  <div>
+                    <span className="text-sm font-medium text-purple-700 dark:text-purple-300">
+                      Use MCP Tools (AI-driven)
+                    </span>
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                      When enabled, AI will analyze your request and decide which external tools to call to gather additional context.
+                      Available servers: {getEnabledMcpServers().map(s => s.name).join(', ')}
+                    </p>
+                  </div>
+                </label>
+              </div>
+            )}
 
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">

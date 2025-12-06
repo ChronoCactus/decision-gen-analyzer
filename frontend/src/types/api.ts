@@ -59,7 +59,8 @@ export interface ReferencedADR {
   id: string;
   title: string;
   summary: string;
-  type?: 'decision' | 'principle';
+  type?: 'decision' | 'principle' | 'mcp';
+  server_name?: string;  // For MCP references, e.g., "Websearch"
 }
 
 export interface ADRContent {
@@ -113,6 +114,7 @@ export interface GenerateADRRequest {
   retrieval_mode?: string;
   provider_id?: string;
   record_type?: 'decision' | 'principle';
+  use_mcp?: boolean;
 }
 
 export interface PersonaRefinementItem {
@@ -352,4 +354,134 @@ export interface PersonaRefineRequest {
   prompt: string;
   current_persona: PersonaConfig;
   provider_id?: string;
+}
+
+// MCP (Model Context Protocol) types
+export enum MCPTransportType {
+  STDIO = "stdio",
+  HTTP = "http",
+  SSE = "sse"
+}
+
+export enum MCPToolExecutionMode {
+  INITIAL_ONLY = "initial_only",
+  PER_PERSONA = "per_persona"
+}
+
+export interface MCPToolConfig {
+  tool_name: string;
+  display_name: string;
+  description: string;
+  default_enabled: boolean;
+  execution_mode: MCPToolExecutionMode;
+  default_arguments: Record<string, any>;
+  context_argument_mappings?: Record<string, string>;
+}
+
+export interface MCPServerConfig {
+  id: string;
+  name: string;
+  description?: string;
+  transport_type: MCPTransportType;
+  command?: string;
+  args?: string[];
+  url?: string;
+  headers?: Record<string, string>;
+  auth_type?: string;
+  has_auth_token: boolean;
+  tools: MCPToolConfig[];
+  is_enabled: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreateMCPServerRequest {
+  name: string;
+  description?: string;
+  transport_type: MCPTransportType;
+  command?: string;
+  args?: string[];
+  url?: string;
+  headers?: Record<string, string>;
+  auth_type?: string;
+  auth_token?: string;
+  is_enabled?: boolean;
+}
+
+export interface UpdateMCPServerRequest {
+  name?: string;
+  description?: string;
+  transport_type?: MCPTransportType;
+  command?: string;
+  args?: string[];
+  url?: string;
+  headers?: Record<string, string>;
+  auth_type?: string;
+  auth_token?: string;
+  is_enabled?: boolean;
+}
+
+export interface MCPServersListResponse {
+  servers: MCPServerConfig[];
+}
+
+export interface MCPToolsListResponse {
+  tools: Array<{
+    server_id: string;
+    server_name: string;
+    tool: MCPToolConfig;
+  }>;
+}
+
+export interface UpdateMCPToolRequest {
+  display_name?: string;
+  description?: string;
+  default_enabled?: boolean;
+  execution_mode?: MCPToolExecutionMode;
+  default_arguments?: Record<string, any>;
+  context_argument_mappings?: Record<string, string>;
+}
+
+export interface DiscoverToolsResponse {
+  tools: MCPToolConfig[];
+  message: string;
+}
+
+export interface MCPToolForGeneration {
+  server_id: string;
+  tool_name: string;
+  arguments?: Record<string, any>;
+  execution_mode?: MCPToolExecutionMode;
+}
+
+// Extended GenerateADRRequest with MCP tools
+export interface GenerateADRRequestWithMCP extends GenerateADRRequest {
+  mcp_tools?: MCPToolForGeneration[];
+}
+
+// MCP Tool Result types
+export interface MCPStoredResult {
+  id: string;
+  server_id: string;
+  server_name: string;
+  tool_name: string;
+  arguments: Record<string, any>;
+  result: any;
+  success: boolean;
+  error?: string;
+  created_at: string;
+  adr_id?: string;
+}
+
+export interface MCPResultSummary {
+  id: string;
+  server_name: string;
+  tool_name: string;
+  success: boolean;
+  created_at: string;
+  adr_id?: string;
+}
+
+export interface MCPResultsListResponse {
+  results: MCPResultSummary[];
 }

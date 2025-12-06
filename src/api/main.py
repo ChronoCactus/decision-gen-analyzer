@@ -12,6 +12,8 @@ from src.api.routes import (
     analysis_router,
     config_router,
     generation_router,
+    mcp_results_router,
+    mcp_router,
     provider_router,
     queue_router,
 )
@@ -149,6 +151,10 @@ def create_application() -> FastAPI:
     app.include_router(queue_router, prefix="/api/v1/queue", tags=["Queue"])
     app.include_router(
         provider_router, prefix="/api/v1/llm-providers", tags=["LLM Providers"]
+    )
+    app.include_router(mcp_router, prefix="/api/v1/mcp-servers", tags=["MCP Servers"])
+    app.include_router(
+        mcp_results_router, prefix="/api/v1/mcp-results", tags=["MCP Results"]
     )
 
     @app.get("/health")
