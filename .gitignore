@@ -14,3 +14,5 @@ buildkitd.toml
 # Node.js/npm files (commitlint only)
 package-lock.json
 node_modules/
+
+.vscode/
