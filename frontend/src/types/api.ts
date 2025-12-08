@@ -115,6 +115,7 @@ export interface GenerateADRRequest {
   provider_id?: string;
   record_type?: 'decision' | 'principle';
   use_mcp?: boolean;
+  status_filter?: string[];
 }
 
 export interface PersonaRefinementItem {

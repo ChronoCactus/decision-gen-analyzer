@@ -530,6 +530,10 @@ class ADRGenerationPrompt(BaseModel):
         default="naive",
         description="RAG retrieval mode: local, global, hybrid, naive, mix, or bypass",
     )
+    status_filter: Optional[List[str]] = Field(
+        default=None,
+        description="Filter referenced ADRs by status values (e.g., ['accepted', 'proposed']). If None, all statuses are included.",
+    )
 
 
 class ADRGenerationOptions(BaseModel):
