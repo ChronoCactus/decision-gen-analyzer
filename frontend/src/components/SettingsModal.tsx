@@ -11,7 +11,8 @@ import {
   MCPTransportType,
   MCPToolExecutionMode,
   CreateMCPServerRequest,
-  UpdateMCPServerRequest
+  UpdateMCPServerRequest,
+  ADRStatus
 } from '@/types/api';
 import { Toast } from './Toast';
 import { InterfaceSettings } from '@/hooks/useInterfaceSettings';
@@ -1131,6 +1132,60 @@ export function SettingsModal({ onClose, interfaceSettings, onUpdateInterfaceSet
                     />
                   </div>
                 )}
+
+                {/* Default Status Filter */}
+                <div className="border-t border-gray-200 dark:border-gray-700 pt-4 mt-4">
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Default Reference Status Filter
+                  </label>
+                  <p className="text-sm text-gray-500 dark:text-gray-400 mb-3">
+                    By default, only use ADRs with these statuses as reference context when generating new records. This prevents draft decisions from polluting new generations.
+                  </p>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                    {Object.values(ADRStatus).map((status) => {
+                      const isSelected = interfaceSettings.defaultStatusFilter.includes(status);
+                      const statusColors = {
+                        [ADRStatus.PROPOSED]: 'blue',
+                        [ADRStatus.ACCEPTED]: 'green',
+                        [ADRStatus.DEPRECATED]: 'orange',
+                        [ADRStatus.SUPERSEDED]: 'purple',
+                        [ADRStatus.REJECTED]: 'red',
+                      };
+                      const color = statusColors[status];
+                      
+                      return (
+                        <label
+                          key={status}
+                          className={`flex items-center p-2 rounded-md border cursor-pointer transition-colors ${
+                            isSelected
+                              ? `border-${color}-500 dark:border-${color}-400 bg-${color}-50 dark:bg-${color}-900/30`
+                              : 'border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700'
+                          }`}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={(e) => {
+                              const newFilter = e.target.checked
+                                ? [...interfaceSettings.defaultStatusFilter, status]
+                                : interfaceSettings.defaultStatusFilter.filter(s => s !== status);
+                              onUpdateInterfaceSettings({ defaultStatusFilter: newFilter });
+                            }}
+                            className="rounded border-gray-300 dark:border-gray-600 text-blue-600 focus:ring-blue-500"
+                          />
+                          <span className="ml-2 text-sm text-gray-700 dark:text-gray-300 capitalize">
+                            {status}
+                          </span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                  {interfaceSettings.defaultStatusFilter.length === 0 && (
+                    <p className="text-sm text-amber-600 dark:text-amber-400 mt-2">
+                      ⚠️ No statuses selected - all ADRs will be included by default regardless of status.
+                    </p>
+                  )}
+                </div>
               </div>
             </div>
           )}

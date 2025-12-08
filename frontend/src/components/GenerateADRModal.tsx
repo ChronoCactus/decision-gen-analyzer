@@ -1,9 +1,10 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { GenerateADRRequest, Persona, LLMProvider, MCPServerConfig } from '@/types/api';
+import { GenerateADRRequest, Persona, LLMProvider, MCPServerConfig, ADRStatus } from '@/types/api';
 import { apiClient } from '@/lib/api';
 import { useEscapeKey } from '@/hooks/useEscapeKey';
+import { InterfaceSettings } from '@/hooks/useInterfaceSettings';
 
 interface GenerateADRModalProps {
   onClose: () => void;
@@ -11,9 +12,10 @@ interface GenerateADRModalProps {
   isGenerating: boolean;
   generationStartTime?: number;
   initialRecordType?: 'decision' | 'principle';
+  interfaceSettings?: InterfaceSettings;
 }
 
-export function GenerateADRModal({ onClose, onGenerate, isGenerating, generationStartTime, initialRecordType = 'decision' }: GenerateADRModalProps) {
+export function GenerateADRModal({ onClose, onGenerate, isGenerating, generationStartTime, initialRecordType = 'decision', interfaceSettings }: GenerateADRModalProps) {
   const [prompt, setPrompt] = useState('');
   const [context, setContext] = useState('');
   const [tags, setTags] = useState('');
@@ -26,6 +28,11 @@ export function GenerateADRModal({ onClose, onGenerate, isGenerating, generation
   const [elapsedTime, setElapsedTime] = useState(0);
   const [showContext, setShowContext] = useState(false);
   const [recordType, setRecordType] = useState<'decision' | 'principle'>(initialRecordType);
+
+  // Status filter state - default from interface settings
+  const [statusFilter, setStatusFilter] = useState<string[]>(
+    interfaceSettings?.defaultStatusFilter || ['accepted']
+  );
 
   // MCP state - AI-driven tool orchestration
   const [mcpServers, setMcpServers] = useState<MCPServerConfig[]>([]);
@@ -85,8 +92,9 @@ export function GenerateADRModal({ onClose, onGenerate, isGenerating, generation
       provider_id: selectedProviderId || undefined,
       record_type: recordType,
       use_mcp: useMcp || undefined,
+      status_filter: statusFilter.length > 0 ? statusFilter : undefined,
     });
-  }, [prompt, context, tags, selectedPersonas, retrievalMode, selectedProviderId, recordType, useMcp, onGenerate]);
+  }, [prompt, context, tags, selectedPersonas, retrievalMode, selectedProviderId, recordType, useMcp, statusFilter, onGenerate]);
 
   // Handle keyboard shortcuts (Cmd/Ctrl + Enter)
   useEffect(() => {
@@ -320,6 +328,61 @@ export function GenerateADRModal({ onClose, onGenerate, isGenerating, generation
               <p className="text-sm text-amber-600 dark:text-amber-400 mt-1">
                 💡 <strong>Tip:</strong> Getting unrelated results? Increase the <code className="px-1 py-0.5 bg-gray-100 dark:bg-gray-700 rounded text-xs">COSINE_THRESHOLD</code> environment variable on your LightRAG deployment (default: 0.2, try 0.3-0.5 for stricter matching).
               </p>
+            </div>
+
+            {/* Status Filter for Referenced ADRs */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                Reference Status Filter
+              </label>
+              <p className="text-sm text-gray-500 dark:text-gray-400 mb-3">
+                Only use ADRs with these statuses as reference context. This prevents draft decisions from polluting new generations.
+              </p>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                {Object.values(ADRStatus).map((status) => {
+                  const isSelected = statusFilter.includes(status);
+                  const statusColors = {
+                    [ADRStatus.PROPOSED]: 'blue',
+                    [ADRStatus.ACCEPTED]: 'green',
+                    [ADRStatus.DEPRECATED]: 'orange',
+                    [ADRStatus.SUPERSEDED]: 'purple',
+                    [ADRStatus.REJECTED]: 'red',
+                  };
+                  const color = statusColors[status];
+                  
+                  return (
+                    <label
+                      key={status}
+                      className={`flex items-center p-2 rounded-md border cursor-pointer transition-colors ${
+                        isSelected
+                          ? `border-${color}-500 dark:border-${color}-400 bg-${color}-50 dark:bg-${color}-900/30`
+                          : 'border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700'
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={isSelected}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setStatusFilter([...statusFilter, status]);
+                          } else {
+                            setStatusFilter(statusFilter.filter(s => s !== status));
+                          }
+                        }}
+                        className="rounded border-gray-300 dark:border-gray-600 text-blue-600 focus:ring-blue-500"
+                      />
+                      <span className="ml-2 text-sm text-gray-700 dark:text-gray-300 capitalize">
+                        {status}
+                      </span>
+                    </label>
+                  );
+                })}
+              </div>
+              {statusFilter.length === 0 && (
+                <p className="text-sm text-amber-600 dark:text-amber-400 mt-2">
+                  ⚠️ No statuses selected - all ADRs will be included regardless of status.
+                </p>
+              )}
             </div>
 
             {/* MCP Tools Toggle - AI-driven tool orchestration */}

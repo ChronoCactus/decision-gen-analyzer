@@ -945,6 +945,7 @@ export default function Home() {
             isGenerating={isGenerating}
             generationStartTime={generationStartTime}
             initialRecordType={selectedRecordType}
+            interfaceSettings={interfaceSettings}
           />
         )}        {/* Import/Export Modal */}
         {showImportExportModal && (

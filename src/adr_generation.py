@@ -860,8 +860,50 @@ class ADRGenerationService:
             all_entities = []
             all_relationships = []
 
+            # Filter by status if requested
+            filtered_documents = []
+            if prompt.status_filter:
+                # Import here to avoid circular dependency
+                from src.adr_file_storage import get_adr_storage
+
+                storage = get_adr_storage()
+                for doc in documents:
+                    doc_id = doc.get("id", "unknown")
+
+                    # Skip generic context documents
+                    if doc_id == "context":
+                        continue
+
+                    # Skip excluded ADR to prevent self-referencing
+                    if exclude_adr_id and doc_id == exclude_adr_id:
+                        continue
+
+                    # Load the ADR to check its status
+                    adr = storage.get_adr(doc_id)
+                    if adr:
+                        adr_status = adr.metadata.status.value
+                        if adr_status in prompt.status_filter:
+                            filtered_documents.append(doc)
+                        else:
+                            logger.debug(
+                                "Filtering out ADR due to status",
+                                adr_id=doc_id,
+                                status=adr_status,
+                                allowed_statuses=prompt.status_filter,
+                            )
+                    else:
+                        # If we can't load the ADR, include it by default
+                        logger.warning(
+                            "Could not load ADR for status filtering, including by default",
+                            adr_id=doc_id,
+                        )
+                        filtered_documents.append(doc)
+            else:
+                # No filtering requested, use all documents
+                filtered_documents = documents
+
             related_context.append("**Related Decision Records:**")
-            for doc in documents:
+            for doc in filtered_documents:
                 # Extract structured data if available (entities and relationships)
                 if "structured_data" in doc:
                     structured = doc["structured_data"]
@@ -871,19 +913,7 @@ class ADRGenerationService:
                         all_relationships.extend(structured["relationships"])
 
                 # Track the ADR info with ID, title, and summary
-                # Skip the generic "context" document from being listed as a referenced ADR
                 doc_id = doc.get("id", "unknown")
-                if doc_id == "context":
-                    # This is the generic query response, not a specific ADR
-                    continue
-
-                # Skip the excluded ADR to prevent self-referencing
-                if exclude_adr_id and doc_id == exclude_adr_id:
-                    logger.info(
-                        "Filtering out self-reference from related context",
-                        excluded_adr_id=exclude_adr_id,
-                    )
-                    continue
 
                 doc_metadata = doc.get("metadata", {})
                 doc_title = doc.get("title") or doc_metadata.get("title") or doc_id

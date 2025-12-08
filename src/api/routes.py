@@ -59,6 +59,10 @@ class GenerateADRRequest(BaseModel):
         default=False,
         description="Whether to use AI-driven MCP tool orchestration for research",
     )
+    status_filter: Optional[List[str]] = Field(
+        default=None,
+        description="Filter referenced ADRs by status values (e.g., ['accepted', 'proposed']). If None, all statuses are included.",
+    )
 
 
 class PersonaRefinementItem(BaseModel):
@@ -887,6 +891,7 @@ async def generate_adr(request: GenerateADRRequest, background_tasks: Background
             record_type=request.record_type,
             mcp_tools=request.mcp_tools or [],
             use_mcp=request.use_mcp or False,
+            status_filter=request.status_filter,
         )
 
         return TaskResponse(

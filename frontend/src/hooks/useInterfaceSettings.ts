@@ -3,11 +3,13 @@ import { useState, useEffect } from 'react';
 export interface InterfaceSettings {
   autoDismissToasts: boolean;
   toastDismissTimeout: number; // in seconds
+  defaultStatusFilter: string[]; // Status values to filter by (e.g., ['accepted', 'proposed'])
 }
 
 const DEFAULT_SETTINGS: InterfaceSettings = {
   autoDismissToasts: false,
   toastDismissTimeout: 5,
+  defaultStatusFilter: ['accepted'], // Default to only using accepted ADRs
 };
 
 const STORAGE_KEY = 'decision-analyzer-interface-settings';
