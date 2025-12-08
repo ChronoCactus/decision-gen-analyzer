@@ -1,9 +1,10 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { GenerateADRRequest, Persona, LLMProvider } from '@/types/api';
+import { GenerateADRRequest, Persona, LLMProvider, MCPServerConfig, ADRStatus } from '@/types/api';
 import { apiClient } from '@/lib/api';
 import { useEscapeKey } from '@/hooks/useEscapeKey';
+import { InterfaceSettings } from '@/hooks/useInterfaceSettings';
 
 interface GenerateADRModalProps {
   onClose: () => void;
@@ -11,9 +12,10 @@ interface GenerateADRModalProps {
   isGenerating: boolean;
   generationStartTime?: number;
   initialRecordType?: 'decision' | 'principle';
+  interfaceSettings?: InterfaceSettings;
 }
 
-export function GenerateADRModal({ onClose, onGenerate, isGenerating, generationStartTime, initialRecordType = 'decision' }: GenerateADRModalProps) {
+export function GenerateADRModal({ onClose, onGenerate, isGenerating, generationStartTime, initialRecordType = 'decision', interfaceSettings }: GenerateADRModalProps) {
   const [prompt, setPrompt] = useState('');
   const [context, setContext] = useState('');
   const [tags, setTags] = useState('');
@@ -26,6 +28,15 @@ export function GenerateADRModal({ onClose, onGenerate, isGenerating, generation
   const [elapsedTime, setElapsedTime] = useState(0);
   const [showContext, setShowContext] = useState(false);
   const [recordType, setRecordType] = useState<'decision' | 'principle'>(initialRecordType);
+
+  // Status filter state - default from interface settings
+  const [statusFilter, setStatusFilter] = useState<string[]>(
+    interfaceSettings?.defaultStatusFilter || ['accepted']
+  );
+
+  // MCP state - AI-driven tool orchestration
+  const [mcpServers, setMcpServers] = useState<MCPServerConfig[]>([]);
+  const [useMcp, setUseMcp] = useState(false);
 
   // Detect OS for keyboard shortcut display (computed once on mount)
   const [isMac] = useState(() => {
@@ -80,8 +91,10 @@ export function GenerateADRModal({ onClose, onGenerate, isGenerating, generation
       retrieval_mode: retrievalMode,
       provider_id: selectedProviderId || undefined,
       record_type: recordType,
+      use_mcp: useMcp || undefined,
+      status_filter: statusFilter.length > 0 ? statusFilter : undefined,
     });
-  }, [prompt, context, tags, selectedPersonas, retrievalMode, selectedProviderId, recordType, onGenerate]);
+  }, [prompt, context, tags, selectedPersonas, retrievalMode, selectedProviderId, recordType, useMcp, statusFilter, onGenerate]);
 
   // Handle keyboard shortcuts (Cmd/Ctrl + Enter)
   useEffect(() => {
@@ -99,14 +112,16 @@ export function GenerateADRModal({ onClose, onGenerate, isGenerating, generation
   }, [prompt, isGenerating, handleSubmit]);
 
   useEffect(() => {
-    // Load available personas and providers
+    // Load available personas, providers, and MCP servers
     Promise.all([
       apiClient.getPersonas(),
-      apiClient.listProviders()
+      apiClient.listProviders(),
+      apiClient.listMcpServers().catch(() => ({ servers: [] })) // Don't fail if MCP servers not available
     ])
-      .then(([personasResponse, providersResponse]) => {
+      .then(([personasResponse, providersResponse, mcpResponse]) => {
         setPersonas(personasResponse.personas);
         setProviders(providersResponse.providers);
+        setMcpServers(mcpResponse.servers);
 
         // Set default provider (the one marked as default)
         const defaultProvider = providersResponse.providers.find(p => p.is_default);
@@ -134,6 +149,10 @@ export function GenerateADRModal({ onClose, onGenerate, isGenerating, generation
         ? prev.filter(p => p !== personaValue)
         : [...prev, personaValue]
     );
+  };
+
+  const getEnabledMcpServers = (): MCPServerConfig[] => {
+    return mcpServers.filter(s => s.is_enabled && s.tools.length > 0);
   };
 
   const getModelDisplay = (persona: Persona): string => {
@@ -310,6 +329,84 @@ export function GenerateADRModal({ onClose, onGenerate, isGenerating, generation
                 💡 <strong>Tip:</strong> Getting unrelated results? Increase the <code className="px-1 py-0.5 bg-gray-100 dark:bg-gray-700 rounded text-xs">COSINE_THRESHOLD</code> environment variable on your LightRAG deployment (default: 0.2, try 0.3-0.5 for stricter matching).
               </p>
             </div>
+
+            {/* Status Filter for Referenced ADRs */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                Reference Status Filter
+              </label>
+              <p className="text-sm text-gray-500 dark:text-gray-400 mb-3">
+                Only use ADRs with these statuses as reference context. This prevents draft decisions from polluting new generations.
+              </p>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                {Object.values(ADRStatus).map((status) => {
+                  const isSelected = statusFilter.includes(status);
+                  const statusColors = {
+                    [ADRStatus.PROPOSED]: 'blue',
+                    [ADRStatus.ACCEPTED]: 'green',
+                    [ADRStatus.DEPRECATED]: 'orange',
+                    [ADRStatus.SUPERSEDED]: 'purple',
+                    [ADRStatus.REJECTED]: 'red',
+                  };
+                  const color = statusColors[status];
+                  
+                  return (
+                    <label
+                      key={status}
+                      className={`flex items-center p-2 rounded-md border cursor-pointer transition-colors ${
+                        isSelected
+                          ? `border-${color}-500 dark:border-${color}-400 bg-${color}-50 dark:bg-${color}-900/30`
+                          : 'border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700'
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={isSelected}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setStatusFilter([...statusFilter, status]);
+                          } else {
+                            setStatusFilter(statusFilter.filter(s => s !== status));
+                          }
+                        }}
+                        className="rounded border-gray-300 dark:border-gray-600 text-blue-600 focus:ring-blue-500"
+                      />
+                      <span className="ml-2 text-sm text-gray-700 dark:text-gray-300 capitalize">
+                        {status}
+                      </span>
+                    </label>
+                  );
+                })}
+              </div>
+              {statusFilter.length === 0 && (
+                <p className="text-sm text-amber-600 dark:text-amber-400 mt-2">
+                  ⚠️ No statuses selected - all ADRs will be included regardless of status.
+                </p>
+              )}
+            </div>
+
+            {/* MCP Tools Toggle - AI-driven tool orchestration */}
+            {getEnabledMcpServers().length > 0 && (
+              <div className="border border-gray-200 dark:border-gray-700 rounded-md p-4 bg-purple-50 dark:bg-purple-900/20">
+                <label className="flex items-start cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={useMcp}
+                    onChange={(e) => setUseMcp(e.target.checked)}
+                    className="mt-0.5 mr-3 h-4 w-4 text-purple-600 focus:ring-purple-500 border-gray-300 dark:border-gray-600 rounded"
+                  />
+                  <div>
+                    <span className="text-sm font-medium text-purple-700 dark:text-purple-300">
+                      Use MCP Tools (AI-driven)
+                    </span>
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                      When enabled, AI will analyze your request and decide which external tools to call to gather additional context.
+                      Available servers: {getEnabledMcpServers().map(s => s.name).join(', ')}
+                    </p>
+                  </div>
+                </label>
+              </div>
+            )}
 
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">

@@ -1,5 +1,43 @@
 """System prompts for LLM operations."""
 
+MCP_TOOL_SELECTION_PROMPT = """You are an AI assistant helping to gather research and context for making a decision.
+
+**Decision Context**:
+Title: {title}
+Problem Statement: {problem_statement}
+Additional Context: {context}
+
+**Available Tools**:
+{tools_description}
+
+**Instructions**:
+Analyze the decision context above and determine which tools (if any) would help gather useful information to inform this decision. For each tool you want to use, specify the arguments to pass.
+
+You must respond with a JSON object containing:
+
+{{
+  "reasoning": "Brief explanation of why you chose these tools (or why no tools are needed)",
+  "tool_calls": [
+    {{
+      "tool_name": "name_of_tool",
+      "arguments": {{
+        "arg1": "value1",
+        "arg2": "value2"
+      }}
+    }}
+  ]
+}}
+
+**Guidelines**:
+- Only call tools that would provide genuinely useful information for this specific decision
+- If the decision context is clear enough without external research, return an empty tool_calls array
+- For search tools, craft specific, targeted queries related to the decision topic
+- Consider what information would help evaluate trade-offs and make a well-informed decision
+- Do not call the same tool multiple times unless with meaningfully different arguments
+- Maximum 3 tool calls to avoid overwhelming the analysis
+
+Respond with valid JSON only."""
+
 PERSONA_GENERATION_SYSTEM_PROMPT = """
 You are an expert system architect and organizational psychologist. Your task is to create a detailed "Persona" for a decision analysis system.
 
@@ -40,6 +78,8 @@ ADR_SYNTHESIS_SYSTEM_PROMPT = """You are synthesizing multiple expert perspectiv
 Title: {title}
 Problem: {problem_statement}
 Context: {context}
+
+{tool_output_section}
 
 **Expert Perspectives**:
 {perspectives_str}
@@ -92,6 +132,8 @@ PRINCIPLE_SYNTHESIS_SYSTEM_PROMPT = """You are synthesizing multiple expert pers
 Title: {title}
 Problem/Context: {problem_statement}
 Context: {context}
+
+{tool_output_section}
 
 **Expert Perspectives**:
 {perspectives_str}
@@ -147,6 +189,8 @@ PRINCIPLE_PERSONA_GENERATION_SYSTEM_PROMPT = """You are a {persona_name} analyzi
 
 **Key Stakeholders**:
 {stakeholders}
+
+{tool_output_section}
 
 **Related Context**:
 {related_context}

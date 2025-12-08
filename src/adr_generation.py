@@ -61,6 +61,8 @@ class ADRGenerationService:
         include_context: bool = True,
         progress_callback: Optional[callable] = None,
         provider_id: Optional[str] = None,
+        mcp_tools: Optional[List[Dict[str, Any]]] = None,
+        use_mcp: bool = False,
     ) -> ADRGenerationResult:
         """Generate a new ADR from a prompt using multiple personas.
 
@@ -70,6 +72,8 @@ class ADRGenerationService:
             include_context: Whether to retrieve related context from vector DB
             progress_callback: Optional callback function for progress updates
             provider_id: Optional provider ID to use for personas without custom model_config
+            mcp_tools: Optional list of MCP tools (deprecated - use use_mcp instead)
+            use_mcp: Whether to use AI-driven MCP tool orchestration
 
         Returns:
             ADRGenerationResult: The generated ADR with all components
@@ -82,6 +86,14 @@ class ADRGenerationService:
         if not personas:
             personas = ["technical_lead", "business_analyst", "architect"]
 
+        # AI-driven MCP tool orchestration
+        tool_output_context = ""
+        mcp_refs: List[Dict[str, str]] = []
+        if use_mcp:
+            tool_output_context, mcp_refs = await self._orchestrate_mcp_tools(
+                prompt, progress_callback, provider_id
+            )
+
         # Retrieve related context if requested
         related_context = []
         referenced_adr_info = []
@@ -92,9 +104,17 @@ class ADRGenerationService:
                 prompt
             )
 
+        # Combine ADR references with MCP references
+        all_references = referenced_adr_info + mcp_refs
+
         # Generate perspectives from each persona
         synthesis_inputs = await self._generate_persona_perspectives(
-            prompt, personas, related_context, progress_callback, provider_id
+            prompt,
+            personas,
+            related_context,
+            progress_callback,
+            provider_id,
+            tool_output_context=tool_output_context,
         )
 
         # Synthesize all perspectives into final ADR
@@ -104,8 +124,9 @@ class ADRGenerationService:
             prompt,
             synthesis_inputs,
             related_context,
-            referenced_adr_info,
+            all_references,  # Use combined refs including MCP
             progress_callback,
+            tool_output_context=tool_output_context,
         )
 
         logger.info(
@@ -839,8 +860,50 @@ class ADRGenerationService:
             all_entities = []
             all_relationships = []
 
+            # Filter by status if requested
+            filtered_documents = []
+            if prompt.status_filter:
+                # Import here to avoid circular dependency
+                from src.adr_file_storage import get_adr_storage
+
+                storage = get_adr_storage()
+                for doc in documents:
+                    doc_id = doc.get("id", "unknown")
+
+                    # Skip generic context documents
+                    if doc_id == "context":
+                        continue
+
+                    # Skip excluded ADR to prevent self-referencing
+                    if exclude_adr_id and doc_id == exclude_adr_id:
+                        continue
+
+                    # Load the ADR to check its status
+                    adr = storage.get_adr(doc_id)
+                    if adr:
+                        adr_status = adr.metadata.status.value
+                        if adr_status in prompt.status_filter:
+                            filtered_documents.append(doc)
+                        else:
+                            logger.debug(
+                                "Filtering out ADR due to status",
+                                adr_id=doc_id,
+                                status=adr_status,
+                                allowed_statuses=prompt.status_filter,
+                            )
+                    else:
+                        # If we can't load the ADR, include it by default
+                        logger.warning(
+                            "Could not load ADR for status filtering, including by default",
+                            adr_id=doc_id,
+                        )
+                        filtered_documents.append(doc)
+            else:
+                # No filtering requested, use all documents
+                filtered_documents = documents
+
             related_context.append("**Related Decision Records:**")
-            for doc in documents:
+            for doc in filtered_documents:
                 # Extract structured data if available (entities and relationships)
                 if "structured_data" in doc:
                     structured = doc["structured_data"]
@@ -850,19 +913,7 @@ class ADRGenerationService:
                         all_relationships.extend(structured["relationships"])
 
                 # Track the ADR info with ID, title, and summary
-                # Skip the generic "context" document from being listed as a referenced ADR
                 doc_id = doc.get("id", "unknown")
-                if doc_id == "context":
-                    # This is the generic query response, not a specific ADR
-                    continue
-
-                # Skip the excluded ADR to prevent self-referencing
-                if exclude_adr_id and doc_id == exclude_adr_id:
-                    logger.info(
-                        "Filtering out self-reference from related context",
-                        excluded_adr_id=exclude_adr_id,
-                    )
-                    continue
 
                 doc_metadata = doc.get("metadata", {})
                 doc_title = doc.get("title") or doc_metadata.get("title") or doc_id
@@ -1024,6 +1075,145 @@ class ADRGenerationService:
 
         return "\n".join(parts) if parts else ""
 
+    async def _orchestrate_mcp_tools(
+        self,
+        prompt: ADRGenerationPrompt,
+        progress_callback: Optional[callable] = None,
+        provider_id: Optional[str] = None,
+    ) -> tuple[str, List[Dict[str, str]]]:
+        """Use AI to select and execute MCP tools for research.
+
+        Args:
+            prompt: The generation prompt for context
+            progress_callback: Optional callback for progress updates
+            provider_id: Optional provider ID for the LLM to use
+
+        Returns:
+            Tuple of (formatted context string, list of MCP reference dicts)
+        """
+        try:
+            from src.mcp_orchestrator import get_mcp_orchestrator
+
+            orchestrator = get_mcp_orchestrator()
+
+            # Get or create an LLM client for tool selection
+            if provider_id:
+                llm_client = await create_client_from_provider_id(
+                    provider_id, demo_mode=False
+                )
+            elif self.use_pool:
+                llm_client = self.llama_client.get_generation_client(0)
+            else:
+                llm_client = self.llama_client
+
+            # Run orchestration
+            async with llm_client:
+                result = await orchestrator.orchestrate(
+                    title=prompt.title,
+                    problem_statement=prompt.problem_statement,
+                    context=prompt.context or "",
+                    llm_client=llm_client,
+                    progress_callback=progress_callback,
+                )
+
+            if result.error:
+                logger.error(f"MCP orchestration error: {result.error}")
+                return "", []
+
+            if result.tool_selection:
+                logger.info(
+                    "MCP orchestration completed",
+                    reasoning=result.tool_selection.reasoning[:100],
+                    tools_called=len(result.tool_selection.tool_calls),
+                    successful_results=sum(1 for r in result.tool_results if r.success),
+                )
+
+            # Convert references to dict format for referenced_adrs
+            mcp_refs = [ref.to_dict() for ref in result.references]
+
+            return result.formatted_context, mcp_refs
+
+        except ImportError as e:
+            logger.warning(f"MCP orchestrator not available: {e}")
+            return "", []
+        except Exception as e:
+            logger.error(f"Error in MCP orchestration: {e}")
+            return "", []
+
+    async def _execute_mcp_tools(
+        self,
+        mcp_tools: List[Dict[str, Any]],
+        prompt: ADRGenerationPrompt,
+        execution_mode: str,
+        progress_callback: Optional[callable] = None,
+        persona_name: Optional[str] = None,
+    ) -> str:
+        """Execute MCP tools and return formatted context.
+
+        Args:
+            mcp_tools: List of tool selections with server_id, tool_name, and optional arguments
+            prompt: The generation prompt for context
+            execution_mode: 'initial_only' or 'per_persona'
+            progress_callback: Optional callback for progress updates
+            persona_name: Optional persona name (for per-persona execution)
+
+        Returns:
+            Formatted context string from tool results
+        """
+        if not mcp_tools:
+            return ""
+
+        try:
+            from src.mcp_client import (
+                format_mcp_results_as_context,
+                get_mcp_client_manager,
+            )
+            from src.mcp_config_storage import MCPToolExecutionMode
+
+            # Convert string to enum
+            mode = MCPToolExecutionMode(execution_mode)
+
+            # Build generation context for argument mapping
+            generation_context = {
+                "title": prompt.title,
+                "context": prompt.context,
+                "problem_statement": prompt.problem_statement,
+                "constraints": ", ".join(prompt.constraints or []),
+                "stakeholders": ", ".join(prompt.stakeholders or []),
+                "tags": ", ".join(prompt.tags or []),
+                # Full query for search-type tools
+                "query": f"{prompt.problem_statement} {prompt.context}",
+            }
+
+            manager = get_mcp_client_manager()
+            results = await manager.execute_tools_for_generation(
+                selected_tools=mcp_tools,
+                generation_context=generation_context,
+                execution_mode=mode,
+                persona_name=persona_name,
+                progress_callback=progress_callback,
+            )
+
+            # Format results as context
+            formatted_context = format_mcp_results_as_context(results, mode)
+
+            logger.info(
+                "MCP tools executed",
+                mode=execution_mode,
+                tool_count=len(mcp_tools),
+                results_count=len(results),
+                successful_count=sum(1 for r in results if r.success),
+            )
+
+            return formatted_context
+
+        except ImportError as e:
+            logger.warning(f"MCP client not available: {e}")
+            return ""
+        except Exception as e:
+            logger.error(f"Error executing MCP tools: {e}")
+            return ""
+
     async def _generate_persona_perspectives(
         self,
         prompt: ADRGenerationPrompt,
@@ -1031,6 +1221,7 @@ class ADRGenerationService:
         related_context: List[str],
         progress_callback: Optional[callable] = None,
         provider_id: Optional[str] = None,
+        tool_output_context: str = "",
     ) -> List[PersonaSynthesisInput]:
         """Generate perspectives from each persona.
 
@@ -1040,6 +1231,7 @@ class ADRGenerationService:
             related_context: Related context from vector DB
             progress_callback: Optional callback for progress updates
             provider_id: Optional provider ID to use for personas without custom model_config
+            tool_output_context: Formatted output from MCP tools
 
         Returns:
             List of persona synthesis inputs
@@ -1058,8 +1250,9 @@ class ADRGenerationService:
             persona_config = self.persona_manager.get_persona_config(persona_value)
             if persona_config:
                 persona_configs.append((persona_value, persona_config))
+
                 system_prompt = self._create_persona_generation_prompt(
-                    persona_config, prompt, related_context
+                    persona_config, prompt, related_context, tool_output_context
                 )
                 persona_prompts.append(system_prompt)
 
@@ -1235,6 +1428,7 @@ class ADRGenerationService:
         persona_config: PersonaConfig,
         prompt: ADRGenerationPrompt,
         related_context: List[str],
+        tool_output_context: str = "",
     ) -> str:
         """Create a generation prompt for a specific persona.
 
@@ -1242,6 +1436,7 @@ class ADRGenerationService:
             persona_config: Configuration for the persona
             prompt: The generation prompt
             related_context: Related context strings
+            tool_output_context: Formatted output from MCP tools
 
         Returns:
             Formatted prompt string
@@ -1263,6 +1458,12 @@ class ADRGenerationService:
             else "None specified."
         )
 
+        # Format tool output section
+        tool_output_section = ""
+        if tool_output_context:
+            tool_output_section = f"""**Research from External Tools**:
+{tool_output_context}"""
+
         if prompt.record_type == RecordType.PRINCIPLE:
             return PRINCIPLE_PERSONA_GENERATION_SYSTEM_PROMPT.format(
                 persona_name=persona_config.name,
@@ -1274,7 +1475,16 @@ class ADRGenerationService:
                 constraints=constraints_str,
                 stakeholders=stakeholders_str,
                 related_context=context_str,
+                tool_output_section=tool_output_section,
             )
+
+        # Build the prompt with optional tool output section
+        tool_section = ""
+        if tool_output_context:
+            tool_section = f"""
+**Research from External Tools**:
+{tool_output_context}
+"""
 
         return f"""You are a {persona_config.name} analyzing a decision that needs to be made.
 
@@ -1293,7 +1503,7 @@ class ADRGenerationService:
 
 **Key Stakeholders**:
 {stakeholders_str}
-
+{tool_section}
 **Related Context from Previous Decisions**:
 {context_str}
 
@@ -1379,6 +1589,7 @@ Ensure your response is practical, considers the constraints, and reflects your 
         related_context: List[str],
         referenced_adr_info: List[Dict[str, str]],
         progress_callback: Optional[callable] = None,
+        tool_output_context: str = "",
     ) -> ADRGenerationResult:
         """Synthesize all persona perspectives into a complete ADR.
 
@@ -1388,13 +1599,14 @@ Ensure your response is practical, considers the constraints, and reflects your 
             related_context: Related context from vector DB
             referenced_adr_info: Info about ADRs referenced during generation (id, title, summary)
             progress_callback: Optional callback for progress updates
+            tool_output_context: Formatted output from MCP tools
 
         Returns:
             Complete ADR generation result
         """
         # Create synthesis prompt
         synthesis_prompt = self._create_synthesis_prompt(
-            prompt, synthesis_inputs, related_context
+            prompt, synthesis_inputs, related_context, tool_output_context
         )
 
         try:
@@ -1581,6 +1793,7 @@ Ensure your response is practical, considers the constraints, and reflects your 
         prompt: ADRGenerationPrompt,
         synthesis_inputs: List[PersonaSynthesisInput],
         related_context: List[str],
+        tool_output_context: str = "",
     ) -> str:
         """Create synthesis prompt for combining persona perspectives.
 
@@ -1588,6 +1801,7 @@ Ensure your response is practical, considers the constraints, and reflects your 
             prompt: Original generation prompt
             synthesis_inputs: Perspectives from all personas
             related_context: Related context
+            tool_output_context: Formatted output from MCP tools
 
         Returns:
             Synthesis prompt string
@@ -1608,6 +1822,12 @@ Ensure your response is practical, considers the constraints, and reflects your 
             "\n".join(related_context) if related_context else "None available"
         )
 
+        # Format tool output section
+        tool_output_section = ""
+        if tool_output_context:
+            tool_output_section = f"""**Research from External Tools**:
+{tool_output_context}"""
+
         system_prompt = (
             PRINCIPLE_SYNTHESIS_SYSTEM_PROMPT
             if prompt.record_type == RecordType.PRINCIPLE
@@ -1620,6 +1840,7 @@ Ensure your response is practical, considers the constraints, and reflects your 
             context=prompt.context,
             perspectives_str=perspectives_str,
             related_context_str=related_context_str,
+            tool_output_section=tool_output_section,
         )
 
     def _clean_list_items(self, items: List[str]) -> List[str]:
