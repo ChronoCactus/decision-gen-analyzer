@@ -34,19 +34,28 @@ export function ADRCard({ adr, onAnalyze, onDelete, onPushToRAG, onExport, cache
   const [toastMessage, setToastMessage] = useState('');
   const [toastType, setToastType] = useState<'info' | 'success' | 'warning' | 'error'>('info');
   const [currentAdr, setCurrentAdr] = useState<ADR>(adr);
+  const [initialUploadStatus, setInitialUploadStatus] = useState<'processing' | null>(null);
 
   // Track upload status via WebSocket
-  const { uploadStatus, uploadMessage } = useUploadStatus(currentAdr.metadata.id);
+  const { uploadStatus: wsUploadStatus, uploadMessage } = useUploadStatus(currentAdr.metadata.id);
+
+  // Use WebSocket status if available, otherwise fall back to initial status from cache
+  const uploadStatus = wsUploadStatus || initialUploadStatus;
 
   // Update currentAdr when prop changes
   useEffect(() => {
     setCurrentAdr(adr);
   }, [adr]);
 
-  // Update RAG status when upload completes
+  // Update RAG status when upload completes or fails
   useEffect(() => {
     if (uploadStatus === 'completed') {
       setExistsInRAG(true);
+      // Clear initial status since upload completed
+      setInitialUploadStatus(null);
+    } else if (uploadStatus === 'failed') {
+      // Clear initial status on failure too
+      setInitialUploadStatus(null);
     }
   }, [uploadStatus]);
 
@@ -58,8 +67,24 @@ export function ADRCard({ adr, onAnalyze, onDelete, onPushToRAG, onExport, cache
       try {
         const response = await apiClient.getADRRAGStatus(currentAdr.metadata.id);
         if (mounted) {
-          setExistsInRAG(response.exists_in_rag);
-          setCheckingRAGStatus(false);
+          // Check if there's an active upload being tracked
+          const hasActiveUpload = response.upload_status &&
+            response.upload_status.status === 'processing' &&
+            // Ignore stale statuses older than 5 minutes (300 seconds)
+            response.upload_status.timestamp &&
+            (Date.now() / 1000 - response.upload_status.timestamp) < 300;
+
+          if (hasActiveUpload) {
+            // Set initial upload status so button shows "Processing..." instead of "Push to RAG"
+            setInitialUploadStatus('processing');
+            setCheckingRAGStatus(false);
+            // Don't set existsInRAG yet - let the WebSocket/monitoring update handle it
+          } else {
+          // No active upload or stale status, set final status
+            setExistsInRAG(response.exists_in_rag);
+            setCheckingRAGStatus(false);
+            setInitialUploadStatus(null);
+          }
         }
       } catch (error) {
         console.error('Failed to check RAG status:', error);
@@ -67,6 +92,7 @@ export function ADRCard({ adr, onAnalyze, onDelete, onPushToRAG, onExport, cache
           // If we can't check, assume it might not exist (show button)
           setExistsInRAG(false);
           setCheckingRAGStatus(false);
+          setInitialUploadStatus(null);
         }
       }
     };

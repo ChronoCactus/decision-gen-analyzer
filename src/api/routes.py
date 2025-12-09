@@ -820,12 +820,81 @@ async def push_adr_to_rag(adr_id: str):
 async def get_adr_rag_status(adr_id: str):
     """Check if an ADR exists in LightRAG and get upload status if processing."""
     try:
+        from src.lightrag_client import LightRAGClient
         from src.lightrag_doc_cache import LightRAGDocumentCache
 
         async with LightRAGDocumentCache() as cache:
             # Check if document exists in cache
             doc_id = await cache.get_doc_id(adr_id)
             exists_in_rag = doc_id is not None
+
+            # If cache miss, verify with LightRAG directly (fallback mechanism)
+            # This makes the system resilient to cache expiration
+            if not doc_id:
+                logger.debug(
+                    "Cache miss for ADR, checking LightRAG directly", adr_id=adr_id
+                )
+                try:
+                    async with LightRAGClient(demo_mode=False) as lightrag:
+                        # Try to fetch document by constructing the file path
+                        file_path = f"data/adrs/{adr_id}.txt"
+
+                        # Search through all pages until we find the document or exhaust all results
+                        page = 1
+                        page_size = 50  # Reasonable batch size
+                        found = False
+
+                        while not found:
+                            result = await lightrag.get_paginated_documents(
+                                page=page,
+                                page_size=page_size,
+                                status_filter="processed",
+                            )
+
+                            documents = result.get("documents", [])
+                            if not documents:
+                                # No more documents to check
+                                break
+
+                            # Search for matching document in this page
+                            for doc in documents:
+                                if doc.get("file_path") == file_path:
+                                    doc_id = doc.get("id")
+                                    if doc_id:
+                                        # Found in LightRAG! Update cache to prevent future misses
+                                        await cache.set_doc_id(adr_id, doc_id)
+                                        exists_in_rag = True
+                                        logger.info(
+                                            "Document found in LightRAG via fallback, cache updated",
+                                            adr_id=adr_id,
+                                            doc_id=doc_id,
+                                            page=page,
+                                        )
+                                        found = True
+                                        break
+
+                            # If we got fewer documents than page_size, we've reached the end
+                            if len(documents) < page_size:
+                                break
+
+                            page += 1
+
+                            # Safety limit: don't search more than 10 pages (500 docs)
+                            if page > 10:
+                                logger.warning(
+                                    "Fallback search exceeded page limit",
+                                    adr_id=adr_id,
+                                    max_pages=10,
+                                )
+                                break
+
+                except Exception as fallback_error:
+                    # Log but don't fail - just rely on cache result
+                    logger.warning(
+                        "LightRAG fallback check failed",
+                        adr_id=adr_id,
+                        error=str(fallback_error),
+                    )
 
             # Check if there's an active upload being tracked
             upload_status = await cache.get_upload_status(adr_id)
@@ -856,6 +925,30 @@ async def get_cache_status():
     except Exception as e:
         logger.error(f"Failed to check cache status: {str(e)}")
         return {"is_rebuilding": False, "last_sync_time": None, "error": str(e)}
+
+
+@adr_router.post("/cache/refresh")
+async def refresh_cache():
+    """Manually trigger a cache refresh from LightRAG.
+
+    This endpoint allows administrators to force a cache sync without waiting
+    for the scheduled background task. Useful for testing or after bulk operations.
+    """
+    try:
+        from src.lightrag_sync import _sync_lightrag_cache
+
+        logger.info("Manual cache refresh triggered")
+        total_synced = await _sync_lightrag_cache(page_size=100)
+
+        return {
+            "message": "Cache refresh completed",
+            "total_documents": total_synced,
+        }
+    except Exception as e:
+        logger.error(f"Failed to refresh cache: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to refresh cache: {str(e)}"
+        )
 
 
 @adr_router.get("/cache/rebuild-status")
