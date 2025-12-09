@@ -12,7 +12,7 @@ interface ADRCardProps {
   adr: ADR;
   onAnalyze: (adrId: string) => void;
   onDelete: (adrId: string) => Promise<void>;
-  onPushToRAG: (adrId: string) => void;
+  onPushToRAG: (adrId: string) => Promise<void>;
   onExport: (adrId: string) => void;
   cacheRebuilding: boolean;
   selectionMode?: boolean;
@@ -100,7 +100,7 @@ export function ADRCard({ adr, onAnalyze, onDelete, onPushToRAG, onExport, cache
     }
   };
 
-  const handlePushToRAG = () => {
+  const handlePushToRAG = async () => {
     // Check if cache is rebuilding
     if (cacheRebuilding) {
       setToastMessage('Cache is currently rebuilding. Please try again in a moment.');
@@ -109,9 +109,16 @@ export function ADRCard({ adr, onAnalyze, onDelete, onPushToRAG, onExport, cache
       return;
     }
 
-    onPushToRAG(currentAdr.metadata.id);
-    // Don't optimistically update - wait for WebSocket to confirm upload status
-    // The upload status hook will handle showing "Processing RAG..." state
+    try {
+      await onPushToRAG(currentAdr.metadata.id);
+      // Re-check RAG status after push completes
+      // This handles the case where document already existed (no WebSocket update)
+      const response = await apiClient.getADRRAGStatus(currentAdr.metadata.id);
+      setExistsInRAG(response.exists_in_rag);
+    } catch (error) {
+      console.error('Failed to push to RAG or check status:', error);
+      // Error handling is done in parent component
+    }
   };
 
   const handleExport = () => {

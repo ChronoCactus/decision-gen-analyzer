@@ -670,8 +670,10 @@ Considered Options:
     async with LightRAGClient(
         base_url=settings.lightrag_url, demo_mode=False
     ) as rag_client:
+        adr_id = str(adr.metadata.id)
+
         result = await rag_client.store_document(
-            doc_id=str(adr.metadata.id),
+            doc_id=adr_id,
             content=adr_content,
             metadata={
                 "type": "adr",
@@ -682,10 +684,15 @@ Considered Options:
                 "created_at": adr.metadata.created_at.isoformat(),
             },
         )
-        logger.info(f"Pushed ADR {adr.metadata.id} to LightRAG")
+        logger.info(f"Pushed ADR {adr_id} to LightRAG")
 
         # Check if we got a track_id for monitoring upload status
         track_id = result.get("track_id")
+        result_status = result.get("status", "").lower()
+
+        # Handle empty string track_id as None
+        if track_id == "":
+            track_id = None
 
         if track_id:
             # Store upload status and start monitoring task
@@ -694,27 +701,72 @@ Considered Options:
 
             async with LightRAGDocumentCache() as cache:
                 await cache.set_upload_status(
-                    adr_id=str(adr.metadata.id),
+                    adr_id=adr_id,
                     track_id=track_id,
                     status="processing",
                     message="Document uploaded to LightRAG, processing...",
                 )
 
             logger.info(
-                f"ADR {adr.metadata.id} upload started with tracking",
+                f"ADR {adr_id} upload started with tracking",
                 extra={"track_id": track_id},
             )
 
             # Start background task to monitor upload status
-            monitor_upload_status_task.delay(str(adr.metadata.id), track_id)
-        else:
-            # No track_id, trigger background sync (old behavior)
-            try:
-                from src.lightrag_sync import sync_single_document
+            monitor_upload_status_task.delay(adr_id, track_id)
+        elif result_status == "duplicated":
+            # Document already exists in LightRAG - update cache immediately
+            from src.lightrag_doc_cache import LightRAGDocumentCache
 
-                asyncio.create_task(sync_single_document(str(adr.metadata.id)))
+            logger.info(
+                f"Document {adr_id} already exists in LightRAG (duplicated), updating cache"
+            )
+
+            async with LightRAGDocumentCache() as cache:
+                # Use adr_id as the doc_id since the document exists
+                await cache.set_doc_id(adr_id, adr_id)
+                logger.info(
+                    "Cache updated for existing document",
+                    adr_id=adr_id,
+                )
+        else:
+            # No track_id and not duplicated - document may have been processed immediately
+            # Verify document exists in LightRAG and reconcile cache
+            from src.lightrag_doc_cache import LightRAGDocumentCache
+
+            try:
+                # Check if document actually exists in LightRAG
+                existing_doc = await rag_client.get_document(adr_id)
+
+                if existing_doc:
+                    # Document exists - update cache to reflect this
+                    logger.info(
+                        f"Document {adr_id} found in LightRAG, reconciling cache"
+                    )
+
+                    async with LightRAGDocumentCache() as cache:
+                        # Use the document ID from LightRAG if available, otherwise use adr_id
+                        lightrag_doc_id = existing_doc.get("id", adr_id)
+                        await cache.set_doc_id(adr_id, lightrag_doc_id)
+                        logger.info(
+                            "Cache updated with existing document ID",
+                            adr_id=adr_id,
+                            lightrag_doc_id=lightrag_doc_id,
+                        )
+                else:
+                    # Document doesn't exist yet, trigger background sync
+                    logger.info(
+                        f"Document {adr_id} uploaded but not immediately available, "
+                        "triggering background sync"
+                    )
+                    from src.lightrag_sync import sync_single_document
+
+                    asyncio.create_task(sync_single_document(adr_id))
             except Exception as sync_error:
-                logger.warning(f"Failed to trigger cache sync: {sync_error}")
+                logger.warning(
+                    f"Failed to verify document or trigger cache sync for {adr_id}: {sync_error}"
+                )
+                # Continue anyway - the document was uploaded successfully
 
         return result
 
@@ -735,6 +787,9 @@ async def push_adr_to_rag(adr_id: str):
                         status_code=503,
                         detail="Cache is currently rebuilding. Please try again in a moment.",
                     )
+        except HTTPException:
+            # Re-raise HTTP exceptions (like 503 for cache rebuilding)
+            raise
         except Exception as cache_error:
             logger.warning(f"Failed to check cache rebuild status: {cache_error}")
             # Continue anyway if we can't check cache status

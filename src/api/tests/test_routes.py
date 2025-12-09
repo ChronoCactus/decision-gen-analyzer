@@ -439,3 +439,242 @@ class TestQueueManagementRoutes:
 
         assert response.status_code == 500
         assert "Failed to cleanup orphaned tasks" in response.json()["detail"]
+
+
+class TestRAGRoutes:
+    """Test RAG (LightRAG) integration routes."""
+
+    @pytest.mark.asyncio
+    @patch("src.api.routes.LightRAGClient")
+    @patch("src.adr_file_storage.get_adr_storage")
+    @patch("src.lightrag_doc_cache.LightRAGDocumentCache")
+    async def test_push_to_rag_with_track_id(
+        self, mock_cache_class, mock_get_storage, mock_lightrag_class
+    ):
+        """Test pushing ADR to RAG with track_id (new upload)."""
+        # Create test ADR
+        adr = ADR.create(
+            title="Test ADR",
+            context_and_problem="Test problem",
+            decision_outcome="Test decision",
+            consequences="Test consequences",
+        )
+
+        # Mock storage
+        mock_storage = MagicMock()
+        mock_storage.get_adr.return_value = adr
+        mock_get_storage.return_value = mock_storage
+
+        # Mock LightRAG client (new upload with track_id)
+        mock_rag_client = AsyncMock()
+        mock_rag_client.store_document = AsyncMock(
+            return_value={"track_id": "test-track-123", "status": "processing"}
+        )
+        mock_rag_client.__aenter__ = AsyncMock(return_value=mock_rag_client)
+        mock_rag_client.__aexit__ = AsyncMock(return_value=None)
+        mock_lightrag_class.return_value = mock_rag_client
+
+        # Mock cache
+        mock_cache = AsyncMock()
+        mock_cache.is_rebuilding = AsyncMock(return_value=False)
+        mock_cache.set_upload_status = AsyncMock()
+        mock_cache.__aenter__ = AsyncMock(return_value=mock_cache)
+        mock_cache.__aexit__ = AsyncMock(return_value=None)
+        mock_cache_class.return_value = mock_cache
+
+        # Mock celery task
+        with patch("src.celery_app.monitor_upload_status_task") as mock_task:
+            mock_task.delay = MagicMock()
+
+            client = TestClient(app)
+            response = client.post(f"/api/v1/adrs/{adr.metadata.id}/push-to-rag")
+
+            assert response.status_code == 200
+            data = response.json()
+            assert data["adr_id"] == str(adr.metadata.id)
+            assert "pushed to RAG successfully" in data["message"]
+
+            # Verify track_id path was taken
+            mock_cache.set_upload_status.assert_awaited_once()
+            mock_task.delay.assert_called_once_with(
+                str(adr.metadata.id), "test-track-123"
+            )
+
+    @pytest.mark.asyncio
+    @patch("src.api.routes.LightRAGClient")
+    @patch("src.adr_file_storage.get_adr_storage")
+    @patch("src.lightrag_doc_cache.LightRAGDocumentCache")
+    async def test_push_to_rag_already_exists(
+        self, mock_cache_class, mock_get_storage, mock_lightrag_class
+    ):
+        """Test pushing ADR that already exists in RAG reconciles cache."""
+        # Create test ADR
+        adr = ADR.create(
+            title="Existing ADR",
+            context_and_problem="Test problem",
+            decision_outcome="Test decision",
+            consequences="Test consequences",
+        )
+
+        # Mock storage
+        mock_storage = MagicMock()
+        mock_storage.get_adr.return_value = adr
+        mock_get_storage.return_value = mock_storage
+
+        # Mock LightRAG client - returns 'duplicated' status with empty track_id
+        mock_rag_client = AsyncMock()
+        mock_rag_client.store_document = AsyncMock(
+            return_value={
+                "status": "duplicated",
+                "message": "Document already exists",
+                "track_id": "",  # Empty string, not None
+            }
+        )
+        mock_rag_client.__aenter__ = AsyncMock(return_value=mock_rag_client)
+        mock_rag_client.__aexit__ = AsyncMock(return_value=None)
+        mock_lightrag_class.return_value = mock_rag_client
+
+        # Mock cache
+        mock_cache = AsyncMock()
+        mock_cache.is_rebuilding = AsyncMock(return_value=False)
+        mock_cache.set_doc_id = AsyncMock()
+        mock_cache.__aenter__ = AsyncMock(return_value=mock_cache)
+        mock_cache.__aexit__ = AsyncMock(return_value=None)
+        mock_cache_class.return_value = mock_cache
+
+        client = TestClient(app)
+        response = client.post(f"/api/v1/adrs/{adr.metadata.id}/push-to-rag")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["adr_id"] == str(adr.metadata.id)
+        assert "pushed to RAG successfully" in data["message"]
+
+        # Verify cache was updated immediately for duplicated document
+        mock_cache.set_doc_id.assert_awaited_once_with(
+            str(adr.metadata.id), str(adr.metadata.id)
+        )
+        # get_document should NOT be called for duplicated status
+        mock_rag_client.get_document.assert_not_called()
+
+    @pytest.mark.asyncio
+    @patch("src.api.routes.LightRAGClient")
+    @patch("src.adr_file_storage.get_adr_storage")
+    @patch("src.lightrag_doc_cache.LightRAGDocumentCache")
+    async def test_push_to_rag_nonexistent_adr(
+        self, mock_cache_class, mock_get_storage, mock_lightrag_class
+    ):
+        """Test pushing non-existent ADR returns 404."""
+        # Mock storage - ADR not found
+        mock_storage = MagicMock()
+        mock_storage.get_adr.return_value = None
+        mock_get_storage.return_value = mock_storage
+
+        # Mock cache
+        mock_cache = AsyncMock()
+        mock_cache.is_rebuilding = AsyncMock(return_value=False)
+        mock_cache.__aenter__ = AsyncMock(return_value=mock_cache)
+        mock_cache.__aexit__ = AsyncMock(return_value=None)
+        mock_cache_class.return_value = mock_cache
+
+        client = TestClient(app)
+        response = client.post(f"/api/v1/adrs/{uuid4()}/push-to-rag")
+
+        assert response.status_code == 404
+        assert "not found" in response.json()["detail"]
+
+    @pytest.mark.asyncio
+    @patch("src.lightrag_doc_cache.LightRAGDocumentCache")
+    async def test_push_to_rag_cache_rebuilding(self, mock_cache_class):
+        """Test pushing ADR when cache is rebuilding returns 503."""
+        # Mock cache - rebuilding (this check happens first)
+        mock_cache = AsyncMock()
+        mock_cache.is_rebuilding = AsyncMock(return_value=True)
+        mock_cache.__aenter__ = AsyncMock(return_value=mock_cache)
+        mock_cache.__aexit__ = AsyncMock(return_value=None)
+        mock_cache_class.return_value = mock_cache
+
+        client = TestClient(app)
+        adr_id = str(uuid4())
+        response = client.post(f"/api/v1/adrs/{adr_id}/push-to-rag")
+
+        # The endpoint checks cache rebuilding status first, before getting ADR from storage
+        # So it should return 503 even though the ADR doesn't exist
+        assert response.status_code == 503
+        assert "rebuilding" in response.json()["detail"].lower()
+
+    @pytest.mark.asyncio
+    @patch("src.lightrag_doc_cache.LightRAGDocumentCache")
+    async def test_get_rag_status_exists(self, mock_cache_class):
+        """Test getting RAG status for document that exists."""
+        adr_id = str(uuid4())
+
+        # Mock cache - document exists
+        mock_cache = AsyncMock()
+        mock_cache.get_doc_id = AsyncMock(return_value="lightrag-doc-123")
+        mock_cache.get_upload_status = AsyncMock(return_value=None)
+        mock_cache.__aenter__ = AsyncMock(return_value=mock_cache)
+        mock_cache.__aexit__ = AsyncMock(return_value=None)
+        mock_cache_class.return_value = mock_cache
+
+        client = TestClient(app)
+        response = client.get(f"/api/v1/adrs/{adr_id}/rag-status")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["adr_id"] == adr_id
+        assert data["exists_in_rag"] is True
+        assert data["lightrag_doc_id"] == "lightrag-doc-123"
+        assert data["upload_status"] is None
+
+    @pytest.mark.asyncio
+    @patch("src.lightrag_doc_cache.LightRAGDocumentCache")
+    async def test_get_rag_status_not_exists(self, mock_cache_class):
+        """Test getting RAG status for document that doesn't exist."""
+        adr_id = str(uuid4())
+
+        # Mock cache - document doesn't exist
+        mock_cache = AsyncMock()
+        mock_cache.get_doc_id = AsyncMock(return_value=None)
+        mock_cache.get_upload_status = AsyncMock(return_value=None)
+        mock_cache.__aenter__ = AsyncMock(return_value=mock_cache)
+        mock_cache.__aexit__ = AsyncMock(return_value=None)
+        mock_cache_class.return_value = mock_cache
+
+        client = TestClient(app)
+        response = client.get(f"/api/v1/adrs/{adr_id}/rag-status")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["adr_id"] == adr_id
+        assert data["exists_in_rag"] is False
+        assert data["lightrag_doc_id"] is None
+
+    @pytest.mark.asyncio
+    @patch("src.lightrag_doc_cache.LightRAGDocumentCache")
+    async def test_get_rag_status_processing(self, mock_cache_class):
+        """Test getting RAG status for document being processed."""
+        adr_id = str(uuid4())
+
+        # Mock cache - document being uploaded
+        mock_cache = AsyncMock()
+        mock_cache.get_doc_id = AsyncMock(return_value=None)
+        mock_cache.get_upload_status = AsyncMock(
+            return_value={
+                "status": "processing",
+                "message": "Processing document...",
+                "track_id": "track-123",
+            }
+        )
+        mock_cache.__aenter__ = AsyncMock(return_value=mock_cache)
+        mock_cache.__aexit__ = AsyncMock(return_value=None)
+        mock_cache_class.return_value = mock_cache
+
+        client = TestClient(app)
+        response = client.get(f"/api/v1/adrs/{adr_id}/rag-status")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["adr_id"] == adr_id
+        assert data["exists_in_rag"] is False
+        assert data["upload_status"]["status"] == "processing"
