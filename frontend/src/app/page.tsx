@@ -56,6 +56,9 @@ export default function Home() {
   // Use WebSocket for real-time queue status updates
   const { queueStatus } = useTaskQueueWebSocket();
 
+  // Cache refresh state
+  const [isRefreshingCache, setIsRefreshingCache] = useState(false);
+
   useEffect(() => {
     loadADRs();
   }, []);
@@ -219,6 +222,28 @@ export default function Home() {
     } catch (err) {
       console.error('Failed to import ADRs:', err);
       throw err;
+    }
+  };
+
+  const handleRefreshCache = async () => {
+    try {
+      setIsRefreshingCache(true);
+      const result = await apiClient.refreshCache();
+      
+      setToastMessage(`Cache refreshed: ${result.total_documents} documents synced`);
+      setToastType('success');
+      setShowToast(true);
+      
+      // Silently refresh ADRs without triggering loading state
+      const response = await apiClient.getADRs();
+      setAdrs(response.adrs);
+    } catch (err) {
+      console.error('Failed to refresh cache:', err);
+      setToastMessage('Failed to refresh cache');
+      setToastType('error');
+      setShowToast(true);
+    } finally {
+      setIsRefreshingCache(false);
     }
   };
 
@@ -756,7 +781,7 @@ export default function Home() {
 
         {/* RAG Cache Status */}
         <div className="mb-4 flex justify-end items-center gap-4">
-          <div className="text-sm text-gray-600 dark:text-gray-400 bg-white dark:bg-gray-800 px-4 py-2 rounded-md border border-gray-200 dark:border-gray-700 shadow-sm">
+          <div className="text-sm text-gray-600 dark:text-gray-400 bg-white dark:bg-gray-800 px-4 py-2 rounded-md border border-gray-200 dark:border-gray-700 shadow-sm flex items-center gap-2">
             <span className="font-medium">RAG Cache: </span>
             {cacheRebuilding ? (
               <span className="text-blue-600 dark:text-blue-400 font-semibold">Rebuilding...</span>
@@ -770,6 +795,26 @@ export default function Home() {
                 </span>
               </>
             )}
+            <button
+              onClick={handleRefreshCache}
+              disabled={isRefreshingCache || cacheRebuilding}
+              className="ml-2 p-1 rounded hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              title="Refresh cache from LightRAG"
+            >
+              <svg 
+                className={`w-4 h-4 text-gray-600 dark:text-gray-400 ${isRefreshingCache ? 'animate-spin' : ''}`}
+                fill="none" 
+                stroke="currentColor" 
+                viewBox="0 0 24 24"
+              >
+                <path 
+                  strokeLinecap="round" 
+                  strokeLinejoin="round" 
+                  strokeWidth={2} 
+                  d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" 
+                />
+              </svg>
+            </button>
           </div>
           <div className={`text-xs px-2 py-1 rounded-full ${wsConnected ? 'bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-300' : 'bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-300'}`}>
             {wsConnected ? '● Connected' : '○ Disconnected'}
