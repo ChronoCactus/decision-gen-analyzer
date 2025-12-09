@@ -1,5 +1,6 @@
 """Tests for API routes."""
 
+import time
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
@@ -664,6 +665,7 @@ class TestRAGRoutes:
                 "status": "processing",
                 "message": "Processing document...",
                 "track_id": "track-123",
+                "timestamp": time.time(),  # Current timestamp
             }
         )
         mock_cache.__aenter__ = AsyncMock(return_value=mock_cache)
@@ -678,3 +680,163 @@ class TestRAGRoutes:
         assert data["adr_id"] == adr_id
         assert data["exists_in_rag"] is False
         assert data["upload_status"]["status"] == "processing"
+        assert "timestamp" in data["upload_status"]
+
+    @pytest.mark.asyncio
+    @patch("src.lightrag_doc_cache.LightRAGDocumentCache")
+    async def test_get_rag_status_stale_processing(self, mock_cache_class):
+        """Test getting RAG status with stale processing status (should be ignored by frontend)."""
+        adr_id = str(uuid4())
+        import time
+
+        # Mock cache - stale processing status (1 hour old)
+        mock_cache = AsyncMock()
+        mock_cache.get_doc_id = AsyncMock(return_value=None)
+        mock_cache.get_upload_status = AsyncMock(
+            return_value={
+                "status": "processing",
+                "message": "Processing document...",
+                "track_id": "track-123",
+                "timestamp": time.time() - 3600,  # 1 hour ago
+            }
+        )
+        mock_cache.__aenter__ = AsyncMock(return_value=mock_cache)
+        mock_cache.__aexit__ = AsyncMock(return_value=None)
+        mock_cache_class.return_value = mock_cache
+
+        client = TestClient(app)
+        response = client.get(f"/api/v1/adrs/{adr_id}/rag-status")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["adr_id"] == adr_id
+        assert data["exists_in_rag"] is False
+        # Backend returns stale status, frontend should ignore it based on timestamp
+        assert data["upload_status"]["status"] == "processing"
+        assert data["upload_status"]["timestamp"] < time.time() - 3000  # Very old
+
+    @pytest.mark.asyncio
+    @patch("src.lightrag_client.LightRAGClient")
+    @patch("src.lightrag_doc_cache.LightRAGDocumentCache")
+    async def test_get_rag_status_cache_miss_with_fallback_found(
+        self, mock_cache_class, mock_lightrag_class
+    ):
+        """Test cache miss triggers LightRAG fallback and finds document."""
+        adr_id = str(uuid4())
+        lightrag_doc_id = f"doc-{uuid4()}"
+
+        # Mock cache - no doc_id (cache miss)
+        mock_cache = AsyncMock()
+        mock_cache.get_doc_id = AsyncMock(return_value=None)
+        mock_cache.set_doc_id = AsyncMock()
+        mock_cache.get_upload_status = AsyncMock(return_value=None)
+        mock_cache.__aenter__ = AsyncMock(return_value=mock_cache)
+        mock_cache.__aexit__ = AsyncMock(return_value=None)
+        mock_cache_class.return_value = mock_cache
+
+        # Mock LightRAG - document exists
+        mock_lightrag = AsyncMock()
+        mock_lightrag.get_paginated_documents = AsyncMock(
+            return_value={
+                "documents": [
+                    {
+                        "id": lightrag_doc_id,
+                        "file_path": f"data/adrs/{adr_id}.txt",
+                        "status": "processed",
+                    }
+                ],
+                "total": 1,
+            }
+        )
+        mock_lightrag.__aenter__ = AsyncMock(return_value=mock_lightrag)
+        mock_lightrag.__aexit__ = AsyncMock(return_value=None)
+        mock_lightrag_class.return_value = mock_lightrag
+
+        client = TestClient(app)
+        response = client.get(f"/api/v1/adrs/{adr_id}/rag-status")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["adr_id"] == adr_id
+        assert data["exists_in_rag"] is True
+        assert data["lightrag_doc_id"] == lightrag_doc_id
+
+        # Verify fallback was attempted and cache was updated
+        mock_lightrag.get_paginated_documents.assert_called_once()
+        mock_cache.set_doc_id.assert_called_once_with(adr_id, lightrag_doc_id)
+
+    @pytest.mark.asyncio
+    @patch("src.lightrag_client.LightRAGClient")
+    @patch("src.lightrag_doc_cache.LightRAGDocumentCache")
+    async def test_get_rag_status_cache_miss_with_fallback_not_found(
+        self, mock_cache_class, mock_lightrag_class
+    ):
+        """Test cache miss triggers LightRAG fallback but document not found."""
+        adr_id = str(uuid4())
+
+        # Mock cache - no doc_id (cache miss)
+        mock_cache = AsyncMock()
+        mock_cache.get_doc_id = AsyncMock(return_value=None)
+        mock_cache.set_doc_id = AsyncMock()
+        mock_cache.get_upload_status = AsyncMock(return_value=None)
+        mock_cache.__aenter__ = AsyncMock(return_value=mock_cache)
+        mock_cache.__aexit__ = AsyncMock(return_value=None)
+        mock_cache_class.return_value = mock_cache
+
+        # Mock LightRAG - document not found
+        mock_lightrag = AsyncMock()
+        mock_lightrag.get_paginated_documents = AsyncMock(
+            return_value={"documents": [], "total": 0}
+        )
+        mock_lightrag.__aenter__ = AsyncMock(return_value=mock_lightrag)
+        mock_lightrag.__aexit__ = AsyncMock(return_value=None)
+        mock_lightrag_class.return_value = mock_lightrag
+
+        client = TestClient(app)
+        response = client.get(f"/api/v1/adrs/{adr_id}/rag-status")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["adr_id"] == adr_id
+        assert data["exists_in_rag"] is False
+        assert data["lightrag_doc_id"] is None
+
+        # Verify fallback was attempted but cache not updated
+        mock_lightrag.get_paginated_documents.assert_called_once()
+        mock_cache.set_doc_id.assert_not_called()
+
+    @pytest.mark.asyncio
+    @patch("src.lightrag_client.LightRAGClient")
+    @patch("src.lightrag_doc_cache.LightRAGDocumentCache")
+    async def test_get_rag_status_fallback_error_handling(
+        self, mock_cache_class, mock_lightrag_class
+    ):
+        """Test that fallback errors don't break the status check."""
+        adr_id = str(uuid4())
+
+        # Mock cache - no doc_id (cache miss)
+        mock_cache = AsyncMock()
+        mock_cache.get_doc_id = AsyncMock(return_value=None)
+        mock_cache.get_upload_status = AsyncMock(return_value=None)
+        mock_cache.__aenter__ = AsyncMock(return_value=mock_cache)
+        mock_cache.__aexit__ = AsyncMock(return_value=None)
+        mock_cache_class.return_value = mock_cache
+
+        # Mock LightRAG - throws error
+        mock_lightrag = AsyncMock()
+        mock_lightrag.get_paginated_documents = AsyncMock(
+            side_effect=Exception("LightRAG connection error")
+        )
+        mock_lightrag.__aenter__ = AsyncMock(return_value=mock_lightrag)
+        mock_lightrag.__aexit__ = AsyncMock(return_value=None)
+        mock_lightrag_class.return_value = mock_lightrag
+
+        client = TestClient(app)
+        response = client.get(f"/api/v1/adrs/{adr_id}/rag-status")
+
+        # Should still return 200, just without doc_id
+        assert response.status_code == 200
+        data = response.json()
+        assert data["adr_id"] == adr_id
+        assert data["exists_in_rag"] is False
+        assert data["lightrag_doc_id"] is None

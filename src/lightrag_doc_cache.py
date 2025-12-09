@@ -49,13 +49,30 @@ class LightRAGDocumentCache:
         """Get the LightRAG document ID for a given file path.
 
         Args:
-            file_path: The file path (e.g., "adr-123.txt" or just "adr-123")
+            file_path: The file path (e.g., "adr-123.txt", "adr-123", or "adr-123__decision.txt")
 
         Returns:
             The LightRAG document ID (e.g., "doc-abc123...") or None if not found
         """
         if not self._redis:
             raise RuntimeError("Cache not initialized. Use as async context manager.")
+
+        # If file_path doesn't contain __ and doesn't end with .txt, try multiple formats
+        if "__" not in file_path and not file_path.endswith(".txt"):
+            # Try different record type formats
+            for suffix in ["__decision.txt", "__principle.txt", ".txt"]:
+                test_path = f"{file_path}{suffix}"
+                cache_key = f"{self.CACHE_KEY_PREFIX}{test_path}"
+                doc_id = await self._redis.get(cache_key)
+
+                if doc_id:
+                    logger.debug(
+                        "Cache hit for file_path", file_path=test_path, doc_id=doc_id
+                    )
+                    return doc_id
+
+            logger.debug("Cache miss for all file_path variants", base_path=file_path)
+            return None
 
         # Normalize file path to ensure .txt extension
         if not file_path.endswith(".txt"):
@@ -86,8 +103,15 @@ class LightRAGDocumentCache:
             file_path = f"{file_path}.txt"
 
         cache_key = f"{self.CACHE_KEY_PREFIX}{file_path}"
-        await self._redis.setex(cache_key, self.CACHE_TTL, doc_id)
-        logger.debug("Cached document ID", file_path=file_path, doc_id=doc_id)
+        # Convert timedelta to seconds for Redis setex
+        ttl_seconds = int(self.CACHE_TTL.total_seconds())
+        await self._redis.setex(cache_key, ttl_seconds, doc_id)
+        logger.debug(
+            "Cached document ID",
+            file_path=file_path,
+            doc_id=doc_id,
+            ttl_seconds=ttl_seconds,
+        )
 
     async def delete_doc_id(self, file_path: str) -> None:
         """Remove a document ID from the cache.
@@ -120,6 +144,7 @@ class LightRAGDocumentCache:
 
         count = 0
         pipeline = self._redis.pipeline()
+        ttl_seconds = int(self.CACHE_TTL.total_seconds())
 
         for doc in documents:
             doc_id = doc.get("id")
@@ -127,7 +152,7 @@ class LightRAGDocumentCache:
 
             if doc_id and file_path:
                 cache_key = f"{self.CACHE_KEY_PREFIX}{file_path}"
-                pipeline.setex(cache_key, self.CACHE_TTL, doc_id)
+                pipeline.setex(cache_key, ttl_seconds, doc_id)
                 count += 1
 
         await pipeline.execute()
@@ -262,13 +287,12 @@ class LightRAGDocumentCache:
 
         # Store track_id mapping for ADR
         upload_key = f"{self.UPLOAD_STATUS_KEY_PREFIX}{adr_id}"
-        await self._redis.setex(upload_key, self.UPLOAD_STATUS_TTL, track_id)
+        upload_ttl_seconds = int(self.UPLOAD_STATUS_TTL.total_seconds())
+        await self._redis.setex(upload_key, upload_ttl_seconds, track_id)
 
         # Store detailed status info by track_id
         track_key = f"{self.TRACK_ID_KEY_PREFIX}{track_id}"
-        await self._redis.setex(
-            track_key, self.UPLOAD_STATUS_TTL, json.dumps(status_info)
-        )
+        await self._redis.setex(track_key, upload_ttl_seconds, json.dumps(status_info))
 
         logger.debug(
             "Upload status updated", adr_id=adr_id, track_id=track_id, status=status

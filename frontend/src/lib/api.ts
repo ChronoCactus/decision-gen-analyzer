@@ -204,8 +204,20 @@ class ApiClient {
     });
   }
 
-  async getADRRAGStatus(adrId: string): Promise<{ adr_id: string; exists_in_rag: boolean; lightrag_doc_id?: string; error?: string }> {
-    return this.request<{ adr_id: string; exists_in_rag: boolean; lightrag_doc_id?: string; error?: string }>(`/api/v1/adrs/${adrId}/rag-status`);
+  async getADRRAGStatus(adrId: string): Promise<{
+    adr_id: string;
+    exists_in_rag: boolean;
+    lightrag_doc_id?: string;
+    upload_status?: { status: string; message?: string; track_id?: string; timestamp?: number } | null;
+    error?: string
+  }> {
+    return this.request<{
+      adr_id: string;
+      exists_in_rag: boolean;
+      lightrag_doc_id?: string;
+      upload_status?: { status: string; message?: string; track_id?: string; timestamp?: number } | null;
+      error?: string
+    }>(`/api/v1/adrs/${adrId}/rag-status`);
   }
 
   async getCacheStatus(): Promise<{ is_rebuilding: boolean; last_sync_time?: number; error?: string }> {
