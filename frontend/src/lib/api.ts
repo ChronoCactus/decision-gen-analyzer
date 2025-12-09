@@ -228,6 +228,12 @@ class ApiClient {
     return this.request<{ is_rebuilding: boolean; error?: string }>('/api/v1/adrs/cache/rebuild-status');
   }
 
+  async refreshCache(): Promise<{ message: string; total_documents: number }> {
+    return this.request<{ message: string; total_documents: number }>('/api/v1/adrs/cache/refresh', {
+      method: 'POST',
+    });
+  }
+
   async getPersonas(): Promise<{ personas: Persona[] }> {
     return this.request<{ personas: Persona[] }>('/api/v1/adrs/personas');
   }
