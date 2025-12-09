@@ -155,7 +155,8 @@ export default function Home() {
   const handlePushToRAG = async (adrId: string) => {
     try {
       await apiClient.pushADRToRAG(adrId);
-      // WebSocket upload status provides real-time feedback
+      // WebSocket upload status provides real-time feedback for new uploads with track_id
+      // For already-existing documents, the ADRCard will re-check status after this completes
     } catch (err) {
       console.error('Failed to push ADR to RAG:', err);
 
@@ -167,6 +168,7 @@ export default function Home() {
       } else {
         alert('Failed to push ADR to RAG');
       }
+      throw err; // Re-throw so ADRCard knows it failed
     }
   };
 
