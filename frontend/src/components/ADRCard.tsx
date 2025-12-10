@@ -21,9 +21,14 @@ interface ADRCardProps {
   onLongPress?: (adrId: string) => void;
   isNewlyImported?: boolean;
   onRefineQueued?: (taskId: string) => void;
+  ragStatus?: {
+    exists_in_rag: boolean;
+    lightrag_doc_id?: string;
+    upload_status?: { status: string; message?: string; track_id?: string; timestamp?: number } | null;
+  };
 }
 
-export function ADRCard({ adr, onAnalyze, onDelete, onPushToRAG, onExport, cacheRebuilding, selectionMode = false, isSelected = false, onToggleSelection, onLongPress, isNewlyImported = false, onRefineQueued }: ADRCardProps) {
+export function ADRCard({ adr, onAnalyze, onDelete, onPushToRAG, onExport, cacheRebuilding, selectionMode = false, isSelected = false, onToggleSelection, onLongPress, isNewlyImported = false, onRefineQueued, ragStatus }: ADRCardProps) {
   const [showModal, setShowModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
@@ -59,50 +64,33 @@ export function ADRCard({ adr, onAnalyze, onDelete, onPushToRAG, onExport, cache
     }
   }, [uploadStatus]);
 
-  // Check if ADR exists in RAG on mount and when cache rebuild completes
+  // Use batched RAG status from parent
   useEffect(() => {
-    let mounted = true;
+    if (!ragStatus) {
+      // Still loading batch status
+      setCheckingRAGStatus(true);
+      return;
+    }
 
-    const checkRAGStatus = async () => {
-      try {
-        const response = await apiClient.getADRRAGStatus(currentAdr.metadata.id);
-        if (mounted) {
-          // Check if there's an active upload being tracked
-          const hasActiveUpload = response.upload_status &&
-            response.upload_status.status === 'processing' &&
-            // Ignore stale statuses older than 5 minutes (300 seconds)
-            response.upload_status.timestamp &&
-            (Date.now() / 1000 - response.upload_status.timestamp) < 300;
+    // Check if there's an active upload being tracked
+    const hasActiveUpload = ragStatus.upload_status &&
+      ragStatus.upload_status.status === 'processing' &&
+    // Ignore stale statuses older than 5 minutes (300 seconds)
+      ragStatus.upload_status.timestamp &&
+      (Date.now() / 1000 - ragStatus.upload_status.timestamp) < 300;
 
-          if (hasActiveUpload) {
-            // Set initial upload status so button shows "Processing..." instead of "Push to RAG"
-            setInitialUploadStatus('processing');
-            setCheckingRAGStatus(false);
-            // Don't set existsInRAG yet - let the WebSocket/monitoring update handle it
-          } else {
-          // No active upload or stale status, set final status
-            setExistsInRAG(response.exists_in_rag);
-            setCheckingRAGStatus(false);
-            setInitialUploadStatus(null);
-          }
-        }
-      } catch (error) {
-        console.error('Failed to check RAG status:', error);
-        if (mounted) {
-          // If we can't check, assume it might not exist (show button)
-          setExistsInRAG(false);
-          setCheckingRAGStatus(false);
-          setInitialUploadStatus(null);
-        }
-      }
-    };
-
-    checkRAGStatus();
-
-    return () => {
-      mounted = false;
-    };
-  }, [currentAdr.metadata.id, cacheRebuilding]); // Re-check when cache rebuild status changes
+    if (hasActiveUpload) {
+      // Set initial upload status so button shows "Processing..." instead of "Push to RAG"
+      setInitialUploadStatus('processing');
+      setCheckingRAGStatus(false);
+      // Don't set existsInRAG yet - let the WebSocket/monitoring update handle it
+    } else {
+    // No active upload or stale status, set final status
+      setExistsInRAG(ragStatus.exists_in_rag);
+      setCheckingRAGStatus(false);
+      setInitialUploadStatus(null);
+    }
+  }, [ragStatus, cacheRebuilding]); // Re-check when ragStatus or cache rebuild status changes
 
   const handleAnalyze = async () => {
     setIsAnalyzing(true);

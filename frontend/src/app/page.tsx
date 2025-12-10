@@ -50,6 +50,13 @@ export default function Home() {
   const [showGenerateDropdown, setShowGenerateDropdown] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
+  // Batch RAG status state
+  const [ragStatuses, setRagStatuses] = useState<Record<string, {
+    exists_in_rag: boolean;
+    lightrag_doc_id?: string;
+    upload_status?: { status: string; message?: string; track_id?: string; timestamp?: number } | null;
+  }>>({});
+
   // Use WebSocket for real-time cache status updates
   const { isRebuilding: cacheRebuilding, lastSyncTime, isConnected: wsConnected } = useCacheStatusWebSocket();
 
@@ -119,6 +126,19 @@ export default function Home() {
       setLoading(true);
       const response = await apiClient.getADRs();
       setAdrs(response.adrs);
+
+      // Batch fetch RAG statuses for all ADRs
+      if (response.adrs.length > 0) {
+        const adrIds = response.adrs.map(adr => adr.metadata.id);
+        const batchResponse = await apiClient.getBatchRAGStatus(adrIds);
+
+        // Convert array to map for easy lookup
+        const statusMap: Record<string, typeof batchResponse.statuses[0]> = {};
+        batchResponse.statuses.forEach(status => {
+          statusMap[status.adr_id] = status;
+        });
+        setRagStatuses(statusMap);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load ADRs');
     } finally {
@@ -237,6 +257,19 @@ export default function Home() {
       // Silently refresh ADRs without triggering loading state
       const response = await apiClient.getADRs();
       setAdrs(response.adrs);
+
+      // Batch fetch RAG statuses for all ADRs
+      if (response.adrs.length > 0) {
+        const adrIds = response.adrs.map(adr => adr.metadata.id);
+        const batchResponse = await apiClient.getBatchRAGStatus(adrIds);
+
+        // Convert array to map for easy lookup
+        const statusMap: Record<string, typeof batchResponse.statuses[0]> = {};
+        batchResponse.statuses.forEach(status => {
+          statusMap[status.adr_id] = status;
+        });
+        setRagStatuses(statusMap);
+      }
     } catch (err) {
       console.error('Failed to refresh cache:', err);
       setToastMessage('Failed to refresh cache');
@@ -979,6 +1012,7 @@ export default function Home() {
                 onLongPress={handleLongPress}
                 isNewlyImported={newlyImportedADRs.has(adr.metadata.id)}
                 onRefineQueued={handleRefineQueued}
+                ragStatus={ragStatuses[adr.metadata.id]}
               />
             ))}
           </div>

@@ -840,3 +840,59 @@ class TestRAGRoutes:
         assert data["adr_id"] == adr_id
         assert data["exists_in_rag"] is False
         assert data["lightrag_doc_id"] is None
+
+    @pytest.mark.asyncio
+    @patch("src.lightrag_doc_cache.LightRAGDocumentCache")
+    async def test_batch_rag_status(self, mock_cache_class):
+        """Test batch RAG status endpoint with multiple ADRs."""
+        adr_id_1 = str(uuid4())
+        adr_id_2 = str(uuid4())
+        adr_id_3 = str(uuid4())
+
+        # Mock cache - mix of statuses
+        mock_cache = AsyncMock()
+
+        async def mock_get_doc_id(adr_id):
+            if adr_id == adr_id_1:
+                return "lightrag-doc-123"
+            elif adr_id == adr_id_2:
+                return "lightrag-doc-456"
+            else:
+                return None
+
+        async def mock_get_upload_status(adr_id):
+            if adr_id == adr_id_3:
+                return {
+                    "status": "processing",
+                    "message": "Uploading...",
+                    "timestamp": time.time(),
+                }
+            return None
+
+        mock_cache.get_doc_id = AsyncMock(side_effect=mock_get_doc_id)
+        mock_cache.get_upload_status = AsyncMock(side_effect=mock_get_upload_status)
+        mock_cache.__aenter__ = AsyncMock(return_value=mock_cache)
+        mock_cache.__aexit__ = AsyncMock(return_value=None)
+        mock_cache_class.return_value = mock_cache
+
+        client = TestClient(app)
+        payload = {"adr_ids": [adr_id_1, adr_id_2, adr_id_3]}
+        response = client.post("/api/v1/adrs/batch/rag-status", json=payload)
+
+        assert response.status_code == 200
+        data = response.json()
+        assert "statuses" in data
+        assert len(data["statuses"]) == 3
+
+        # Check each status
+        statuses_by_id = {s["adr_id"]: s for s in data["statuses"]}
+
+        assert statuses_by_id[adr_id_1]["exists_in_rag"] is True
+        assert statuses_by_id[adr_id_1]["lightrag_doc_id"] == "lightrag-doc-123"
+
+        assert statuses_by_id[adr_id_2]["exists_in_rag"] is True
+        assert statuses_by_id[adr_id_2]["lightrag_doc_id"] == "lightrag-doc-456"
+
+        assert statuses_by_id[adr_id_3]["exists_in_rag"] is False
+        assert statuses_by_id[adr_id_3]["lightrag_doc_id"] is None
+        assert statuses_by_id[adr_id_3]["upload_status"]["status"] == "processing"

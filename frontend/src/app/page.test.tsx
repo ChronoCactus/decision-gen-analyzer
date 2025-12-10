@@ -41,6 +41,7 @@ vi.mock('@/lib/api', () => ({
     getGenerationTaskStatus: vi.fn(),
     getCacheStatus: vi.fn(),
     getADRRAGStatus: vi.fn(),
+    getBatchRAGStatus: vi.fn(),
     exportADR: vi.fn(),
     getQueueStatus: vi.fn(),
     getQueueTasks: vi.fn(),
@@ -95,6 +96,12 @@ describe('Home Page', () => {
     (apiClient.getGenerationTaskStatus as any).mockResolvedValue({ status: 'completed' });
     (apiClient.getCacheStatus as any).mockResolvedValue({ is_rebuilding: false });
     (apiClient.getADRRAGStatus as any).mockResolvedValue({ exists_in_rag: false });
+    (apiClient.getBatchRAGStatus as any).mockResolvedValue({
+      statuses: [
+        { adr_id: 'adr-1', exists_in_rag: false, upload_status: null },
+        { adr_id: 'adr-2', exists_in_rag: false, upload_status: null },
+      ]
+    });
     (apiClient.getQueueStatus as any).mockResolvedValue({ 
       total_tasks: 0, 
       active_tasks: 0, 

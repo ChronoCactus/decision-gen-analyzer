@@ -816,6 +816,48 @@ async def push_adr_to_rag(adr_id: str):
         )
 
 
+class BatchRAGStatusRequest(BaseModel):
+    """Request model for batch RAG status check."""
+
+    adr_ids: List[str] = Field(..., description="List of ADR IDs to check")
+
+
+@adr_router.post("/batch/rag-status")
+async def get_batch_rag_status(request: BatchRAGStatusRequest):
+    """Check RAG status for multiple ADRs in a single request.
+
+    This is much more efficient than individual requests, especially for CORS
+    where each request requires an OPTIONS preflight.
+    """
+    try:
+        from src.lightrag_doc_cache import LightRAGDocumentCache
+
+        results = []
+
+        async with LightRAGDocumentCache() as cache:
+            # Check cache for all ADR IDs
+            for adr_id in request.adr_ids:
+                doc_id = await cache.get_doc_id(adr_id)
+                exists_in_rag = doc_id is not None
+                upload_status = await cache.get_upload_status(adr_id)
+
+                results.append(
+                    {
+                        "adr_id": adr_id,
+                        "exists_in_rag": exists_in_rag,
+                        "lightrag_doc_id": doc_id,
+                        "upload_status": upload_status,
+                    }
+                )
+
+        return {"statuses": results}
+    except Exception as e:
+        logger.error(f"Failed to check batch RAG status: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to check batch RAG status: {str(e)}"
+        )
+
+
 @adr_router.get("/{adr_id}/rag-status")
 async def get_adr_rag_status(adr_id: str):
     """Check if an ADR exists in LightRAG and get upload status if processing."""
