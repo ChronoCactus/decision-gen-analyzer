@@ -57,6 +57,10 @@ describe('ADRCard', () => {
   const defaultProps = {
     ...mockCallbacks,
     cacheRebuilding: false,
+    ragStatus: {
+      exists_in_rag: false,
+      upload_status: null,
+    },
   };
 
   beforeEach(() => {

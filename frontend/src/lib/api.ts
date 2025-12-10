@@ -220,6 +220,27 @@ class ApiClient {
     }>(`/api/v1/adrs/${adrId}/rag-status`);
   }
 
+  async getBatchRAGStatus(adrIds: string[]): Promise<{
+    statuses: Array<{
+      adr_id: string;
+      exists_in_rag: boolean;
+      lightrag_doc_id?: string;
+      upload_status?: { status: string; message?: string; track_id?: string; timestamp?: number } | null;
+    }>;
+  }> {
+    return this.request<{
+      statuses: Array<{
+        adr_id: string;
+        exists_in_rag: boolean;
+        lightrag_doc_id?: string;
+        upload_status?: { status: string; message?: string; track_id?: string; timestamp?: number } | null;
+      }>;
+    }>('/api/v1/adrs/batch/rag-status', {
+      method: 'POST',
+      body: JSON.stringify({ adr_ids: adrIds }),
+    });
+  }
+
   async getCacheStatus(): Promise<{ is_rebuilding: boolean; last_sync_time?: number; error?: string }> {
     return this.request<{ is_rebuilding: boolean; last_sync_time?: number; error?: string }>('/api/v1/adrs/cache/status');
   }
