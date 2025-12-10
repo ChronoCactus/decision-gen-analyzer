@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { ADR } from '@/types/api';
 import { ADRModal } from './ADRModal';
 import { DeleteConfirmationModal } from './DeleteConfirmationModal';
@@ -26,9 +26,15 @@ interface ADRCardProps {
     lightrag_doc_id?: string;
     upload_status?: { status: string; message?: string; track_id?: string; timestamp?: number } | null;
   };
+  draggable?: boolean;
+  availableFolders?: string[];
+  availableTags?: string[];
+  onFolderChange?: (adrId: string, folder: string | null) => void;
+  onTagAdd?: (adrId: string, tag: string) => void;
+  onTagRemove?: (adrId: string, tag: string) => void;
 }
 
-export function ADRCard({ adr, onAnalyze, onDelete, onPushToRAG, onExport, cacheRebuilding, selectionMode = false, isSelected = false, onToggleSelection, onLongPress, isNewlyImported = false, onRefineQueued, ragStatus }: ADRCardProps) {
+export function ADRCard({ adr, onAnalyze, onDelete, onPushToRAG, onExport, cacheRebuilding, selectionMode = false, isSelected = false, onToggleSelection, onLongPress, isNewlyImported = false, onRefineQueued, ragStatus, draggable = false, availableFolders = [], availableTags = [], onFolderChange, onTagAdd, onTagRemove }: ADRCardProps) {
   const [showModal, setShowModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
@@ -40,6 +46,30 @@ export function ADRCard({ adr, onAnalyze, onDelete, onPushToRAG, onExport, cache
   const [toastType, setToastType] = useState<'info' | 'success' | 'warning' | 'error'>('info');
   const [currentAdr, setCurrentAdr] = useState<ADR>(adr);
   const [initialUploadStatus, setInitialUploadStatus] = useState<'processing' | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
+  const [showFolderDropdown, setShowFolderDropdown] = useState(false);
+  const [showTagDropdown, setShowTagDropdown] = useState(false);
+  const [newTagInput, setNewTagInput] = useState('');
+  const folderDropdownRef = useRef<HTMLDivElement>(null);
+  const tagDropdownRef = useRef<HTMLDivElement>(null);
+
+  // Close dropdowns when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (folderDropdownRef.current && !folderDropdownRef.current.contains(e.target as Node)) {
+        setShowFolderDropdown(false);
+      }
+      if (tagDropdownRef.current && !tagDropdownRef.current.contains(e.target as Node)) {
+        setShowTagDropdown(false);
+        setNewTagInput('');
+      }
+    };
+
+    if (showFolderDropdown || showTagDropdown) {
+      document.addEventListener('mousedown', handleClickOutside);
+      return () => document.removeEventListener('mousedown', handleClickOutside);
+    }
+  }, [showFolderDropdown, showTagDropdown]);
 
   // Track upload status via WebSocket
   const { uploadStatus: wsUploadStatus, uploadMessage } = useUploadStatus(currentAdr.metadata.id);
@@ -162,16 +192,52 @@ export function ADRCard({ adr, onAnalyze, onDelete, onPushToRAG, onExport, cache
 
   const [longPressTimer, setLongPressTimer] = useState<NodeJS.Timeout | null>(null);
   const [isLongPress, setIsLongPress] = useState(false);
+  const [dragStartPos, setDragStartPos] = useState<{ x: number; y: number } | null>(null);
+  const hasDraggedRef = useRef(false);
 
-  const handleStart = () => {
+  const DRAG_THRESHOLD = 10; // pixels of movement to consider it a drag
+
+  const handleStart = (e: React.MouseEvent | React.TouchEvent) => {
     setIsLongPress(false);
+    hasDraggedRef.current = false;
+
+    // Record start position for drag detection
+    const pos = 'touches' in e
+      ? { x: e.touches[0].clientX, y: e.touches[0].clientY }
+      : { x: e.clientX, y: e.clientY };
+    setDragStartPos(pos);
+
     const timer = setTimeout(() => {
-      setIsLongPress(true);
-      if (onLongPress) {
-        onLongPress(currentAdr.metadata.id);
+      // Only trigger long press if we haven't started dragging
+      if (!hasDraggedRef.current) {
+        setIsLongPress(true);
+        if (onLongPress) {
+          onLongPress(currentAdr.metadata.id);
+        }
       }
     }, 500); // 500ms for long press
     setLongPressTimer(timer);
+  };
+
+  const handleMove = (e: React.MouseEvent | React.TouchEvent) => {
+    if (!dragStartPos || hasDraggedRef.current) return;
+
+    const pos = 'touches' in e
+      ? { x: e.touches[0].clientX, y: e.touches[0].clientY }
+      : { x: e.clientX, y: e.clientY };
+
+    const distance = Math.sqrt(
+      Math.pow(pos.x - dragStartPos.x, 2) + Math.pow(pos.y - dragStartPos.y, 2)
+    );
+
+    // If moved beyond threshold, cancel long press and mark as dragging
+    if (distance > DRAG_THRESHOLD) {
+      hasDraggedRef.current = true;
+      if (longPressTimer) {
+        clearTimeout(longPressTimer);
+        setLongPressTimer(null);
+      }
+    }
   };
 
   const handleEnd = () => {
@@ -179,40 +245,176 @@ export function ADRCard({ adr, onAnalyze, onDelete, onPushToRAG, onExport, cache
       clearTimeout(longPressTimer);
       setLongPressTimer(null);
     }
+    setDragStartPos(null);
   };
 
   const handleCardClick = (e: React.MouseEvent) => {
-    if (isLongPress) {
-      // Prevent click if it was a long press
+    // Prevent click if it was a long press or if we dragged
+    if (isLongPress || hasDraggedRef.current) {
       e.stopPropagation();
       setIsLongPress(false);
+      hasDraggedRef.current = false;
       return;
     }
-    
+
     if (selectionMode && onToggleSelection) {
       onToggleSelection(currentAdr.metadata.id);
     }
+  };  // Drag handlers for folder organization
+  const handleDragStart = (e: React.DragEvent) => {
+    if (!draggable || selectionMode) return;
+    // Mark as dragged immediately to prevent long press from firing
+    hasDraggedRef.current = true;
+    setIsDragging(true);
+    e.dataTransfer.setData('text/adr-id', currentAdr.metadata.id);
+    e.dataTransfer.effectAllowed = 'move';
+
+    // Create a semi-transparent drag ghost using canvas
+    try {
+      const target = e.currentTarget as HTMLElement;
+      const rect = target.getBoundingClientRect();
+
+      // Create a canvas to render the semi-transparent version
+      const canvas = document.createElement('canvas');
+      const scale = window.devicePixelRatio || 1;
+      canvas.width = rect.width * scale;
+      canvas.height = rect.height * scale;
+      canvas.style.width = `${rect.width}px`;
+      canvas.style.height = `${rect.height}px`;
+
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        ctx.scale(scale, scale);
+        ctx.globalAlpha = 0.4; // 40% opacity
+
+        // Draw a simple representation (we can't use html2canvas without the library)
+        // So we'll create a styled div instead
+        const dragPreview = target.cloneNode(true) as HTMLElement;
+        dragPreview.style.opacity = '0.4';
+        dragPreview.style.transform = 'none';
+        dragPreview.style.position = 'fixed';
+        dragPreview.style.left = '-9999px';
+        dragPreview.style.top = '0';
+        dragPreview.style.width = `${rect.width}px`;
+        dragPreview.style.zIndex = '9999';
+        document.body.appendChild(dragPreview);
+
+        // Use the preview element as drag image
+        e.dataTransfer.setDragImage(dragPreview, e.nativeEvent.offsetX, e.nativeEvent.offsetY);
+
+        // Clean up after a frame
+        requestAnimationFrame(() => {
+          if (document.body.contains(dragPreview)) {
+            document.body.removeChild(dragPreview);
+          }
+        });
+      }
+    } catch (error) {
+      console.error('Failed to create drag image:', error);
+    }
+  };
+
+  const handleDragEnd = () => {
+    setIsDragging(false);
   };
 
   return (
     <>
       <div 
         className={`relative bg-white dark:bg-gray-800 rounded-lg shadow-md p-3 md:p-6 hover:shadow-lg transition-all border ${
-          selectionMode 
-            ? isSelected 
-              ? 'border-blue-500 dark:border-blue-400 ring-2 ring-blue-500 dark:ring-blue-400 cursor-pointer' 
-              : 'border-gray-300 dark:border-gray-600 cursor-pointer hover:border-blue-300 dark:hover:border-blue-600' 
-            : isNewlyImported
-              ? 'border-blue-500 dark:border-blue-400 animate-pulse-border'
-              : 'border-transparent dark:border-gray-700'
-        } select-none`}
+          isDragging
+            ? 'ring-2 ring-blue-500 dark:ring-blue-400'
+            : selectionMode
+              ? isSelected
+                ? 'border-blue-500 dark:border-blue-400 ring-2 ring-blue-500 dark:ring-blue-400 cursor-pointer'
+                : 'border-gray-300 dark:border-gray-600 cursor-pointer hover:border-blue-300 dark:hover:border-blue-600'
+              : isNewlyImported
+                ? 'border-blue-500 dark:border-blue-400 animate-pulse-border'
+                : 'border-transparent dark:border-gray-700'
+          } select-none ${draggable && !selectionMode ? 'cursor-grab active:cursor-grabbing' : ''}`}
+        style={isDragging ? { opacity: 1 } : undefined}
         onClick={handleCardClick}
         onMouseDown={handleStart}
+        onMouseMove={handleMove}
         onMouseUp={handleEnd}
         onMouseLeave={handleEnd}
         onTouchStart={handleStart}
+        onTouchMove={handleMove}
         onTouchEnd={handleEnd}
+        draggable={draggable && !selectionMode}
+        onDragStart={handleDragStart}
+        onDragEnd={handleDragEnd}
       >
+        {/* Folder indicator with dropdown */}
+        {onFolderChange && !selectionMode ? (
+          <div className="absolute -top-2 left-3 z-10" ref={folderDropdownRef}>
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                setShowFolderDropdown(!showFolderDropdown);
+                setShowTagDropdown(false);
+              }}
+              className="flex items-center gap-1 px-2 py-0.5 bg-gray-100 dark:bg-gray-700 rounded-full text-xs text-gray-600 dark:text-gray-400 border border-gray-200 dark:border-gray-600 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
+              title="Change folder"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-3 h-3">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 12.75V12A2.25 2.25 0 014.5 9.75h15A2.25 2.25 0 0121.75 12v.75m-8.69-6.44l-2.12-2.12a1.5 1.5 0 00-1.061-.44H4.5A2.25 2.25 0 002.25 6v12a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18V9a2.25 2.25 0 00-2.25-2.25h-5.379a1.5 1.5 0 01-1.06-.44z" />
+              </svg>
+              <span className="truncate max-w-[100px]">
+                {currentAdr.metadata.folder_path
+                  ? currentAdr.metadata.folder_path.split('/').filter(Boolean).pop()
+                  : 'No folder'}
+              </span>
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-3 h-3">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
+              </svg>
+            </button>
+            {showFolderDropdown && (
+              <div
+                className="absolute left-0 top-full mt-1 w-48 bg-white dark:bg-gray-800 rounded-md shadow-lg border border-gray-200 dark:border-gray-700 z-20 max-h-48 overflow-y-auto"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <button
+                  onClick={() => {
+                    onFolderChange(currentAdr.metadata.id, null);
+                    setShowFolderDropdown(false);
+                  }}
+                  className={`w-full text-left px-3 py-2 text-xs hover:bg-gray-100 dark:hover:bg-gray-700 ${!currentAdr.metadata.folder_path
+                    ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300'
+                    : 'text-gray-700 dark:text-gray-300'
+                    }`}
+                >
+                  <span className="italic">No folder (root)</span>
+                </button>
+                {availableFolders.map((folder) => (
+                  <button
+                    key={folder}
+                    onClick={() => {
+                      onFolderChange(currentAdr.metadata.id, folder);
+                      setShowFolderDropdown(false);
+                    }}
+                    className={`w-full text-left px-3 py-2 text-xs hover:bg-gray-100 dark:hover:bg-gray-700 ${currentAdr.metadata.folder_path === folder
+                      ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300'
+                      : 'text-gray-700 dark:text-gray-300'
+                      }`}
+                  >
+                    {folder}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        ) : currentAdr.metadata.folder_path && (
+          <div className="absolute -top-2 left-3 flex items-center gap-1 px-2 py-0.5 bg-gray-100 dark:bg-gray-700 rounded-full text-xs text-gray-600 dark:text-gray-400 border border-gray-200 dark:border-gray-600">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-3 h-3">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 12.75V12A2.25 2.25 0 014.5 9.75h15A2.25 2.25 0 0121.75 12v.75m-8.69-6.44l-2.12-2.12a1.5 1.5 0 00-1.061-.44H4.5A2.25 2.25 0 002.25 6v12a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18V9a2.25 2.25 0 00-2.25-2.25h-5.379a1.5 1.5 0 01-1.06-.44z" />
+            </svg>
+            <span className="truncate max-w-[100px]" title={currentAdr.metadata.folder_path}>
+              {currentAdr.metadata.folder_path.split('/').filter(Boolean).pop()}
+            </span>
+          </div>
+        )}
+
         {/* Selection checkbox - shown in selection mode */}
         {selectionMode && (
           <div className="absolute top-4 right-4 z-10" onClick={(e) => e.stopPropagation()}>
@@ -254,15 +456,105 @@ export function ADRCard({ adr, onAnalyze, onDelete, onPushToRAG, onExport, cache
           {currentAdr.metadata.tags.slice(0, 3).map((tag) => (
             <span
               key={tag}
-              className="px-2 py-1 bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 text-xs rounded-md"
+              className="px-2 py-1 bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 text-xs rounded-md flex items-center gap-1 group"
             >
               {tag}
+              {onTagRemove && !selectionMode && (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onTagRemove(currentAdr.metadata.id, tag);
+                  }}
+                  className="opacity-0 group-hover:opacity-100 hover:text-red-500 transition-opacity"
+                  title={`Remove tag "${tag}"`}
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-3 h-3">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              )}
             </span>
           ))}
           {currentAdr.metadata.tags.length > 3 && (
             <span className="px-2 py-1 bg-gray-50 dark:bg-gray-700 text-gray-600 dark:text-gray-400 text-xs rounded-md">
               +{currentAdr.metadata.tags.length - 3} more
             </span>
+          )}
+          {/* Add tag button */}
+          {onTagAdd && !selectionMode && (
+            <div className="relative" ref={tagDropdownRef}>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setShowTagDropdown(!showTagDropdown);
+                  setShowFolderDropdown(false);
+                }}
+                className="px-2 py-1 bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 text-xs rounded-md hover:bg-gray-200 dark:hover:bg-gray-600 flex items-center gap-1"
+                title="Add tag"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-3 h-3">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+                </svg>
+                Tag
+              </button>
+              {showTagDropdown && (
+                <div
+                  className="absolute left-0 top-full mt-1 w-48 bg-white dark:bg-gray-800 rounded-md shadow-lg border border-gray-200 dark:border-gray-700 z-20"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <div className="p-2 border-b border-gray-200 dark:border-gray-700">
+                    <div className="flex gap-1">
+                      <input
+                        type="text"
+                        value={newTagInput}
+                        onChange={(e) => setNewTagInput(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' && newTagInput.trim()) {
+                            onTagAdd(currentAdr.metadata.id, newTagInput.trim());
+                            setNewTagInput('');
+                            setShowTagDropdown(false);
+                          }
+                        }}
+                        placeholder="New tag..."
+                        className="flex-1 text-xs px-2 py-1 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                        autoFocus
+                      />
+                      <button
+                        onClick={() => {
+                          if (newTagInput.trim()) {
+                            onTagAdd(currentAdr.metadata.id, newTagInput.trim());
+                            setNewTagInput('');
+                            setShowTagDropdown(false);
+                          }
+                        }}
+                        className="px-2 py-1 bg-blue-600 text-white rounded text-xs hover:bg-blue-700"
+                      >
+                        Add
+                      </button>
+                    </div>
+                  </div>
+                  {availableTags.filter(t => !currentAdr.metadata.tags.includes(t)).length > 0 && (
+                    <div className="max-h-32 overflow-y-auto">
+                      {availableTags
+                        .filter(t => !currentAdr.metadata.tags.includes(t))
+                        .slice(0, 10)
+                        .map((tag) => (
+                          <button
+                            key={tag}
+                            onClick={() => {
+                              onTagAdd(currentAdr.metadata.id, tag);
+                              setShowTagDropdown(false);
+                            }}
+                            className="w-full text-left px-3 py-1.5 text-xs text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
+                          >
+                            {tag}
+                          </button>
+                        ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
           )}
         </div>
 
@@ -393,6 +685,11 @@ export function ADRCard({ adr, onAnalyze, onDelete, onPushToRAG, onExport, cache
           isAnalyzing={isAnalyzing}
           onADRUpdate={handleADRUpdate}
           onRefineQueued={onRefineQueued}
+          availableFolders={availableFolders}
+          availableTags={availableTags}
+          onFolderChange={onFolderChange}
+          onTagAdd={onTagAdd}
+          onTagRemove={onTagRemove}
         />
       )}
 

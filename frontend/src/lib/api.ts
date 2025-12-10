@@ -198,6 +198,43 @@ class ApiClient {
     });
   }
 
+  // Folder management
+  async updateADRFolder(adrId: string, folderPath: string | null): Promise<{ message: string; adr: ADR }> {
+    return this.request<{ message: string; adr: ADR }>(`/api/v1/adrs/${adrId}/folder`, {
+      method: 'PATCH',
+      body: JSON.stringify({ folder_path: folderPath }),
+    });
+  }
+
+  async listFolders(): Promise<{ folders: string[] }> {
+    return this.request<{ folders: string[] }>('/api/v1/adrs/folders/list');
+  }
+
+  // Tag management
+  async updateADRTags(adrId: string, tags: string[]): Promise<{ message: string; adr: ADR }> {
+    return this.request<{ message: string; adr: ADR }>(`/api/v1/adrs/${adrId}/tags`, {
+      method: 'PATCH',
+      body: JSON.stringify({ tags }),
+    });
+  }
+
+  async addADRTag(adrId: string, tag: string): Promise<{ message: string; adr: ADR }> {
+    return this.request<{ message: string; adr: ADR }>(`/api/v1/adrs/${adrId}/tags`, {
+      method: 'POST',
+      body: JSON.stringify({ tag }),
+    });
+  }
+
+  async removeADRTag(adrId: string, tag: string): Promise<{ message: string; adr: ADR }> {
+    return this.request<{ message: string; adr: ADR }>(`/api/v1/adrs/${adrId}/tags/${encodeURIComponent(tag)}`, {
+      method: 'DELETE',
+    });
+  }
+
+  async listTags(): Promise<{ tags: Array<{ tag: string; count: number }> }> {
+    return this.request<{ tags: Array<{ tag: string; count: number }> }>('/api/v1/adrs/tags/list');
+  }
+
   async pushADRToRAG(adrId: string): Promise<{ message: string; adr_id: string; title: string }> {
     return this.request<{ message: string; adr_id: string; title: string }>(`/api/v1/adrs/${adrId}/push-to-rag`, {
       method: 'POST',

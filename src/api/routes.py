@@ -630,6 +630,222 @@ async def update_adr_status(adr_id: str, request: UpdateStatusRequest):
         )
 
 
+class UpdateFolderRequest(BaseModel):
+    """Request model for updating ADR folder path."""
+
+    folder_path: Optional[str] = Field(
+        None, description="Folder path (e.g., '/Architecture/Backend') or null for root"
+    )
+
+
+@adr_router.patch("/{adr_id}/folder")
+async def update_adr_folder(adr_id: str, request: UpdateFolderRequest):
+    """Update the folder path of an ADR."""
+    try:
+        from src.adr_file_storage import get_adr_storage
+
+        storage = get_adr_storage()
+
+        # Get the ADR (run in thread pool - uses blocking file I/O)
+        adr = await asyncio.to_thread(storage.get_adr, adr_id)
+
+        if not adr:
+            raise HTTPException(status_code=404, detail=f"ADR {adr_id} not found")
+
+        # Update folder path using the model method
+        adr.set_folder_path(request.folder_path)
+
+        # Save the updated ADR (run in thread pool - uses blocking file I/O)
+        await asyncio.to_thread(storage.save_adr, adr)
+
+        logger.info(f"Updated ADR {adr_id} folder to {adr.metadata.folder_path}")
+
+        return {
+            "message": f"ADR folder updated to {adr.metadata.folder_path or 'root'}",
+            "adr": adr,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to update ADR folder: {e}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to update ADR folder: {str(e)}"
+        )
+
+
+class UpdateTagsRequest(BaseModel):
+    """Request model for updating ADR tags."""
+
+    tags: List[str] = Field(..., description="Complete list of tags for the ADR")
+
+
+class AddTagRequest(BaseModel):
+    """Request model for adding a tag to an ADR."""
+
+    tag: str = Field(..., description="Tag to add")
+
+
+class RemoveTagRequest(BaseModel):
+    """Request model for removing a tag from an ADR."""
+
+    tag: str = Field(..., description="Tag to remove")
+
+
+@adr_router.patch("/{adr_id}/tags")
+async def update_adr_tags(adr_id: str, request: UpdateTagsRequest):
+    """Replace all tags on an ADR."""
+    try:
+        from datetime import UTC, datetime
+
+        from src.adr_file_storage import get_adr_storage
+
+        storage = get_adr_storage()
+
+        # Get the ADR (run in thread pool - uses blocking file I/O)
+        adr = await asyncio.to_thread(storage.get_adr, adr_id)
+
+        if not adr:
+            raise HTTPException(status_code=404, detail=f"ADR {adr_id} not found")
+
+        # Replace tags
+        adr.metadata.tags = request.tags
+        adr.metadata.updated_at = datetime.now(UTC)
+
+        # Save the updated ADR (run in thread pool - uses blocking file I/O)
+        await asyncio.to_thread(storage.save_adr, adr)
+
+        logger.info(f"Updated ADR {adr_id} tags to {request.tags}")
+
+        return {"message": "ADR tags updated", "adr": adr}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to update ADR tags: {e}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to update ADR tags: {str(e)}"
+        )
+
+
+@adr_router.post("/{adr_id}/tags")
+async def add_adr_tag(adr_id: str, request: AddTagRequest):
+    """Add a single tag to an ADR."""
+    try:
+        from src.adr_file_storage import get_adr_storage
+
+        storage = get_adr_storage()
+
+        # Get the ADR (run in thread pool - uses blocking file I/O)
+        adr = await asyncio.to_thread(storage.get_adr, adr_id)
+
+        if not adr:
+            raise HTTPException(status_code=404, detail=f"ADR {adr_id} not found")
+
+        # Add tag using model method (handles deduplication)
+        adr.add_tag(request.tag)
+
+        # Save the updated ADR (run in thread pool - uses blocking file I/O)
+        await asyncio.to_thread(storage.save_adr, adr)
+
+        logger.info(f"Added tag '{request.tag}' to ADR {adr_id}")
+
+        return {"message": f"Tag '{request.tag}' added", "adr": adr}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to add tag to ADR: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to add tag: {str(e)}")
+
+
+@adr_router.delete("/{adr_id}/tags/{tag}")
+async def remove_adr_tag(adr_id: str, tag: str):
+    """Remove a tag from an ADR."""
+    try:
+        from src.adr_file_storage import get_adr_storage
+
+        storage = get_adr_storage()
+
+        # Get the ADR (run in thread pool - uses blocking file I/O)
+        adr = await asyncio.to_thread(storage.get_adr, adr_id)
+
+        if not adr:
+            raise HTTPException(status_code=404, detail=f"ADR {adr_id} not found")
+
+        if tag not in adr.metadata.tags:
+            raise HTTPException(
+                status_code=404, detail=f"Tag '{tag}' not found on ADR {adr_id}"
+            )
+
+        # Remove tag using model method
+        adr.remove_tag(tag)
+
+        # Save the updated ADR (run in thread pool - uses blocking file I/O)
+        await asyncio.to_thread(storage.save_adr, adr)
+
+        logger.info(f"Removed tag '{tag}' from ADR {adr_id}")
+
+        return {"message": f"Tag '{tag}' removed", "adr": adr}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to remove tag from ADR: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to remove tag: {str(e)}")
+
+
+@adr_router.get("/folders/list")
+async def list_folders():
+    """Get all unique folder paths used by ADRs."""
+    try:
+        from src.adr_file_storage import get_adr_storage
+
+        storage = get_adr_storage()
+        adrs = await asyncio.to_thread(storage.get_all_adrs)
+
+        # Collect unique folder paths
+        folders = set()
+        for adr in adrs:
+            if adr.metadata.folder_path:
+                # Add the folder and all parent folders
+                path = adr.metadata.folder_path
+                while path and path != "/":
+                    folders.add(path)
+                    path = "/".join(path.rsplit("/", 1)[:-1]) or None
+
+        # Sort folders alphabetically
+        sorted_folders = sorted(folders) if folders else []
+
+        return {"folders": sorted_folders}
+    except Exception as e:
+        logger.error(f"Failed to list folders: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to list folders: {str(e)}")
+
+
+@adr_router.get("/tags/list")
+async def list_tags():
+    """Get all unique tags used by ADRs with counts."""
+    try:
+        from src.adr_file_storage import get_adr_storage
+
+        storage = get_adr_storage()
+        adrs = await asyncio.to_thread(storage.get_all_adrs)
+
+        # Count tag usage
+        tag_counts: Dict[str, int] = {}
+        for adr in adrs:
+            for tag in adr.metadata.tags:
+                tag_counts[tag] = tag_counts.get(tag, 0) + 1
+
+        # Sort by count (descending) then alphabetically
+        sorted_tags = sorted(
+            [{"tag": tag, "count": count} for tag, count in tag_counts.items()],
+            key=lambda x: (-x["count"], x["tag"]),
+        )
+
+        return {"tags": sorted_tags}
+    except Exception as e:
+        logger.error(f"Failed to list tags: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to list tags: {str(e)}")
+
+
 async def _push_adr_to_rag_internal(adr: "ADR") -> dict:
     """Internal helper to push an ADR to LightRAG for indexing.
 
