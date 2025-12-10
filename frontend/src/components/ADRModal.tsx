@@ -15,9 +15,14 @@ interface ADRModalProps {
   isAnalyzing: boolean;
   onADRUpdate?: (updatedAdr: ADR) => void;
   onRefineQueued?: (taskId: string) => void;
+  availableFolders?: string[];
+  availableTags?: string[];
+  onFolderChange?: (adrId: string, folder: string | null) => void;
+  onTagAdd?: (adrId: string, tag: string) => void;
+  onTagRemove?: (adrId: string, tag: string) => void;
 }
 
-export function ADRModal({ adr, onClose, onAnalyze, isAnalyzing, onADRUpdate, onRefineQueued }: ADRModalProps) {
+export function ADRModal({ adr, onClose, onAnalyze, isAnalyzing, onADRUpdate, onRefineQueued, availableFolders = [], availableTags = [], onFolderChange, onTagAdd, onTagRemove }: ADRModalProps) {
   const [showPersonas, setShowPersonas] = useState(false);
   const [currentAdr, setCurrentAdr] = useState<ADR>(adr);
   const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
@@ -40,8 +45,13 @@ export function ADRModal({ adr, onClose, onAnalyze, isAnalyzing, onADRUpdate, on
     data: null,
     error: null
   });
+  const [showFolderDropdown, setShowFolderDropdown] = useState(false);
+  const [showTagDropdown, setShowTagDropdown] = useState(false);
+  const [newTagInput, setNewTagInput] = useState('');
   const bulkRefineRef = useRef<HTMLDivElement>(null);
   const originalPromptEditRef = useRef<HTMLDivElement>(null);
+  const folderDropdownRef = useRef<HTMLDivElement>(null);
+  const tagDropdownRef = useRef<HTMLDivElement>(null);
 
   const isPrinciple = currentAdr.metadata.record_type === 'principle';
 
@@ -61,6 +71,22 @@ export function ADRModal({ adr, onClose, onAnalyze, isAnalyzing, onADRUpdate, on
       originalPromptEditRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
   }, [showOriginalPromptEdit]);
+
+  // Click outside to close dropdowns
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (folderDropdownRef.current && !folderDropdownRef.current.contains(event.target as Node)) {
+        setShowFolderDropdown(false);
+      }
+      if (tagDropdownRef.current && !tagDropdownRef.current.contains(event.target as Node)) {
+        setShowTagDropdown(false);
+        setNewTagInput('');
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   const handleStatusChange = async (newStatus: string) => {
     if (newStatus === currentAdr.metadata.status) {
@@ -154,6 +180,63 @@ export function ADRModal({ adr, onClose, onAnalyze, isAnalyzing, onADRUpdate, on
       setTimeout(() => {
         setRefinementToast({ show: false, message: '', type: 'success' });
       }, 5000);
+    }
+  };
+
+  const handleFolderChangeLocal = async (folderPath: string | null) => {
+    if (onFolderChange) {
+      try {
+        await onFolderChange(currentAdr.metadata.id, folderPath);
+        // Update local state
+        setCurrentAdr(prev => ({
+          ...prev,
+          metadata: {
+            ...prev.metadata,
+            folder_path: folderPath
+          }
+        }));
+        setShowFolderDropdown(false);
+      } catch (error) {
+        console.error('Failed to change folder:', error);
+      }
+    }
+  };
+
+  const handleTagAddLocal = async (tag: string) => {
+    if (onTagAdd && !currentAdr.metadata.tags.includes(tag)) {
+      try {
+        await onTagAdd(currentAdr.metadata.id, tag);
+        // Update local state
+        setCurrentAdr(prev => ({
+          ...prev,
+          metadata: {
+            ...prev.metadata,
+            tags: [...prev.metadata.tags, tag]
+          }
+        }));
+        setNewTagInput('');
+        setShowTagDropdown(false);
+      } catch (error) {
+        console.error('Failed to add tag:', error);
+      }
+    }
+  };
+
+  const handleTagRemoveLocal = async (tag: string) => {
+    if (onTagRemove) {
+      try {
+        await onTagRemove(currentAdr.metadata.id, tag);
+        // Update local state
+        setCurrentAdr(prev => ({
+          ...prev,
+          metadata: {
+            ...prev.metadata,
+            tags: prev.metadata.tags.filter(t => t !== tag)
+          }
+        }));
+      } catch (error) {
+        console.error('Failed to remove tag:', error);
+      }
     }
   };
 
@@ -605,18 +688,119 @@ export function ADRModal({ adr, onClose, onAnalyze, isAnalyzing, onADRUpdate, on
               </div>
             )}
 
+            {/* Folder */}
+            <div>
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2">Folder</h3>
+              <div className="relative" ref={folderDropdownRef}>
+                <button
+                  onClick={() => setShowFolderDropdown(!showFolderDropdown)}
+                  className="px-3 py-1.5 bg-green-50 dark:bg-green-900/30 text-green-700 dark:text-green-300 text-sm rounded-md hover:bg-green-100 dark:hover:bg-green-900/40 transition-colors flex items-center gap-2"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+                  </svg>
+                  <span>{currentAdr.metadata.folder_path || '/'}</span>
+                </button>
+
+                {showFolderDropdown && (
+                  <div className="absolute z-10 mt-1 w-64 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-md shadow-lg max-h-60 overflow-y-auto">
+                    <button
+                      onClick={() => handleFolderChangeLocal(null)}
+                      className="w-full text-left px-3 py-2 hover:bg-gray-100 dark:hover:bg-gray-700 text-sm text-gray-900 dark:text-gray-100"
+                    >
+                      / (root)
+                    </button>
+                    {availableFolders.map((folder) => (
+                      <button
+                        key={folder}
+                        onClick={() => handleFolderChangeLocal(folder)}
+                        className="w-full text-left px-3 py-2 hover:bg-gray-100 dark:hover:bg-gray-700 text-sm text-gray-900 dark:text-gray-100"
+                      >
+                        {folder}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+
             {/* Tags */}
             <div>
               <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2">Tags</h3>
               <div className="flex flex-wrap gap-2">
                 {currentAdr.metadata.tags.map((tag) => (
-                  <span
-                    key={tag}
-                    className="px-3 py-1 bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 text-sm rounded-md"
-                  >
-                    {tag}
-                  </span>
+                  <div key={tag} className="group relative">
+                    <span className="px-3 py-1 bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 text-sm rounded-md flex items-center gap-1">
+                      {tag}
+                      {onTagRemove && (
+                        <button
+                          onClick={() => handleTagRemoveLocal(tag)}
+                          className="opacity-0 group-hover:opacity-100 transition-opacity ml-1 hover:text-red-600 dark:hover:text-red-400"
+                          title="Remove tag"
+                        >
+                          ×
+                        </button>
+                      )}
+                    </span>
+                  </div>
                 ))}
+
+                {/* Add Tag Button */}
+                {onTagAdd && (
+                  <div className="relative" ref={tagDropdownRef}>
+                    <button
+                      onClick={() => setShowTagDropdown(!showTagDropdown)}
+                      className="px-3 py-1 bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 text-sm rounded-md hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
+                    >
+                      + Tag
+                    </button>
+
+                    {showTagDropdown && (
+                      <div className="absolute z-10 mt-1 w-64 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-md shadow-lg">
+                        <div className="p-2 border-b border-gray-200 dark:border-gray-700">
+                          <input
+                            type="text"
+                            value={newTagInput}
+                            onChange={(e) => setNewTagInput(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter' && newTagInput.trim()) {
+                                e.preventDefault();
+                                handleTagAddLocal(newTagInput.trim());
+                              }
+                            }}
+                            placeholder="New tag name..."
+                            className="w-full px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400"
+                            autoFocus
+                          />
+                          <button
+                            onClick={() => newTagInput.trim() && handleTagAddLocal(newTagInput.trim())}
+                            disabled={!newTagInput.trim()}
+                            className="w-full mt-1 px-2 py-1 text-sm bg-blue-600 text-white rounded hover:bg-blue-700 disabled:bg-gray-400 dark:disabled:bg-gray-600 disabled:cursor-not-allowed"
+                          >
+                            Create Tag
+                          </button>
+                        </div>
+
+                        {availableTags.length > 0 && (
+                          <div className="max-h-48 overflow-y-auto">
+                            <div className="px-2 py-1 text-xs text-gray-500 dark:text-gray-400">Existing tags:</div>
+                            {availableTags
+                              .filter(tag => !currentAdr.metadata.tags.includes(tag))
+                              .map((tag) => (
+                                <button
+                                  key={tag}
+                                  onClick={() => handleTagAddLocal(tag)}
+                                  className="w-full text-left px-3 py-2 hover:bg-gray-100 dark:hover:bg-gray-700 text-sm text-gray-900 dark:text-gray-100"
+                                >
+                                  {tag}
+                                </button>
+                              ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
           </div>

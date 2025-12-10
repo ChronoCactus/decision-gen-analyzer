@@ -84,6 +84,10 @@ class ADRMetadata(BaseModel):
     )
     author: Optional[str] = Field(default=None, description="Author of the ADR")
     tags: List[str] = Field(default_factory=list, description="Tags for categorization")
+    folder_path: Optional[str] = Field(
+        default=None,
+        description="Folder path for organizing ADRs (e.g., '/Architecture/Backend')",
+    )
     related_adrs: List[UUID] = Field(
         default_factory=list, description="Related ADR IDs"
     )
@@ -259,11 +263,23 @@ class ADR(BaseModel):
         """Add a tag to the ADR."""
         if tag not in self.metadata.tags:
             self.metadata.tags.append(tag)
+            self.metadata.updated_at = datetime.now(UTC)
 
     def remove_tag(self, tag: str) -> None:
         """Remove a tag from the ADR."""
         if tag in self.metadata.tags:
             self.metadata.tags.remove(tag)
+            self.metadata.updated_at = datetime.now(UTC)
+
+    def set_folder_path(self, folder_path: Optional[str]) -> None:
+        """Set the folder path for organizing the ADR."""
+        # Normalize path: ensure it starts with / and has no trailing /
+        if folder_path:
+            folder_path = "/" + folder_path.strip("/")
+            if folder_path == "/":
+                folder_path = None
+        self.metadata.folder_path = folder_path
+        self.metadata.updated_at = datetime.now(UTC)
 
     def add_related_adr(self, adr_id: UUID) -> None:
         """Add a related ADR."""

@@ -68,3 +68,15 @@ body {
   animation: pulse-border 2s ease-in-out infinite;
 }
 
+/* Make drag ghost image semi-transparent - webkit specific */
+.drag-ghost {
+  -webkit-user-drag: element;
+}
+
+.drag-ghost:active {
+  cursor: grabbing !important;
+}
+
+/* This is a workaround: browsers create ghost from element at drag start */
+/* We'll use JS to temporarily style the element */
+

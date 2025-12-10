@@ -45,6 +45,11 @@ vi.mock('@/lib/api', () => ({
     exportADR: vi.fn(),
     getQueueStatus: vi.fn(),
     getQueueTasks: vi.fn(),
+    listFolders: vi.fn(),
+    listTags: vi.fn(),
+    updateADRFolder: vi.fn(),
+    addADRTag: vi.fn(),
+    removeADRTag: vi.fn(),
   },
 }));
 
@@ -109,6 +114,11 @@ describe('Home Page', () => {
       workers_online: 1 
     });
     (apiClient.getQueueTasks as any).mockResolvedValue([]);
+    (apiClient.listFolders as any).mockResolvedValue({ folders: [] });
+    (apiClient.listTags as any).mockResolvedValue({ tags: [] });
+    (apiClient.updateADRFolder as any).mockResolvedValue({});
+    (apiClient.addADRTag as any).mockResolvedValue({});
+    (apiClient.removeADRTag as any).mockResolvedValue({});
   });
 
   it('should load and display ADRs on mount', async () => {

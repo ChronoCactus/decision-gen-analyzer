@@ -163,6 +163,36 @@ class ADRFileStorage:
         """
         return self._get_adr_file_path(adr_id).exists()
 
+    def get_all_adrs(self) -> List[ADR]:
+        """Get all ADRs without pagination.
+
+        Returns:
+            List of all ADRs
+        """
+        try:
+            # Get all JSON files
+            adr_files = sorted(
+                self.storage_path.glob("*.json"),
+                key=lambda p: p.stat().st_mtime,
+                reverse=True,  # Most recent first
+            )
+
+            # Load all ADRs
+            adrs = []
+            for file_path in adr_files:
+                try:
+                    with open(file_path, "r") as f:
+                        adr_dict = json.load(f)
+                    adrs.append(ADR(**adr_dict))
+                except Exception as e:
+                    logger.warning(f"Failed to load ADR from {file_path}: {e}")
+                    continue
+
+            return adrs
+        except Exception as e:
+            logger.error(f"Failed to get all ADRs: {e}")
+            return []
+
 
 # Global storage instance
 _storage_instance = None

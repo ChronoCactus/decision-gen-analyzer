@@ -896,3 +896,171 @@ class TestRAGRoutes:
         assert statuses_by_id[adr_id_3]["exists_in_rag"] is False
         assert statuses_by_id[adr_id_3]["lightrag_doc_id"] is None
         assert statuses_by_id[adr_id_3]["upload_status"]["status"] == "processing"
+
+
+class TestFolderRoutes:
+    """Test folder management routes."""
+
+    @patch("src.adr_file_storage.get_adr_storage")
+    def test_list_folders(self, mock_get_storage):
+        """Test listing all folders."""
+        adr1 = ADR.create(
+            title="Test 1",
+            context_and_problem="Problem",
+            decision_outcome="Decision",
+            consequences="Consequences",
+        )
+        adr1.metadata.folder_path = "/architecture"
+        adr2 = ADR.create(
+            title="Test 2",
+            context_and_problem="Problem",
+            decision_outcome="Decision",
+            consequences="Consequences",
+        )
+        adr2.metadata.folder_path = "/architecture/backend"
+
+        mock_storage = MagicMock()
+        mock_storage.get_all_adrs.return_value = [adr1, adr2]
+        mock_get_storage.return_value = mock_storage
+
+        client = TestClient(app)
+        response = client.get("/api/v1/adrs/folders/list")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert "folders" in data
+        assert "/architecture" in data["folders"]
+        assert "/architecture/backend" in data["folders"]
+
+    @patch("src.adr_file_storage.get_adr_storage")
+    def test_update_adr_folder(self, mock_get_storage):
+        """Test updating an ADR's folder."""
+        adr = ADR.create(
+            title="Test",
+            context_and_problem="Problem",
+            decision_outcome="Decision",
+            consequences="Consequences",
+        )
+
+        mock_storage = MagicMock()
+        mock_storage.get_adr.return_value = adr
+        mock_storage.save_adr.return_value = None
+        mock_get_storage.return_value = mock_storage
+
+        client = TestClient(app)
+        response = client.patch(
+            f"/api/v1/adrs/{adr.metadata.id}/folder",
+            json={"folder_path": "/new-folder"},
+        )
+
+        assert response.status_code == 200
+        mock_storage.save_adr.assert_called_once()
+
+    @patch("src.adr_file_storage.get_adr_storage")
+    def test_update_nonexistent_adr_folder_returns_404(self, mock_get_storage):
+        """Test updating folder for non-existent ADR."""
+        mock_storage = MagicMock()
+        mock_storage.get_adr.return_value = None
+        mock_get_storage.return_value = mock_storage
+
+        client = TestClient(app)
+        response = client.patch(
+            f"/api/v1/adrs/{uuid4()}/folder", json={"folder_path": "/new-folder"}
+        )
+
+        assert response.status_code == 404
+
+
+class TestTagRoutes:
+    """Test tag management routes."""
+
+    @patch("src.adr_file_storage.get_adr_storage")
+    def test_list_tags(self, mock_get_storage):
+        """Test listing all tags with counts."""
+        adr1 = ADR.create(
+            title="Test 1",
+            context_and_problem="Problem",
+            decision_outcome="Decision",
+            consequences="Consequences",
+        )
+        adr1.metadata.tags = ["architecture", "backend"]
+        adr2 = ADR.create(
+            title="Test 2",
+            context_and_problem="Problem",
+            decision_outcome="Decision",
+            consequences="Consequences",
+        )
+        adr2.metadata.tags = ["architecture", "frontend"]
+
+        mock_storage = MagicMock()
+        mock_storage.get_all_adrs.return_value = [adr1, adr2]
+        mock_get_storage.return_value = mock_storage
+
+        client = TestClient(app)
+        response = client.get("/api/v1/adrs/tags/list")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert "tags" in data
+        # architecture appears in 2 ADRs
+        arch_tag = next((t for t in data["tags"] if t["tag"] == "architecture"), None)
+        assert arch_tag is not None
+        assert arch_tag["count"] == 2
+
+    @patch("src.adr_file_storage.get_adr_storage")
+    def test_add_tag_to_adr(self, mock_get_storage):
+        """Test adding a tag to an ADR."""
+        adr = ADR.create(
+            title="Test",
+            context_and_problem="Problem",
+            decision_outcome="Decision",
+            consequences="Consequences",
+        )
+        adr.metadata.tags = ["existing-tag"]
+
+        mock_storage = MagicMock()
+        mock_storage.get_adr.return_value = adr
+        mock_storage.save_adr.return_value = None
+        mock_get_storage.return_value = mock_storage
+
+        client = TestClient(app)
+        response = client.post(
+            f"/api/v1/adrs/{adr.metadata.id}/tags", json={"tag": "new-tag"}
+        )
+
+        assert response.status_code == 200
+        mock_storage.save_adr.assert_called_once()
+
+    @patch("src.adr_file_storage.get_adr_storage")
+    def test_remove_tag_from_adr(self, mock_get_storage):
+        """Test removing a tag from an ADR."""
+        adr = ADR.create(
+            title="Test",
+            context_and_problem="Problem",
+            decision_outcome="Decision",
+            consequences="Consequences",
+        )
+        adr.metadata.tags = ["tag-to-remove", "other-tag"]
+
+        mock_storage = MagicMock()
+        mock_storage.get_adr.return_value = adr
+        mock_storage.save_adr.return_value = None
+        mock_get_storage.return_value = mock_storage
+
+        client = TestClient(app)
+        response = client.delete(f"/api/v1/adrs/{adr.metadata.id}/tags/tag-to-remove")
+
+        assert response.status_code == 200
+        mock_storage.save_adr.assert_called_once()
+
+    @patch("src.adr_file_storage.get_adr_storage")
+    def test_add_tag_to_nonexistent_adr_returns_404(self, mock_get_storage):
+        """Test adding tag to non-existent ADR."""
+        mock_storage = MagicMock()
+        mock_storage.get_adr.return_value = None
+        mock_get_storage.return_value = mock_storage
+
+        client = TestClient(app)
+        response = client.post(f"/api/v1/adrs/{uuid4()}/tags", json={"tag": "new-tag"})
+
+        assert response.status_code == 404
