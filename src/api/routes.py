@@ -630,6 +630,222 @@ async def update_adr_status(adr_id: str, request: UpdateStatusRequest):
         )
 
 
+class UpdateFolderRequest(BaseModel):
+    """Request model for updating ADR folder path."""
+
+    folder_path: Optional[str] = Field(
+        None, description="Folder path (e.g., '/Architecture/Backend') or null for root"
+    )
+
+
+@adr_router.patch("/{adr_id}/folder")
+async def update_adr_folder(adr_id: str, request: UpdateFolderRequest):
+    """Update the folder path of an ADR."""
+    try:
+        from src.adr_file_storage import get_adr_storage
+
+        storage = get_adr_storage()
+
+        # Get the ADR (run in thread pool - uses blocking file I/O)
+        adr = await asyncio.to_thread(storage.get_adr, adr_id)
+
+        if not adr:
+            raise HTTPException(status_code=404, detail=f"ADR {adr_id} not found")
+
+        # Update folder path using the model method
+        adr.set_folder_path(request.folder_path)
+
+        # Save the updated ADR (run in thread pool - uses blocking file I/O)
+        await asyncio.to_thread(storage.save_adr, adr)
+
+        logger.info(f"Updated ADR {adr_id} folder to {adr.metadata.folder_path}")
+
+        return {
+            "message": f"ADR folder updated to {adr.metadata.folder_path or 'root'}",
+            "adr": adr,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to update ADR folder: {e}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to update ADR folder: {str(e)}"
+        )
+
+
+class UpdateTagsRequest(BaseModel):
+    """Request model for updating ADR tags."""
+
+    tags: List[str] = Field(..., description="Complete list of tags for the ADR")
+
+
+class AddTagRequest(BaseModel):
+    """Request model for adding a tag to an ADR."""
+
+    tag: str = Field(..., description="Tag to add")
+
+
+class RemoveTagRequest(BaseModel):
+    """Request model for removing a tag from an ADR."""
+
+    tag: str = Field(..., description="Tag to remove")
+
+
+@adr_router.patch("/{adr_id}/tags")
+async def update_adr_tags(adr_id: str, request: UpdateTagsRequest):
+    """Replace all tags on an ADR."""
+    try:
+        from datetime import UTC, datetime
+
+        from src.adr_file_storage import get_adr_storage
+
+        storage = get_adr_storage()
+
+        # Get the ADR (run in thread pool - uses blocking file I/O)
+        adr = await asyncio.to_thread(storage.get_adr, adr_id)
+
+        if not adr:
+            raise HTTPException(status_code=404, detail=f"ADR {adr_id} not found")
+
+        # Replace tags
+        adr.metadata.tags = request.tags
+        adr.metadata.updated_at = datetime.now(UTC)
+
+        # Save the updated ADR (run in thread pool - uses blocking file I/O)
+        await asyncio.to_thread(storage.save_adr, adr)
+
+        logger.info(f"Updated ADR {adr_id} tags to {request.tags}")
+
+        return {"message": "ADR tags updated", "adr": adr}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to update ADR tags: {e}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to update ADR tags: {str(e)}"
+        )
+
+
+@adr_router.post("/{adr_id}/tags")
+async def add_adr_tag(adr_id: str, request: AddTagRequest):
+    """Add a single tag to an ADR."""
+    try:
+        from src.adr_file_storage import get_adr_storage
+
+        storage = get_adr_storage()
+
+        # Get the ADR (run in thread pool - uses blocking file I/O)
+        adr = await asyncio.to_thread(storage.get_adr, adr_id)
+
+        if not adr:
+            raise HTTPException(status_code=404, detail=f"ADR {adr_id} not found")
+
+        # Add tag using model method (handles deduplication)
+        adr.add_tag(request.tag)
+
+        # Save the updated ADR (run in thread pool - uses blocking file I/O)
+        await asyncio.to_thread(storage.save_adr, adr)
+
+        logger.info(f"Added tag '{request.tag}' to ADR {adr_id}")
+
+        return {"message": f"Tag '{request.tag}' added", "adr": adr}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to add tag to ADR: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to add tag: {str(e)}")
+
+
+@adr_router.delete("/{adr_id}/tags/{tag}")
+async def remove_adr_tag(adr_id: str, tag: str):
+    """Remove a tag from an ADR."""
+    try:
+        from src.adr_file_storage import get_adr_storage
+
+        storage = get_adr_storage()
+
+        # Get the ADR (run in thread pool - uses blocking file I/O)
+        adr = await asyncio.to_thread(storage.get_adr, adr_id)
+
+        if not adr:
+            raise HTTPException(status_code=404, detail=f"ADR {adr_id} not found")
+
+        if tag not in adr.metadata.tags:
+            raise HTTPException(
+                status_code=404, detail=f"Tag '{tag}' not found on ADR {adr_id}"
+            )
+
+        # Remove tag using model method
+        adr.remove_tag(tag)
+
+        # Save the updated ADR (run in thread pool - uses blocking file I/O)
+        await asyncio.to_thread(storage.save_adr, adr)
+
+        logger.info(f"Removed tag '{tag}' from ADR {adr_id}")
+
+        return {"message": f"Tag '{tag}' removed", "adr": adr}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to remove tag from ADR: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to remove tag: {str(e)}")
+
+
+@adr_router.get("/folders/list")
+async def list_folders():
+    """Get all unique folder paths used by ADRs."""
+    try:
+        from src.adr_file_storage import get_adr_storage
+
+        storage = get_adr_storage()
+        adrs = await asyncio.to_thread(storage.get_all_adrs)
+
+        # Collect unique folder paths
+        folders = set()
+        for adr in adrs:
+            if adr.metadata.folder_path:
+                # Add the folder and all parent folders
+                path = adr.metadata.folder_path
+                while path and path != "/":
+                    folders.add(path)
+                    path = "/".join(path.rsplit("/", 1)[:-1]) or None
+
+        # Sort folders alphabetically
+        sorted_folders = sorted(folders) if folders else []
+
+        return {"folders": sorted_folders}
+    except Exception as e:
+        logger.error(f"Failed to list folders: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to list folders: {str(e)}")
+
+
+@adr_router.get("/tags/list")
+async def list_tags():
+    """Get all unique tags used by ADRs with counts."""
+    try:
+        from src.adr_file_storage import get_adr_storage
+
+        storage = get_adr_storage()
+        adrs = await asyncio.to_thread(storage.get_all_adrs)
+
+        # Count tag usage
+        tag_counts: Dict[str, int] = {}
+        for adr in adrs:
+            for tag in adr.metadata.tags:
+                tag_counts[tag] = tag_counts.get(tag, 0) + 1
+
+        # Sort by count (descending) then alphabetically
+        sorted_tags = sorted(
+            [{"tag": tag, "count": count} for tag, count in tag_counts.items()],
+            key=lambda x: (-x["count"], x["tag"]),
+        )
+
+        return {"tags": sorted_tags}
+    except Exception as e:
+        logger.error(f"Failed to list tags: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to list tags: {str(e)}")
+
+
 async def _push_adr_to_rag_internal(adr: "ADR") -> dict:
     """Internal helper to push an ADR to LightRAG for indexing.
 
@@ -670,8 +886,10 @@ Considered Options:
     async with LightRAGClient(
         base_url=settings.lightrag_url, demo_mode=False
     ) as rag_client:
+        adr_id = str(adr.metadata.id)
+
         result = await rag_client.store_document(
-            doc_id=str(adr.metadata.id),
+            doc_id=adr_id,
             content=adr_content,
             metadata={
                 "type": "adr",
@@ -682,10 +900,15 @@ Considered Options:
                 "created_at": adr.metadata.created_at.isoformat(),
             },
         )
-        logger.info(f"Pushed ADR {adr.metadata.id} to LightRAG")
+        logger.info(f"Pushed ADR {adr_id} to LightRAG")
 
         # Check if we got a track_id for monitoring upload status
         track_id = result.get("track_id")
+        result_status = result.get("status", "").lower()
+
+        # Handle empty string track_id as None
+        if track_id == "":
+            track_id = None
 
         if track_id:
             # Store upload status and start monitoring task
@@ -694,27 +917,72 @@ Considered Options:
 
             async with LightRAGDocumentCache() as cache:
                 await cache.set_upload_status(
-                    adr_id=str(adr.metadata.id),
+                    adr_id=adr_id,
                     track_id=track_id,
                     status="processing",
                     message="Document uploaded to LightRAG, processing...",
                 )
 
             logger.info(
-                f"ADR {adr.metadata.id} upload started with tracking",
+                f"ADR {adr_id} upload started with tracking",
                 extra={"track_id": track_id},
             )
 
             # Start background task to monitor upload status
-            monitor_upload_status_task.delay(str(adr.metadata.id), track_id)
-        else:
-            # No track_id, trigger background sync (old behavior)
-            try:
-                from src.lightrag_sync import sync_single_document
+            monitor_upload_status_task.delay(adr_id, track_id)
+        elif result_status == "duplicated":
+            # Document already exists in LightRAG - update cache immediately
+            from src.lightrag_doc_cache import LightRAGDocumentCache
 
-                asyncio.create_task(sync_single_document(str(adr.metadata.id)))
+            logger.info(
+                f"Document {adr_id} already exists in LightRAG (duplicated), updating cache"
+            )
+
+            async with LightRAGDocumentCache() as cache:
+                # Use adr_id as the doc_id since the document exists
+                await cache.set_doc_id(adr_id, adr_id)
+                logger.info(
+                    "Cache updated for existing document",
+                    adr_id=adr_id,
+                )
+        else:
+            # No track_id and not duplicated - document may have been processed immediately
+            # Verify document exists in LightRAG and reconcile cache
+            from src.lightrag_doc_cache import LightRAGDocumentCache
+
+            try:
+                # Check if document actually exists in LightRAG
+                existing_doc = await rag_client.get_document(adr_id)
+
+                if existing_doc:
+                    # Document exists - update cache to reflect this
+                    logger.info(
+                        f"Document {adr_id} found in LightRAG, reconciling cache"
+                    )
+
+                    async with LightRAGDocumentCache() as cache:
+                        # Use the document ID from LightRAG if available, otherwise use adr_id
+                        lightrag_doc_id = existing_doc.get("id", adr_id)
+                        await cache.set_doc_id(adr_id, lightrag_doc_id)
+                        logger.info(
+                            "Cache updated with existing document ID",
+                            adr_id=adr_id,
+                            lightrag_doc_id=lightrag_doc_id,
+                        )
+                else:
+                    # Document doesn't exist yet, trigger background sync
+                    logger.info(
+                        f"Document {adr_id} uploaded but not immediately available, "
+                        "triggering background sync"
+                    )
+                    from src.lightrag_sync import sync_single_document
+
+                    asyncio.create_task(sync_single_document(adr_id))
             except Exception as sync_error:
-                logger.warning(f"Failed to trigger cache sync: {sync_error}")
+                logger.warning(
+                    f"Failed to verify document or trigger cache sync for {adr_id}: {sync_error}"
+                )
+                # Continue anyway - the document was uploaded successfully
 
         return result
 
@@ -735,6 +1003,9 @@ async def push_adr_to_rag(adr_id: str):
                         status_code=503,
                         detail="Cache is currently rebuilding. Please try again in a moment.",
                     )
+        except HTTPException:
+            # Re-raise HTTP exceptions (like 503 for cache rebuilding)
+            raise
         except Exception as cache_error:
             logger.warning(f"Failed to check cache rebuild status: {cache_error}")
             # Continue anyway if we can't check cache status
@@ -761,16 +1032,127 @@ async def push_adr_to_rag(adr_id: str):
         )
 
 
+class BatchRAGStatusRequest(BaseModel):
+    """Request model for batch RAG status check."""
+
+    adr_ids: List[str] = Field(..., description="List of ADR IDs to check")
+
+
+@adr_router.post("/batch/rag-status")
+async def get_batch_rag_status(request: BatchRAGStatusRequest):
+    """Check RAG status for multiple ADRs in a single request.
+
+    This is much more efficient than individual requests, especially for CORS
+    where each request requires an OPTIONS preflight.
+    """
+    try:
+        from src.lightrag_doc_cache import LightRAGDocumentCache
+
+        results = []
+
+        async with LightRAGDocumentCache() as cache:
+            # Check cache for all ADR IDs
+            for adr_id in request.adr_ids:
+                doc_id = await cache.get_doc_id(adr_id)
+                exists_in_rag = doc_id is not None
+                upload_status = await cache.get_upload_status(adr_id)
+
+                results.append(
+                    {
+                        "adr_id": adr_id,
+                        "exists_in_rag": exists_in_rag,
+                        "lightrag_doc_id": doc_id,
+                        "upload_status": upload_status,
+                    }
+                )
+
+        return {"statuses": results}
+    except Exception as e:
+        logger.error(f"Failed to check batch RAG status: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to check batch RAG status: {str(e)}"
+        )
+
+
 @adr_router.get("/{adr_id}/rag-status")
 async def get_adr_rag_status(adr_id: str):
     """Check if an ADR exists in LightRAG and get upload status if processing."""
     try:
+        from src.lightrag_client import LightRAGClient
         from src.lightrag_doc_cache import LightRAGDocumentCache
 
         async with LightRAGDocumentCache() as cache:
             # Check if document exists in cache
             doc_id = await cache.get_doc_id(adr_id)
             exists_in_rag = doc_id is not None
+
+            # If cache miss, verify with LightRAG directly (fallback mechanism)
+            # This makes the system resilient to cache expiration
+            if not doc_id:
+                logger.debug(
+                    "Cache miss for ADR, checking LightRAG directly", adr_id=adr_id
+                )
+                try:
+                    async with LightRAGClient(demo_mode=False) as lightrag:
+                        # Try to fetch document by constructing the file path
+                        file_path = f"data/adrs/{adr_id}.txt"
+
+                        # Search through all pages until we find the document or exhaust all results
+                        page = 1
+                        page_size = 50  # Reasonable batch size
+                        found = False
+
+                        while not found:
+                            result = await lightrag.get_paginated_documents(
+                                page=page,
+                                page_size=page_size,
+                                status_filter="processed",
+                            )
+
+                            documents = result.get("documents", [])
+                            if not documents:
+                                # No more documents to check
+                                break
+
+                            # Search for matching document in this page
+                            for doc in documents:
+                                if doc.get("file_path") == file_path:
+                                    doc_id = doc.get("id")
+                                    if doc_id:
+                                        # Found in LightRAG! Update cache to prevent future misses
+                                        await cache.set_doc_id(adr_id, doc_id)
+                                        exists_in_rag = True
+                                        logger.info(
+                                            "Document found in LightRAG via fallback, cache updated",
+                                            adr_id=adr_id,
+                                            doc_id=doc_id,
+                                            page=page,
+                                        )
+                                        found = True
+                                        break
+
+                            # If we got fewer documents than page_size, we've reached the end
+                            if len(documents) < page_size:
+                                break
+
+                            page += 1
+
+                            # Safety limit: don't search more than 10 pages (500 docs)
+                            if page > 10:
+                                logger.warning(
+                                    "Fallback search exceeded page limit",
+                                    adr_id=adr_id,
+                                    max_pages=10,
+                                )
+                                break
+
+                except Exception as fallback_error:
+                    # Log but don't fail - just rely on cache result
+                    logger.warning(
+                        "LightRAG fallback check failed",
+                        adr_id=adr_id,
+                        error=str(fallback_error),
+                    )
 
             # Check if there's an active upload being tracked
             upload_status = await cache.get_upload_status(adr_id)
@@ -801,6 +1183,30 @@ async def get_cache_status():
     except Exception as e:
         logger.error(f"Failed to check cache status: {str(e)}")
         return {"is_rebuilding": False, "last_sync_time": None, "error": str(e)}
+
+
+@adr_router.post("/cache/refresh")
+async def refresh_cache():
+    """Manually trigger a cache refresh from LightRAG.
+
+    This endpoint allows administrators to force a cache sync without waiting
+    for the scheduled background task. Useful for testing or after bulk operations.
+    """
+    try:
+        from src.lightrag_sync import _sync_lightrag_cache
+
+        logger.info("Manual cache refresh triggered")
+        total_synced = await _sync_lightrag_cache(page_size=100)
+
+        return {
+            "message": "Cache refresh completed",
+            "total_documents": total_synced,
+        }
+    except Exception as e:
+        logger.error(f"Failed to refresh cache: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to refresh cache: {str(e)}"
+        )
 
 
 @adr_router.get("/cache/rebuild-status")

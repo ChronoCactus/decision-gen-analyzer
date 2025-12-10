@@ -30,6 +30,7 @@ export interface ADRMetadata {
   created_at: string;
   updated_at: string;
   tags: string[];
+  folder_path?: string | null;
   related_adrs?: string[];
   custom_fields?: Record<string, any>;
 }
@@ -485,4 +486,38 @@ export interface MCPResultSummary {
 
 export interface MCPResultsListResponse {
   results: MCPResultSummary[];
+}
+
+// Folder and Tag Management types
+export interface FoldersListResponse {
+  folders: string[];
+}
+
+export interface TagWithCount {
+  tag: string;
+  count: number;
+}
+
+export interface TagsListResponse {
+  tags: TagWithCount[];
+}
+
+export interface UpdateFolderRequest {
+  folder_path: string | null;
+}
+
+export interface UpdateTagsRequest {
+  tags: string[];
+}
+
+export interface AddTagRequest {
+  tag: string;
+}
+
+// Folder tree structure for UI
+export interface FolderNode {
+  name: string;
+  path: string;
+  children: FolderNode[];
+  adrCount?: number;
 }

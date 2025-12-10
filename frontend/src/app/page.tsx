@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { ADR, AnalyzeADRRequest, GenerateADRRequest, TaskResponse } from '@/types/api';
 import { apiClient } from '@/lib/api';
 import { ADRCard } from '@/components/ADRCard';
@@ -9,6 +9,7 @@ import { GenerateADRModal } from '@/components/GenerateADRModal';
 import { ImportExportModal } from '@/components/ImportExportModal';
 import { QueueViewerModal } from '@/components/QueueViewerModal';
 import { SettingsModal } from '@/components/SettingsModal';
+import { Sidebar } from '@/components/Sidebar';
 import { Toast } from '@/components/Toast';
 import { useCacheStatusWebSocket } from '@/hooks/useCacheStatusWebSocket';
 import { useTaskQueueWebSocket } from '@/hooks/useTaskQueueWebSocket';
@@ -28,6 +29,13 @@ export default function Home() {
   const [isGenerating, setIsGenerating] = useState(false);
   const [currentTime, setCurrentTime] = useState(Date.now());
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+
+  // Folder and Tag filtering state
+  const [selectedFolder, setSelectedFolder] = useState<string | null>(null);
+  const [selectedTag, setSelectedTag] = useState<string | null>(null);
+  const [availableFolders, setAvailableFolders] = useState<string[]>([]);
+  const [availableTags, setAvailableTags] = useState<string[]>([]);
 
   // Interface settings
   const { settings: interfaceSettings, updateSettings: updateInterfaceSettings } = useInterfaceSettings();
@@ -50,11 +58,21 @@ export default function Home() {
   const [showGenerateDropdown, setShowGenerateDropdown] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
+  // Batch RAG status state
+  const [ragStatuses, setRagStatuses] = useState<Record<string, {
+    exists_in_rag: boolean;
+    lightrag_doc_id?: string;
+    upload_status?: { status: string; message?: string; track_id?: string; timestamp?: number } | null;
+  }>>({});
+
   // Use WebSocket for real-time cache status updates
   const { isRebuilding: cacheRebuilding, lastSyncTime, isConnected: wsConnected } = useCacheStatusWebSocket();
 
   // Use WebSocket for real-time queue status updates
   const { queueStatus } = useTaskQueueWebSocket();
+
+  // Cache refresh state
+  const [isRefreshingCache, setIsRefreshingCache] = useState(false);
 
   useEffect(() => {
     loadADRs();
@@ -116,6 +134,19 @@ export default function Home() {
       setLoading(true);
       const response = await apiClient.getADRs();
       setAdrs(response.adrs);
+
+      // Batch fetch RAG statuses for all ADRs
+      if (response.adrs.length > 0) {
+        const adrIds = response.adrs.map(adr => adr.metadata.id);
+        const batchResponse = await apiClient.getBatchRAGStatus(adrIds);
+
+        // Convert array to map for easy lookup
+        const statusMap: Record<string, typeof batchResponse.statuses[0]> = {};
+        batchResponse.statuses.forEach(status => {
+          statusMap[status.adr_id] = status;
+        });
+        setRagStatuses(statusMap);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load ADRs');
     } finally {
@@ -155,7 +186,8 @@ export default function Home() {
   const handlePushToRAG = async (adrId: string) => {
     try {
       await apiClient.pushADRToRAG(adrId);
-      // WebSocket upload status provides real-time feedback
+      // WebSocket upload status provides real-time feedback for new uploads with track_id
+      // For already-existing documents, the ADRCard will re-check status after this completes
     } catch (err) {
       console.error('Failed to push ADR to RAG:', err);
 
@@ -167,6 +199,7 @@ export default function Home() {
       } else {
         alert('Failed to push ADR to RAG');
       }
+      throw err; // Re-throw so ADRCard knows it failed
     }
   };
 
@@ -217,6 +250,41 @@ export default function Home() {
     } catch (err) {
       console.error('Failed to import ADRs:', err);
       throw err;
+    }
+  };
+
+  const handleRefreshCache = async () => {
+    try {
+      setIsRefreshingCache(true);
+      const result = await apiClient.refreshCache();
+      
+      setToastMessage(`Cache refreshed: ${result.total_documents} documents synced`);
+      setToastType('success');
+      setShowToast(true);
+      
+      // Silently refresh ADRs without triggering loading state
+      const response = await apiClient.getADRs();
+      setAdrs(response.adrs);
+
+      // Batch fetch RAG statuses for all ADRs
+      if (response.adrs.length > 0) {
+        const adrIds = response.adrs.map(adr => adr.metadata.id);
+        const batchResponse = await apiClient.getBatchRAGStatus(adrIds);
+
+        // Convert array to map for easy lookup
+        const statusMap: Record<string, typeof batchResponse.statuses[0]> = {};
+        batchResponse.statuses.forEach(status => {
+          statusMap[status.adr_id] = status;
+        });
+        setRagStatuses(statusMap);
+      }
+    } catch (err) {
+      console.error('Failed to refresh cache:', err);
+      setToastMessage('Failed to refresh cache');
+      setToastType('error');
+      setShowToast(true);
+    } finally {
+      setIsRefreshingCache(false);
     }
   };
 
@@ -527,12 +595,144 @@ export default function Home() {
     setShowToast(true);
   };
 
+  // Folder and Tag management handlers
+  const handleFolderSelect = useCallback((folderPath: string | null) => {
+    setSelectedFolder(folderPath);
+    setSelectedTag(null); // Clear tag filter when selecting folder
+  }, []);
+
+  const handleTagSelect = useCallback((tag: string | null) => {
+    setSelectedTag(tag);
+    setSelectedFolder(null); // Clear folder filter when selecting tag
+  }, []);
+
+  const handleADRFolderChange = useCallback(async (adrId: string, folderPath: string | null) => {
+    try {
+      const result = await apiClient.updateADRFolder(adrId, folderPath);
+      // Update the ADR in local state
+      setAdrs(prev => prev.map(adr =>
+        adr.metadata.id === adrId ? result.adr : adr
+      ));
+      setToastMessage(`Record moved to ${folderPath || 'root'}`);
+      setToastType('success');
+      setShowToast(true);
+    } catch (err) {
+      console.error('Failed to update folder:', err);
+      setToastMessage('Failed to move record to folder');
+      setToastType('error');
+      setShowToast(true);
+      throw err;
+    }
+  }, []);
+
+  const handleFolderCreated = useCallback((folderPath: string) => {
+    // Add the new folder to available folders if not already present
+    setAvailableFolders(prev => {
+      if (prev.includes(folderPath)) {
+        return prev;
+      }
+      return [...prev, folderPath].sort();
+    });
+  }, []);
+
+  const handleADRTagAdd = useCallback(async (adrId: string, tag: string) => {
+    try {
+      const result = await apiClient.addADRTag(adrId, tag);
+      // Update the ADR in local state
+      setAdrs(prev => prev.map(adr =>
+        adr.metadata.id === adrId ? result.adr : adr
+      ));
+      setToastMessage(`Tag "${tag}" added`);
+      setToastType('success');
+      setShowToast(true);
+    } catch (err) {
+      console.error('Failed to add tag:', err);
+      setToastMessage('Failed to add tag');
+      setToastType('error');
+      setShowToast(true);
+      throw err;
+    }
+  }, []);
+
+  const handleADRTagRemove = useCallback(async (adrId: string, tag: string) => {
+    try {
+      const result = await apiClient.removeADRTag(adrId, tag);
+      // Update the ADR in local state
+      setAdrs(prev => prev.map(adr =>
+        adr.metadata.id === adrId ? result.adr : adr
+      ));
+      setToastMessage(`Tag "${tag}" removed`);
+      setToastType('success');
+      setShowToast(true);
+    } catch (err) {
+      console.error('Failed to remove tag:', err);
+      setToastMessage('Failed to remove tag');
+      setToastType('error');
+      setShowToast(true);
+      throw err;
+    }
+  }, []);
+
+  // Filter ADRs based on selected folder and tag
+  const filteredADRs = useMemo(() => {
+    let result = adrs;
+
+    if (selectedFolder !== null) {
+      if (selectedFolder === '/') {
+        // Show only unfiled ADRs
+        result = result.filter(adr => !adr.metadata.folder_path);
+      } else {
+        // Show ADRs in the selected folder (or subfolders)
+        result = result.filter(adr =>
+          adr.metadata.folder_path === selectedFolder ||
+          adr.metadata.folder_path?.startsWith(selectedFolder + '/')
+        );
+      }
+    }
+
+    if (selectedTag !== null) {
+      result = result.filter(adr => adr.metadata.tags.includes(selectedTag));
+    }
+
+    return result;
+  }, [adrs, selectedFolder, selectedTag]);
+
+  // Compute available folders and tags from ADRs
+  useEffect(() => {
+    // Collect unique folders
+    const folders = new Set<string>();
+    const tags = new Set<string>();
+
+    adrs.forEach(adr => {
+      if (adr.metadata.folder_path) {
+        // Add the folder and all parent folders
+        let path = adr.metadata.folder_path;
+        while (path && path !== '/') {
+          folders.add(path);
+          path = path.split('/').slice(0, -1).join('/') || '';
+        }
+      }
+      adr.metadata.tags.forEach(tag => tags.add(tag));
+    });
+
+    setAvailableFolders(Array.from(folders).sort());
+    setAvailableTags(Array.from(tags).sort());
+  }, [adrs]);
+
+  // Get active filter label for UI
+  const activeFilterLabel = useMemo(() => {
+    if (selectedFolder === '/') return 'Unfiled';
+    if (selectedFolder) return selectedFolder.split('/').filter(Boolean).pop() || 'Root';
+    if (selectedTag) return `Tag: ${selectedTag}`;
+    return null;
+  }, [selectedFolder, selectedTag]);
+
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+      <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex items-center justify-center">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-          <p className="text-gray-600">Loading ADRs...</p>
+          <p className="text-gray-600 dark:text-gray-400">Loading ADRs...</p>
         </div>
       </div>
     );
@@ -540,9 +740,9 @@ export default function Home() {
 
   if (error) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+      <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex items-center justify-center">
         <div className="text-center">
-          <p className="text-red-600 mb-4">Error: {error}</p>
+          <p className="text-red-600 dark:text-red-400 mb-4">Error: {error}</p>
           <button
             onClick={loadADRs}
             className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700"
@@ -555,30 +755,63 @@ export default function Home() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
-      <div className="max-w-7xl mx-auto px-4 py-8">
-        <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4 relative">
-          <div className="w-full md:w-auto flex justify-between items-center">
-            <div>
-              <h1 className="text-2xl md:text-3xl font-bold text-gray-900 dark:text-gray-100">Decision Generator & Analyzer</h1>
-              <p className="text-sm md:text-base text-gray-600 dark:text-gray-400 mt-1 md:mt-2">AI-powered ADR generation and analysis</p>
-            </div>
+    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex overflow-hidden">
+      {/* Sidebar */}
+      <Sidebar
+        adrs={adrs}
+        selectedFolder={selectedFolder}
+        selectedTag={selectedTag}
+        onFolderSelect={handleFolderSelect}
+        onTagSelect={handleTagSelect}
+        onADRFolderChange={handleADRFolderChange}
+        onADRTagAdd={handleADRTagAdd}
+        onADRTagRemove={handleADRTagRemove}
+        onFolderCreated={handleFolderCreated}
+        mobileOpen={mobileSidebarOpen}
+        onMobileClose={() => setMobileSidebarOpen(false)}
+      />
 
-            {/* Mobile Menu Toggle */}
-            <button
-              onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-              className="md:hidden p-2 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-md"
-            >
-              {mobileMenuOpen ? (
-                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              ) : (
-                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5" />
-                </svg>
-              )}
-            </button>
+      {/* Main content */}
+      <div className="flex-1 min-w-0 overflow-auto">
+        <div className="max-w-7xl mx-auto px-4 py-8">
+          <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4 relative">
+            {/* Mobile header - folder icon on left, title center, hamburger on right */}
+            <div className="w-full md:w-auto flex justify-between items-center md:justify-start">
+              <div className="flex items-center gap-3">
+                {/* Mobile sidebar toggle - Changed to folder/tag icon for clarity */}
+                <button
+                  onClick={() => setMobileSidebarOpen(true)}
+                  className="md:hidden p-2 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded-md border border-blue-200 dark:border-blue-800"
+                  aria-label="Open folders and tags"
+                  title="Folders & Tags"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 12.75V12A2.25 2.25 0 014.5 9.75h15A2.25 2.25 0 0121.75 12v.75m-8.69-6.44l-2.12-2.12a1.5 1.5 0 00-1.061-.44H4.5A2.25 2.25 0 002.25 6v12a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18V9a2.25 2.25 0 00-2.25-2.25h-5.379a1.5 1.5 0 01-1.06-.44z" />
+                  </svg>
+                </button>
+                <div>
+                  <h1 className="text-2xl md:text-3xl font-bold text-gray-900 dark:text-gray-100">Decision Generator & Analyzer</h1>
+                  <p className="text-sm md:text-base text-gray-600 dark:text-gray-400 mt-1 md:mt-2">AI-powered ADR generation and analysis</p>
+                </div>
+              </div>
+
+              {/* Mobile Menu Toggle - Actions menu (top-right on mobile) */}
+              <button
+                onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+                className="md:hidden p-2 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-md"
+                title="Actions Menu"
+              >
+                {mobileMenuOpen ? (
+                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                ) : (
+                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5" />
+                  </svg>
+                )}
+              </button>
+            </div>
           </div>
 
           {/* Desktop Actions */}
@@ -678,7 +911,7 @@ export default function Home() {
               </>
             )}
           </div>
-        </div>
+
 
         {/* Mobile Menu */}
         {mobileMenuOpen && (
@@ -754,7 +987,7 @@ export default function Home() {
 
         {/* RAG Cache Status */}
         <div className="mb-4 flex justify-end items-center gap-4">
-          <div className="text-sm text-gray-600 dark:text-gray-400 bg-white dark:bg-gray-800 px-4 py-2 rounded-md border border-gray-200 dark:border-gray-700 shadow-sm">
+          <div className="text-sm text-gray-600 dark:text-gray-400 bg-white dark:bg-gray-800 px-4 py-2 rounded-md border border-gray-200 dark:border-gray-700 shadow-sm flex items-center gap-2">
             <span className="font-medium">RAG Cache: </span>
             {cacheRebuilding ? (
               <span className="text-blue-600 dark:text-blue-400 font-semibold">Rebuilding...</span>
@@ -768,6 +1001,26 @@ export default function Home() {
                 </span>
               </>
             )}
+            <button
+              onClick={handleRefreshCache}
+              disabled={isRefreshingCache || cacheRebuilding}
+              className="ml-2 p-1 rounded hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              title="Refresh cache from LightRAG"
+            >
+              <svg 
+                className={`w-4 h-4 text-gray-600 dark:text-gray-400 ${isRefreshingCache ? 'animate-spin' : ''}`}
+                fill="none" 
+                stroke="currentColor" 
+                viewBox="0 0 24 24"
+              >
+                <path 
+                  strokeLinecap="round" 
+                  strokeLinejoin="round" 
+                  strokeWidth={2} 
+                  d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" 
+                />
+              </svg>
+            </button>
           </div>
           <div className={`text-xs px-2 py-1 rounded-full ${wsConnected ? 'bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-300' : 'bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-300'}`}>
             {wsConnected ? '● Connected' : '○ Disconnected'}
@@ -904,10 +1157,48 @@ export default function Home() {
           </div>
         )}
 
+          {/* Active filter indicator */}
+          {activeFilterLabel && (
+            <div className="mb-4 flex items-center gap-2">
+              <span className="text-sm text-gray-600 dark:text-gray-400">Filtering by:</span>
+              <span className="inline-flex items-center gap-1 px-3 py-1 bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 rounded-full text-sm font-medium">
+                {activeFilterLabel}
+                <button
+                  onClick={() => {
+                    setSelectedFolder(null);
+                    setSelectedTag(null);
+                  }}
+                  className="ml-1 hover:bg-blue-200 dark:hover:bg-blue-800 rounded-full p-0.5"
+                  title="Clear filter"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-3 h-3">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </span>
+              <span className="text-sm text-gray-500 dark:text-gray-400">
+                ({filteredADRs.length} of {adrs.length} records)
+              </span>
+            </div>
+          )}
+
         {/* ADR Grid */}
-        {adrs.length === 0 ? (
+          {filteredADRs.length === 0 ? (
           <div className="text-center py-12">
-            <p className="text-gray-500 dark:text-gray-400 text-lg mb-4">No records found</p>
+              <p className="text-gray-500 dark:text-gray-400 text-lg mb-4">
+                {activeFilterLabel ? 'No records match the current filter' : 'No records found'}
+              </p>
+              {activeFilterLabel ? (
+                <button
+                  onClick={() => {
+                    setSelectedFolder(null);
+                    setSelectedTag(null);
+                  }}
+                  className="bg-gray-600 text-white px-6 py-3 rounded-md hover:bg-gray-700 font-medium mr-3"
+                >
+                  Clear Filter
+                </button>
+              ) : null}
             <button
               onClick={() => setShowGenerateModal(true)}
               className="bg-blue-600 text-white px-6 py-3 rounded-md hover:bg-blue-700 font-medium"
@@ -917,7 +1208,7 @@ export default function Home() {
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {adrs.map((adr) => (
+                {filteredADRs.map((adr) => (
               <ADRCard
                 key={adr.metadata.id}
                 adr={adr}
@@ -932,6 +1223,13 @@ export default function Home() {
                 onLongPress={handleLongPress}
                 isNewlyImported={newlyImportedADRs.has(adr.metadata.id)}
                 onRefineQueued={handleRefineQueued}
+                ragStatus={ragStatuses[adr.metadata.id]}
+                  draggable={!selectionMode}
+                  availableFolders={availableFolders}
+                  availableTags={availableTags}
+                  onFolderChange={handleADRFolderChange}
+                  onTagAdd={handleADRTagAdd}
+                  onTagRemove={handleADRTagRemove}
               />
             ))}
           </div>
@@ -987,6 +1285,7 @@ export default function Home() {
             position="top"
           />
         )}
+      </div>
       </div>
     </div>
   );

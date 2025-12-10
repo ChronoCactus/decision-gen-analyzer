@@ -43,6 +43,10 @@ celery_app.conf.beat_schedule = {
         "task": "src.tasks.periodic_reanalysis",
         "schedule": crontab(hour=2, minute=0),  # Daily at 2 AM
     },
+    "refresh-lightrag-cache": {
+        "task": "src.celery_app.refresh_lightrag_cache_task",
+        "schedule": crontab(hour="*/12"),  # Every 12 hours
+    },
 }
 
 
@@ -1315,8 +1319,20 @@ def monitor_upload_status_task(self, adr_id: str, track_id: str):
                         adr_id=adr_id,
                         track_id=track_id,
                         status="failed",
-                        message="Upload monitoring timed out",
+                        message="Upload monitoring timed out after 5 minutes",
                     )
+
+                    # Broadcast timeout via WebSocket
+                    broadcaster = get_broadcaster()
+                    await broadcaster.publish_upload_status(
+                        adr_id=adr_id,
+                        status="failed",
+                        message="Upload monitoring timed out after 5 minutes",
+                    )
+
+                    # Clear upload status after broadcasting
+                    await asyncio.sleep(5)
+                    await cache.clear_upload_status(adr_id)
 
                     return {"status": "timeout", "adr_id": adr_id}
 
@@ -1327,6 +1343,34 @@ def monitor_upload_status_task(self, adr_id: str, track_id: str):
                 track_id=track_id,
                 error=str(e),
             )
+
+            # Clean up upload status on error
+            try:
+                from src.lightrag_doc_cache import LightRAGDocumentCache
+                from src.websocket_broadcaster import get_broadcaster
+
+                async with LightRAGDocumentCache() as cache:
+                    await cache.set_upload_status(
+                        adr_id=adr_id,
+                        track_id=track_id,
+                        status="failed",
+                        message=f"Monitoring error: {str(e)}",
+                    )
+
+                    # Broadcast error via WebSocket
+                    broadcaster = get_broadcaster()
+                    await broadcaster.publish_upload_status(
+                        adr_id=adr_id,
+                        status="failed",
+                        message=f"Monitoring error: {str(e)}",
+                    )
+
+                    # Clear status after 5 seconds
+                    await asyncio.sleep(5)
+                    await cache.clear_upload_status(adr_id)
+            except Exception as cleanup_error:
+                logger.error(f"Failed to cleanup upload status: {cleanup_error}")
+
             raise
 
     try:
@@ -1336,6 +1380,57 @@ def monitor_upload_status_task(self, adr_id: str, track_id: str):
         error_msg = str(e)
         logger.error("Monitor upload status task failed", error=error_msg)
         raise Exception(error_msg)
+
+
+@celery_app.task(bind=True, name="refresh_lightrag_cache")
+def refresh_lightrag_cache_task(self):
+    """Periodic task to refresh LightRAG cache from server.
+
+    This task runs every 12 hours to sync the Redis cache with LightRAG's
+    actual document list, preventing cache expiration issues and ensuring
+    the "Push to RAG" buttons remain accurate.
+
+    The cache TTL is 24 hours, so refreshing every 12 hours ensures we never
+    hit expiration.
+    """
+
+    async def _refresh():
+        from src.lightrag_sync import _sync_lightrag_cache
+
+        logger.info("Starting periodic LightRAG cache refresh")
+
+        try:
+            total_synced = await _sync_lightrag_cache(page_size=100)
+
+            logger.info(
+                "Periodic cache refresh completed", total_documents=total_synced
+            )
+
+            return {
+                "status": "success",
+                "total_documents": total_synced,
+                "message": "Cache refreshed successfully",
+            }
+        except Exception as e:
+            logger.error(
+                "Periodic cache refresh failed",
+                error_type=type(e).__name__,
+                error_message=str(e),
+            )
+            raise
+
+    try:
+        result = asyncio.run(_refresh())
+        return result
+    except Exception as e:
+        error_msg = str(e)
+        logger.error("Cache refresh task failed", error=error_msg)
+        # Don't raise - we don't want to stop the beat schedule
+        # Just log the error and try again next time
+        return {
+            "status": "error",
+            "message": error_msg,
+        }
 
 
 if __name__ == "__main__":

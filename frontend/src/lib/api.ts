@@ -198,14 +198,84 @@ class ApiClient {
     });
   }
 
+  // Folder management
+  async updateADRFolder(adrId: string, folderPath: string | null): Promise<{ message: string; adr: ADR }> {
+    return this.request<{ message: string; adr: ADR }>(`/api/v1/adrs/${adrId}/folder`, {
+      method: 'PATCH',
+      body: JSON.stringify({ folder_path: folderPath }),
+    });
+  }
+
+  async listFolders(): Promise<{ folders: string[] }> {
+    return this.request<{ folders: string[] }>('/api/v1/adrs/folders/list');
+  }
+
+  // Tag management
+  async updateADRTags(adrId: string, tags: string[]): Promise<{ message: string; adr: ADR }> {
+    return this.request<{ message: string; adr: ADR }>(`/api/v1/adrs/${adrId}/tags`, {
+      method: 'PATCH',
+      body: JSON.stringify({ tags }),
+    });
+  }
+
+  async addADRTag(adrId: string, tag: string): Promise<{ message: string; adr: ADR }> {
+    return this.request<{ message: string; adr: ADR }>(`/api/v1/adrs/${adrId}/tags`, {
+      method: 'POST',
+      body: JSON.stringify({ tag }),
+    });
+  }
+
+  async removeADRTag(adrId: string, tag: string): Promise<{ message: string; adr: ADR }> {
+    return this.request<{ message: string; adr: ADR }>(`/api/v1/adrs/${adrId}/tags/${encodeURIComponent(tag)}`, {
+      method: 'DELETE',
+    });
+  }
+
+  async listTags(): Promise<{ tags: Array<{ tag: string; count: number }> }> {
+    return this.request<{ tags: Array<{ tag: string; count: number }> }>('/api/v1/adrs/tags/list');
+  }
+
   async pushADRToRAG(adrId: string): Promise<{ message: string; adr_id: string; title: string }> {
     return this.request<{ message: string; adr_id: string; title: string }>(`/api/v1/adrs/${adrId}/push-to-rag`, {
       method: 'POST',
     });
   }
 
-  async getADRRAGStatus(adrId: string): Promise<{ adr_id: string; exists_in_rag: boolean; lightrag_doc_id?: string; error?: string }> {
-    return this.request<{ adr_id: string; exists_in_rag: boolean; lightrag_doc_id?: string; error?: string }>(`/api/v1/adrs/${adrId}/rag-status`);
+  async getADRRAGStatus(adrId: string): Promise<{
+    adr_id: string;
+    exists_in_rag: boolean;
+    lightrag_doc_id?: string;
+    upload_status?: { status: string; message?: string; track_id?: string; timestamp?: number } | null;
+    error?: string
+  }> {
+    return this.request<{
+      adr_id: string;
+      exists_in_rag: boolean;
+      lightrag_doc_id?: string;
+      upload_status?: { status: string; message?: string; track_id?: string; timestamp?: number } | null;
+      error?: string
+    }>(`/api/v1/adrs/${adrId}/rag-status`);
+  }
+
+  async getBatchRAGStatus(adrIds: string[]): Promise<{
+    statuses: Array<{
+      adr_id: string;
+      exists_in_rag: boolean;
+      lightrag_doc_id?: string;
+      upload_status?: { status: string; message?: string; track_id?: string; timestamp?: number } | null;
+    }>;
+  }> {
+    return this.request<{
+      statuses: Array<{
+        adr_id: string;
+        exists_in_rag: boolean;
+        lightrag_doc_id?: string;
+        upload_status?: { status: string; message?: string; track_id?: string; timestamp?: number } | null;
+      }>;
+    }>('/api/v1/adrs/batch/rag-status', {
+      method: 'POST',
+      body: JSON.stringify({ adr_ids: adrIds }),
+    });
   }
 
   async getCacheStatus(): Promise<{ is_rebuilding: boolean; last_sync_time?: number; error?: string }> {
@@ -214,6 +284,12 @@ class ApiClient {
 
   async getCacheRebuildStatus(): Promise<{ is_rebuilding: boolean; error?: string }> {
     return this.request<{ is_rebuilding: boolean; error?: string }>('/api/v1/adrs/cache/rebuild-status');
+  }
+
+  async refreshCache(): Promise<{ message: string; total_documents: number }> {
+    return this.request<{ message: string; total_documents: number }>('/api/v1/adrs/cache/refresh', {
+      method: 'POST',
+    });
   }
 
   async getPersonas(): Promise<{ personas: Persona[] }> {
