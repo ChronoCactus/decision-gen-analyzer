@@ -137,13 +137,22 @@ def generate_adr_task(
     tags: list = None,
     personas: list = None,
     retrieval_mode: str = "local",
-    provider_id: str = None,
+    persona_provider_overrides: dict = None,  # Dict[str, str] mapping persona name to provider ID override
+    synthesis_provider_id: str = None,  # Separate provider for synthesis step
     record_type: str = "decision",
     mcp_tools: list = None,
     use_mcp: bool = False,
     status_filter: list = None,
 ):
-    """Celery task for ADR generation."""
+    """Celery task for ADR generation.
+
+    Each persona will use:
+    1. Provider from persona_provider_overrides if specified
+    2. Otherwise, persona's configured model_config
+    3. Otherwise, default provider
+
+    This ensures no data leaks to unexpected providers.
+    """
     try:
         import asyncio
         from datetime import UTC, datetime
@@ -151,7 +160,7 @@ def generate_adr_task(
         from src.adr_file_storage import get_adr_storage
         from src.adr_generation import ADRGenerationService
         from src.lightrag_client import LightRAGClient
-        from src.llama_client import LlamaCppClient, create_client_from_provider_id
+        from src.llama_client import LlamaCppClient
         from src.models import (
             ADR,
             ADRContent,
@@ -185,7 +194,8 @@ def generate_adr_task(
                 kwargs={
                     "context": context,
                     "personas": personas,
-                    "provider_id": provider_id,
+                    "persona_provider_overrides": persona_provider_overrides,
+                    "synthesis_provider_id": synthesis_provider_id,
                 },
             )
 
@@ -202,18 +212,14 @@ def generate_adr_task(
 
             settings = get_settings()
 
-            # If a specific provider_id was requested, use that provider
-            if provider_id:
-                logger.info(f"Creating LLM client from provider_id: {provider_id}")
-                llama_client = await create_client_from_provider_id(provider_id)
+            # Use default client pool/single client for synthesis
+            # Individual personas will use their own providers based on overrides
+            if settings.llm_base_url_1 or settings.llm_embedding_base_url:
+                logger.info("Using LlamaCppClientPool for parallel generation")
+                llama_client = LlamaCppClientPool(demo_mode=False)
             else:
-                # Use default behavior: pool if secondary backend configured, otherwise single client
-                if settings.llm_base_url_1 or settings.llm_embedding_base_url:
-                    logger.info("Using LlamaCppClientPool for parallel generation")
-                    llama_client = LlamaCppClientPool(demo_mode=False)
-                else:
-                    logger.info("Using single LlamaCppClient")
-                    llama_client = LlamaCppClient(demo_mode=False)
+                logger.info("Using single LlamaCppClient")
+                llama_client = LlamaCppClient(demo_mode=False)
 
             lightrag_client = LightRAGClient(demo_mode=False)
             persona_manager = PersonaManager()
@@ -272,7 +278,8 @@ def generate_adr_task(
                     generation_prompt,
                     personas=persona_list,
                     progress_callback=update_progress,
-                    provider_id=provider_id,
+                    persona_provider_overrides=persona_provider_overrides or {},
+                    synthesis_provider_id=synthesis_provider_id,
                     mcp_tools=mcp_tools,
                     use_mcp=use_mcp,
                 )
@@ -584,16 +591,25 @@ def refine_personas_task(
     adr_id: str,
     persona_refinements: dict,  # Dict[str, str] mapping persona name to refinement prompt
     refinements_to_delete: dict = None,  # Dict[str, List[int]] mapping persona name to refinement indices to delete
-    provider_id: str = None,
+    persona_provider_overrides: dict = None,  # Dict[str, str] mapping persona name to provider ID override
+    synthesis_provider_id: str = None,  # Separate provider for synthesis step
 ):
-    """Celery task for refining persona perspectives in an existing ADR."""
+    """Celery task for refining persona perspectives in an existing ADR.
+
+    Each persona will use:
+    1. Provider from persona_provider_overrides if specified
+    2. Otherwise, persona's configured model_config
+    3. Otherwise, default provider
+
+    This ensures no data leaks to unexpected providers.
+    """
     try:
         import asyncio
 
         from src.adr_file_storage import get_adr_storage
         from src.adr_generation import ADRGenerationService
         from src.lightrag_client import LightRAGClient
-        from src.llama_client import LlamaCppClient, create_client_from_provider_id
+        from src.llama_client import LlamaCppClient
         from src.persona_manager import PersonaManager
         from src.websocket_broadcaster import get_broadcaster
 
@@ -618,7 +634,8 @@ def refine_personas_task(
                 args=(adr_id,),
                 kwargs={
                     "persona_refinements": persona_refinements,
-                    "provider_id": provider_id,
+                    "persona_provider_overrides": persona_provider_overrides,
+                    "synthesis_provider_id": synthesis_provider_id,
                 },
             )
 
@@ -632,18 +649,14 @@ def refine_personas_task(
 
             settings = get_settings()
 
-            # If a specific provider_id was requested, use that provider
-            if provider_id:
-                logger.info(f"Creating LLM client from provider_id: {provider_id}")
-                llama_client = await create_client_from_provider_id(provider_id)
+            # Use default client pool/single client for synthesis
+            # Individual personas will use their own providers based on overrides
+            if settings.llm_base_url_1 or settings.llm_embedding_base_url:
+                logger.info("Using LlamaCppClientPool for parallel generation")
+                llama_client = LlamaCppClientPool(demo_mode=False)
             else:
-                # Use default behavior: pool if secondary backend configured, otherwise single client
-                if settings.llm_base_url_1 or settings.llm_embedding_base_url:
-                    logger.info("Using LlamaCppClientPool for parallel generation")
-                    llama_client = LlamaCppClientPool(demo_mode=False)
-                else:
-                    logger.info("Using single LlamaCppClient")
-                    llama_client = LlamaCppClient(demo_mode=False)
+                logger.info("Using single LlamaCppClient")
+                llama_client = LlamaCppClient(demo_mode=False)
 
             lightrag_client = LightRAGClient(demo_mode=False)
             persona_manager = PersonaManager()
@@ -678,7 +691,8 @@ def refine_personas_task(
                     persona_refinements,
                     refinements_to_delete=refinements_to_delete or {},
                     progress_callback=update_progress,
-                    provider_id=provider_id,
+                    persona_provider_overrides=persona_provider_overrides or {},
+                    synthesis_provider_id=synthesis_provider_id,
                 )
 
             self.update_state(
@@ -757,12 +771,20 @@ def refine_original_prompt_task(
     self,
     adr_id: str,
     refined_prompt_fields: dict,
-    provider_id: str = None,
+    persona_provider_overrides: dict = None,  # Dict[str, str] mapping persona name to provider ID override
+    synthesis_provider_id: str = None,  # Separate provider for synthesis step
 ):
     """Celery task for refining the original generation prompt.
 
     This task regenerates all personas with a refined original prompt.
     Any existing persona refinements are preserved and re-applied.
+
+    Each persona will use:
+    1. Provider from persona_provider_overrides if specified
+    2. Otherwise, persona's configured model_config
+    3. Otherwise, default provider
+
+    This ensures no data leaks to unexpected providers.
 
     Args:
         adr_id: ID of the ADR to refine
@@ -792,7 +814,8 @@ def refine_original_prompt_task(
                 args=(adr_id,),
                 kwargs={
                     "refined_prompt_fields": refined_prompt_fields,
-                    "provider_id": provider_id,
+                    "persona_provider_overrides": persona_provider_overrides,
+                    "synthesis_provider_id": synthesis_provider_id,
                 },
             )
 
@@ -808,25 +831,20 @@ def refine_original_prompt_task(
             from src.llama_client import (
                 LlamaCppClient,
                 LlamaCppClientPool,
-                create_client_from_provider_id,
             )
             from src.persona_manager import PersonaManager
             from src.websocket_broadcaster import get_broadcaster
 
             settings = get_settings()
 
-            # If a specific provider_id was requested, use that provider
-            if provider_id:
-                logger.info(f"Creating LLM client from provider_id: {provider_id}")
-                llama_client = await create_client_from_provider_id(provider_id)
+            # Use default client pool/single client for synthesis
+            # Individual personas will use their own providers based on overrides
+            if settings.llm_base_url_1 or settings.llm_embedding_base_url:
+                logger.info("Using LlamaCppClientPool for parallel generation")
+                llama_client = LlamaCppClientPool(demo_mode=False)
             else:
-                # Use default behavior: pool if secondary backend configured, otherwise single client
-                if settings.llm_base_url_1 or settings.llm_embedding_base_url:
-                    logger.info("Using LlamaCppClientPool for parallel generation")
-                    llama_client = LlamaCppClientPool(demo_mode=False)
-                else:
-                    logger.info("Using single LlamaCppClient")
-                    llama_client = LlamaCppClient(demo_mode=False)
+                logger.info("Using single LlamaCppClient")
+                llama_client = LlamaCppClient(demo_mode=False)
 
             lightrag_client = LightRAGClient(demo_mode=False)
             persona_manager = PersonaManager()
@@ -863,7 +881,8 @@ def refine_original_prompt_task(
                     adr,
                     refined_prompt_fields,
                     progress_callback=update_progress,
-                    provider_id=provider_id,
+                    persona_provider_overrides=persona_provider_overrides or {},
+                    synthesis_provider_id=synthesis_provider_id,
                     exclude_adr_id=adr_id,
                 )
 

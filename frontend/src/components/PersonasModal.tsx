@@ -1,14 +1,17 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
-import { PersonaResponse, PersonaRefinementItem } from '@/types/api';
+import { PersonaResponse, PersonaRefinementItem, Persona, LLMProvider } from '@/types/api';
 import { useEscapeKey } from '@/hooks/useEscapeKey';
+import { apiClient } from '@/lib/api';
+import { PersonaSelector } from './PersonaSelector';
+import { SynthesisModelSelector } from './SynthesisModelSelector';
 
 interface PersonasModalProps {
   personas: PersonaResponse[];
   adrId: string;
   onClose: () => void;
-  onRefine?: (refinements: PersonaRefinementItem[], refinementsToDelete?: Record<string, number[]>) => void;
+  onRefine?: (refinements: PersonaRefinementItem[], refinementsToDelete?: Record<string, number[]>, personaProviderOverrides?: Record<string, string>, synthesisProviderId?: string) => void;
 }
 
 export function PersonasModal({ personas, onClose, onRefine }: PersonasModalProps) {
@@ -21,6 +24,39 @@ export function PersonasModal({ personas, onClose, onRefine }: PersonasModalProp
   const [refinementsToDelete, setRefinementsToDelete] = useState<Record<string, number[]>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
   const refinementRefs = useRef<Record<string, HTMLDivElement | null>>({});
+
+  // Model selection state
+  const [allPersonas, setAllPersonas] = useState<Persona[]>([]);
+  const [providers, setProviders] = useState<LLMProvider[]>([]);
+  const [selectedProviderId, setSelectedProviderId] = useState<string>('');
+  const [synthesisProviderId, setSynthesisProviderId] = useState<string>('');
+  const [loadingModels, setLoadingModels] = useState(true);
+  const [personaProviderOverrides, setPersonaProviderOverrides] = useState<Record<string, string>>({});
+
+  // Load personas and providers on mount
+  useEffect(() => {
+    Promise.all([
+      apiClient.getPersonas(),
+      apiClient.listProviders()
+    ])
+      .then(([personasResponse, providersResponse]) => {
+        setAllPersonas(personasResponse.personas);
+        setProviders(providersResponse.providers);
+
+        // Set default provider
+        const defaultProvider = providersResponse.providers.find(p => p.is_default);
+        if (defaultProvider) {
+          setSelectedProviderId(defaultProvider.id);
+          setSynthesisProviderId(defaultProvider.id);
+        }
+      })
+      .catch(error => {
+        console.error('Failed to load personas or providers:', error);
+      })
+      .finally(() => {
+        setLoadingModels(false);
+      });
+  }, []);
 
   // Scroll to refinement section when a persona's refine mode is activated
   useEffect(() => {
@@ -36,6 +72,21 @@ export function PersonasModal({ personas, onClose, onRefine }: PersonasModalProp
       .split('_')
       .map(word => word.charAt(0).toUpperCase() + word.slice(1))
       .join(' ');
+  };
+
+  const getModelDisplay = (persona: Persona): string => {
+    if (persona.llm_config) {
+      const provider = persona.llm_config.provider || 'custom';
+      const model = persona.llm_config.name;
+      return `${provider}/${model}`;
+    } else {
+      // Use selected provider's model
+      const provider = providers.find(p => p.id === selectedProviderId);
+      if (provider) {
+        return `${provider.provider_type}/${provider.model_name}`;
+      }
+      return 'default';
+    }
   };
 
   const handleToggleRefine = (persona: string) => {
@@ -98,13 +149,19 @@ export function PersonasModal({ personas, onClose, onRefine }: PersonasModalProp
     }
 
     setIsSubmitting(true);
-    try {
-      // Pass both refinements and deletions
-      await onRefine(refinements, refinementsToDelete);
+    try {      // Pass refinements, deletions, and model selections (including per-persona overrides)
+      // Only pass synthesis provider ID if there are actual refinements (not just deletions)
+      await onRefine(
+        refinements,
+        refinementsToDelete,
+        personaProviderOverrides,
+        refinements.length > 0 ? (synthesisProviderId || undefined) : undefined
+      );
       // Reset state after successful submission
       setRefining({});
       setRefinementPrompts({});
       setRefinementsToDelete({});
+      setPersonaProviderOverrides({});
     } catch (error) {
       console.error('Failed to refine personas:', error);
     } finally {
@@ -132,6 +189,42 @@ export function PersonasModal({ personas, onClose, onRefine }: PersonasModalProp
             </svg>
           </button>
         </div>
+
+        {/* Show personas being refined with model info */}
+        {Object.keys(refining).some(p => refining[p]) && !loadingModels && allPersonas.length > 0 && (
+          <div className="flex-shrink-0 bg-blue-50 dark:bg-blue-900/20 border-b border-blue-200 dark:border-blue-800 p-4">
+            <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-3">
+              Personas Being Refined
+            </h3>
+            <PersonaSelector
+              personas={allPersonas.filter(p => Object.keys(refining).some(rp => rp === p.value && refining[rp]))}
+              selectedPersonas={Object.keys(refining).filter(p => refining[p])}
+              onTogglePersona={() => { }}
+              getModelDisplay={getModelDisplay}
+              readOnly={false}
+              compact={true}
+              providers={providers}
+              personaProviderOverrides={personaProviderOverrides}
+              onPersonaProviderChange={(personaValue, providerId) => {
+                setPersonaProviderOverrides(prev => ({
+                  ...prev,
+                  [personaValue]: providerId
+                }));
+              }}
+              allowModelSelection={true}
+            />
+
+            <div className="mt-4">
+              <SynthesisModelSelector
+                providers={providers}
+                selectedProviderId={synthesisProviderId}
+                onSelectProvider={setSynthesisProviderId}
+                label="Synthesis Model"
+                helpText="Model used to synthesize refined perspectives into the final decision record"
+              />
+            </div>
+          </div>
+        )}
 
         <div className="flex-1 overflow-y-auto p-6 space-y-6">
           {personas.map((persona, index) => (
