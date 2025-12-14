@@ -102,12 +102,12 @@ describe('GenerateADRModal', () => {
     render(<GenerateADRModal {...mockProps} />);
 
     await waitFor(() => {
-      const providerSelect = screen.getByLabelText(/Model:/i);
+      const providerSelect = screen.getByLabelText(/Synthesis Model/i);
       expect(providerSelect).toBeInTheDocument();
     });
 
     // Check that the default provider is selected
-    const providerSelect = screen.getByLabelText(/Model:/i) as HTMLSelectElement;
+    const providerSelect = screen.getByLabelText(/Synthesis Model/i) as HTMLSelectElement;
     expect(providerSelect.value).toBe('provider-1');
   });
 
@@ -166,7 +166,7 @@ describe('GenerateADRModal', () => {
     expect(mockProps.onGenerate).toHaveBeenCalledWith(
       expect.objectContaining({
         prompt: 'Test decision',
-        provider_id: 'provider-1', // Default provider should be selected
+        synthesis_provider_id: 'provider-1', // Default provider should be selected
       })
     );
   });

@@ -694,8 +694,13 @@ class RefinePersonasRequest(BaseModel):
     refinements: List[PersonaRefinement] = Field(
         ..., description="List of persona refinements to apply"
     )
-    provider_id: Optional[str] = Field(
-        default=None, description="Optional provider ID for refinement generation"
+    persona_provider_overrides: Optional[Dict[str, str]] = Field(
+        default=None,
+        description="Map of persona name to provider ID override",
+    )
+    synthesis_provider_id: Optional[str] = Field(
+        default=None,
+        description="Optional provider ID for synthesis generation",
     )
 
 

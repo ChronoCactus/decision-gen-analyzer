@@ -1,12 +1,14 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
-import { ADR, ADRStatus, PersonaRefinementItem } from '@/types/api';
+import { ADR, ADRStatus, PersonaRefinementItem, Persona, LLMProvider } from '@/types/api';
 import { PersonasModal } from './PersonasModal';
 import { HoverCard } from './HoverCard';
 import { useEscapeKey } from '@/hooks/useEscapeKey';
 import { apiClient } from '@/lib/api';
 import { Toast } from './Toast';
+import { PersonaSelector } from './PersonaSelector';
+import { SynthesisModelSelector } from './SynthesisModelSelector';
 
 interface ADRModalProps {
   adr: ADR;
@@ -48,12 +50,50 @@ export function ADRModal({ adr, onClose, onAnalyze, isAnalyzing, onADRUpdate, on
   const [showFolderDropdown, setShowFolderDropdown] = useState(false);
   const [showTagDropdown, setShowTagDropdown] = useState(false);
   const [newTagInput, setNewTagInput] = useState('');
+
+  // Model selection state for bulk refinement
+  const [allPersonas, setAllPersonas] = useState<Persona[]>([]);
+  const [providers, setProviders] = useState<LLMProvider[]>([]);
+  const [selectedProviderId, setSelectedProviderId] = useState<string>('');
+  const [bulkSynthesisProviderId, setBulkSynthesisProviderId] = useState<string>('');
+  const [loadingModels, setLoadingModels] = useState(true);
+  const [bulkPersonaProviderOverrides, setBulkPersonaProviderOverrides] = useState<Record<string, string>>({});
+
+  // Model selection state for original prompt refinement
+  const [originalPromptPersonaProviderOverrides, setOriginalPromptPersonaProviderOverrides] = useState<Record<string, string>>({});
+  const [originalPromptSynthesisProviderId, setOriginalPromptSynthesisProviderId] = useState<string>('');
+
   const bulkRefineRef = useRef<HTMLDivElement>(null);
   const originalPromptEditRef = useRef<HTMLDivElement>(null);
   const folderDropdownRef = useRef<HTMLDivElement>(null);
   const tagDropdownRef = useRef<HTMLDivElement>(null);
 
   const isPrinciple = currentAdr.metadata.record_type === 'principle';
+
+  // Load personas and providers on mount
+  useEffect(() => {
+    Promise.all([
+      apiClient.getPersonas(),
+      apiClient.listProviders()
+    ])
+      .then(([personasResponse, providersResponse]) => {
+        setAllPersonas(personasResponse.personas);
+        setProviders(providersResponse.providers);
+
+        // Set default provider
+        const defaultProvider = providersResponse.providers.find(p => p.is_default);
+        if (defaultProvider) {
+          setSelectedProviderId(defaultProvider.id);
+          setBulkSynthesisProviderId(defaultProvider.id);
+        }
+      })
+      .catch(error => {
+        console.error('Failed to load personas or providers:', error);
+      })
+      .finally(() => {
+        setLoadingModels(false);
+      });
+  }, []);
 
   // Close this modal with ESC, but only if personas modal is not open
   useEscapeKey(onClose, !showPersonas && !showBulkRefine && !showOriginalPromptEdit && !mcpResultModal.show);
@@ -151,12 +191,18 @@ export function ADRModal({ adr, onClose, onAnalyze, isAnalyzing, onADRUpdate, on
     });
   };
 
-  const handleRefinePersonas = async (refinements: PersonaRefinementItem[], refinementsToDelete?: Record<string, number[]>) => {
+  const handleRefinePersonas = async (
+    refinements: PersonaRefinementItem[],
+    refinementsToDelete?: Record<string, number[]>,
+    personaProviderOverrides?: Record<string, string>,
+    synthesisProviderId?: string
+  ) => {
     try {
       const response = await apiClient.refinePersonas(currentAdr.metadata.id, {
         refinements,
         refinements_to_delete: refinementsToDelete,
-        provider_id: undefined // Use default provider
+        persona_provider_overrides: personaProviderOverrides,
+        synthesis_provider_id: synthesisProviderId
       });
 
       // Close both modals so user can see progress
@@ -258,9 +304,30 @@ export function ADRModal({ adr, onClose, onAnalyze, isAnalyzing, onADRUpdate, on
     // Reset bulk refine UI
     setShowBulkRefine(false);
     setBulkRefinementPrompt('');
+    setBulkPersonaProviderOverrides({});
 
-    // Use the same handler as individual refinements
-    await handleRefinePersonas(refinements);
+    // Use the same handler as individual refinements with model selections
+    await handleRefinePersonas(
+      refinements,
+      undefined,
+      bulkPersonaProviderOverrides,
+      bulkSynthesisProviderId || undefined
+    );
+  };
+
+  const getModelDisplay = (persona: Persona): string => {
+    if (persona.llm_config) {
+      const provider = persona.llm_config.provider || 'custom';
+      const model = persona.llm_config.name;
+      return `${provider}/${model}`;
+    } else {
+      // Use selected provider's model
+      const provider = providers.find(p => p.id === selectedProviderId);
+      if (provider) {
+        return `${provider.provider_type}/${provider.model_name}`;
+      }
+      return 'default';
+    }
   };
 
   const handleOriginalPromptRefinement = async () => {
@@ -272,6 +339,8 @@ export function ADRModal({ adr, onClose, onAnalyze, isAnalyzing, onADRUpdate, on
       const response = await apiClient.refineOriginalPrompt(currentAdr.metadata.id, {
         context: refinedContext,
         problem_statement: refinedPrompt,
+        persona_provider_overrides: originalPromptPersonaProviderOverrides,
+        synthesis_provider_id: originalPromptSynthesisProviderId || undefined,
       });
 
       // Reset UI
@@ -812,6 +881,48 @@ export function ADRModal({ adr, onClose, onAnalyze, isAnalyzing, onADRUpdate, on
               <p className="text-sm text-gray-600 dark:text-gray-400 mb-3">
                 This refinement prompt will be applied to all {currentAdr.persona_responses.length} personas to regenerate their perspectives and create a new ADR.
               </p>
+
+              {/* Show personas being refined with model info */}
+              {!loadingModels && allPersonas.length > 0 && (
+                <div className="mb-4">
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Personas to Refine
+                  </label>
+                  <PersonaSelector
+                    personas={allPersonas.filter(p =>
+                      currentAdr.persona_responses?.some(pr => pr.persona === p.value)
+                    )}
+                    selectedPersonas={currentAdr.persona_responses?.map(pr => pr.persona) || []}
+                    onTogglePersona={() => { }}
+                    getModelDisplay={getModelDisplay}
+                    readOnly={false}
+                    compact={true}
+                    providers={providers}
+                    personaProviderOverrides={bulkPersonaProviderOverrides}
+                    onPersonaProviderChange={(personaValue, providerId) => {
+                      setBulkPersonaProviderOverrides(prev => ({
+                        ...prev,
+                        [personaValue]: providerId
+                      }));
+                    }}
+                    allowModelSelection={true}
+                  />
+                </div>
+              )}
+
+              {/* Synthesis Model Selection */}
+              {!loadingModels && providers.length > 0 && (
+                <div className="mb-4">
+                  <SynthesisModelSelector
+                    providers={providers}
+                    selectedProviderId={bulkSynthesisProviderId}
+                    onSelectProvider={setBulkSynthesisProviderId}
+                    label="Synthesis Model"
+                    helpText="Model used to synthesize all refined perspectives into the final decision record"
+                  />
+                </div>
+              )}
+
               <textarea
                 value={bulkRefinementPrompt}
                 onChange={(e) => setBulkRefinementPrompt(e.target.value)}
@@ -895,6 +1006,46 @@ export function ADRModal({ adr, onClose, onAnalyze, isAnalyzing, onADRUpdate, on
                       rows={3}
                     />
                   </div>
+
+                    {/* Personas to Regenerate */}
+                    {!loadingModels && allPersonas.length > 0 && (
+                      <div className="mt-4">
+                        <h4 className="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-2">Personas to Regenerate</h4>
+                        <p className="text-xs text-gray-600 dark:text-gray-400 mb-3">
+                          This refinement prompt will be applied to all {currentAdr.persona_responses?.length || 0} personas to regenerate their perspectives and create a new {isPrinciple ? 'principle' : 'ADR'}.
+                        </p>
+                        <PersonaSelector
+                          personas={allPersonas.filter(p =>
+                            currentAdr.persona_responses?.some(pr => pr.persona === p.value)
+                          )}
+                          selectedPersonas={currentAdr.persona_responses?.map(pr => pr.persona) || []}
+                          onTogglePersona={() => { }}
+                          getModelDisplay={getModelDisplay}
+                          readOnly={false}
+                          compact={true}
+                          providers={providers}
+                          personaProviderOverrides={originalPromptPersonaProviderOverrides}
+                          onPersonaProviderChange={(personaValue, providerId) => {
+                            setOriginalPromptPersonaProviderOverrides(prev => ({
+                              ...prev,
+                              [personaValue]: providerId
+                            }));
+                          }}
+                          allowModelSelection={true}
+                        />
+                      </div>
+                    )}
+
+                    {/* Synthesis Model Selection */}
+                    {!loadingModels && providers.length > 0 && (
+                      <SynthesisModelSelector
+                        providers={providers}
+                        selectedProviderId={originalPromptSynthesisProviderId}
+                        onSelectProvider={setOriginalPromptSynthesisProviderId}
+                        label="Synthesis Model"
+                        helpText="Model used to synthesize all refined perspectives into the final decision record"
+                      />
+                    )}
                   <div className="flex gap-3">
                     <button
                       onClick={handleOriginalPromptRefinement}

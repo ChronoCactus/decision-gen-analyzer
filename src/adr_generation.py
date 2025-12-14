@@ -60,18 +60,27 @@ class ADRGenerationService:
         personas: Optional[List[str]] = None,
         include_context: bool = True,
         progress_callback: Optional[callable] = None,
-        provider_id: Optional[str] = None,
+        persona_provider_overrides: Optional[Dict[str, str]] = None,
+        synthesis_provider_id: Optional[str] = None,
         mcp_tools: Optional[List[Dict[str, Any]]] = None,
         use_mcp: bool = False,
     ) -> ADRGenerationResult:
         """Generate a new ADR from a prompt using multiple personas.
+
+        Each persona will use:
+        1. Provider from persona_provider_overrides if specified
+        2. Otherwise, persona's configured model_config
+        3. Otherwise, default provider
+
+        This ensures no data leaks to unexpected providers.
 
         Args:
             prompt: The generation prompt with context and requirements
             personas: List of persona values (e.g., ['technical_lead', 'architect'])
             include_context: Whether to retrieve related context from vector DB
             progress_callback: Optional callback function for progress updates
-            provider_id: Optional provider ID to use for personas without custom model_config
+            persona_provider_overrides: Optional dict mapping persona names to provider IDs
+            synthesis_provider_id: Optional provider ID for synthesis step
             mcp_tools: Optional list of MCP tools (deprecated - use use_mcp instead)
             use_mcp: Whether to use AI-driven MCP tool orchestration
 
@@ -91,7 +100,7 @@ class ADRGenerationService:
         mcp_refs: List[Dict[str, str]] = []
         if use_mcp:
             tool_output_context, mcp_refs = await self._orchestrate_mcp_tools(
-                prompt, progress_callback, provider_id
+                prompt, progress_callback, synthesis_provider_id
             )
 
         # Retrieve related context if requested
@@ -113,7 +122,7 @@ class ADRGenerationService:
             personas,
             related_context,
             progress_callback,
-            provider_id,
+            persona_provider_overrides,
             tool_output_context=tool_output_context,
         )
 
@@ -124,9 +133,9 @@ class ADRGenerationService:
             prompt,
             synthesis_inputs,
             related_context,
-            all_references,  # Use combined refs including MCP
+            all_references,
             progress_callback,
-            tool_output_context=tool_output_context,
+            synthesis_provider_id=synthesis_provider_id,
         )
 
         logger.info(
@@ -144,18 +153,29 @@ class ADRGenerationService:
         persona_refinements: Dict[str, str],
         refinements_to_delete: Dict[str, List[int]] = None,
         progress_callback: Optional[callable] = None,
-        provider_id: Optional[str] = None,
+        persona_provider_overrides: Dict[str, str] = None,
+        synthesis_provider_id: Optional[str] = None,
     ) -> ADR:
         """Refine specific personas in an existing ADR and re-synthesize.
 
         Args:
             adr: The existing ADR with persona responses
             persona_refinements: Dict mapping persona names to refinement prompts
+            refinements_to_delete: Dict mapping persona names to refinement indices to delete
             progress_callback: Optional callback function for progress updates
-            provider_id: Optional provider ID to use for personas without custom model_config
+            persona_provider_overrides: Dict mapping persona names to provider IDs (overrides persona's default)
+            synthesis_provider_id: Optional provider ID to use for synthesis step (separate from persona generation)
 
         Returns:
             Updated ADR with refined persona perspectives
+
+        Security Note:
+            Each persona will use:
+            1. Provider from persona_provider_overrides[persona_name] if specified
+            2. Otherwise, persona's configured model_config
+            3. Otherwise, default llama_client
+
+            This ensures no data leaks to unintended providers.
         """
         logger.info(
             "Starting persona refinement",
@@ -295,19 +315,33 @@ class ADRGenerationService:
                     f"Regenerating {persona_name.replace('_', ' ').title()}..."
                 )
 
-            # Create client for this persona
-            if persona_config.model_config:
+            # Create client for this persona with proper precedence
+            # Priority: 1) User override, 2) Persona config, 3) Default
+            persona_provider_overrides = persona_provider_overrides or {}
+            if persona_name in persona_provider_overrides:
+                # User explicitly selected a different provider for this persona
+                persona_client = await create_client_from_provider_id(
+                    persona_provider_overrides[persona_name], demo_mode=False
+                )
+                logger.info(
+                    f"Using provider override for {persona_name}",
+                    provider_id=persona_provider_overrides[persona_name],
+                )
+            elif persona_config.model_config:
+                # Use persona's configured model
                 persona_client = create_client_from_persona_config(
                     persona_config, demo_mode=False
                 )
-            elif provider_id:
-                persona_client = await create_client_from_provider_id(
-                    provider_id, demo_mode=False
+                logger.info(
+                    f"Using persona-configured model for {persona_name}",
+                    model_config=persona_config.model_config,
                 )
             else:
+                # Fall back to default client (from self.llama_client)
                 persona_client = create_client_from_persona_config(
                     persona_config, demo_mode=False
                 )
+                logger.info(f"Using default client for {persona_name}")
 
             # Generate refined response
             try:
@@ -413,18 +447,34 @@ class ADRGenerationService:
                         f"\n\n**Additional Refinement Request**:\n{refinement}"
                     )
 
-            # Create client for this persona
-            if persona_config.model_config:
+            # Create client for this persona with proper precedence
+            # Priority: 1) User override, 2) Persona config, 3) Default
+            persona_provider_overrides = persona_provider_overrides or {}
+            if persona_name in persona_provider_overrides:
+                # User explicitly selected a different provider for this persona
+                persona_client = await create_client_from_provider_id(
+                    persona_provider_overrides[persona_name], demo_mode=False
+                )
+                logger.info(
+                    f"Using provider override for {persona_name} (deletion regeneration)",
+                    provider_id=persona_provider_overrides[persona_name],
+                )
+            elif persona_config.model_config:
+                # Use persona's configured model
                 persona_client = create_client_from_persona_config(
                     persona_config, demo_mode=False
                 )
-            elif provider_id:
-                persona_client = await create_client_from_provider_id(
-                    provider_id, demo_mode=False
+                logger.info(
+                    f"Using persona-configured model for {persona_name} (deletion regeneration)",
+                    model_config=persona_config.model_config,
                 )
             else:
+                # Fall back to default client
                 persona_client = create_client_from_persona_config(
                     persona_config, demo_mode=False
+                )
+                logger.info(
+                    f"Using default client for {persona_name} (deletion regeneration)"
                 )
 
             # Regenerate the persona with updated prompt
@@ -521,6 +571,7 @@ class ADRGenerationService:
             related_context,
             referenced_adr_info,
             progress_callback,
+            synthesis_provider_id=synthesis_provider_id,
         )
 
         logger.info("ADR re-synthesis completed successfully")
@@ -555,7 +606,8 @@ class ADRGenerationService:
         adr: ADR,
         refined_prompt_fields: Dict[str, Any],
         progress_callback: Optional[callable] = None,
-        provider_id: Optional[str] = None,
+        persona_provider_overrides: Optional[Dict[str, str]] = None,
+        synthesis_provider_id: Optional[str] = None,
         exclude_adr_id: Optional[str] = None,
     ) -> ADR:
         """Refine the original generation prompt and regenerate all personas.
@@ -564,11 +616,19 @@ class ADRGenerationService:
         All personas are re-run with the new prompt, and any existing refinements for each
         persona are preserved and re-applied.
 
+        Each persona will use:
+        1. Provider from persona_provider_overrides if specified
+        2. Otherwise, persona's configured model_config
+        3. Otherwise, default provider
+
+        This ensures no data leaks to unexpected providers.
+
         Args:
             adr: The existing ADR with original prompt and persona responses
             refined_prompt_fields: Dict with updated prompt fields (title, context, problem_statement, constraints, stakeholders, retrieval_mode)
             progress_callback: Optional callback function for progress updates
-            provider_id: Optional provider ID to use for personas without custom model_config
+            persona_provider_overrides: Optional dict mapping persona names to provider IDs
+            synthesis_provider_id: Optional provider ID for synthesis step
             exclude_adr_id: Optional ADR ID to exclude from retrieval (typically the current ADR to prevent self-referencing)
 
         Returns:
@@ -667,16 +727,27 @@ class ADRGenerationService:
                         f"\n\n**Additional Refinement Request**:\n{refinement}"
                     )
 
-            # Create client for this persona
-            if persona_config.model_config:
+            # Create client for this persona with three-tier precedence:
+            # 1) User override from persona_provider_overrides
+            # 2) Persona's configured model_config
+            # 3) Default provider
+            if (
+                persona_provider_overrides
+                and persona_name in persona_provider_overrides
+            ):
+                logger.info(
+                    f"Using provider override for {persona_name}: {persona_provider_overrides[persona_name]}"
+                )
+                persona_client = await create_client_from_provider_id(
+                    persona_provider_overrides[persona_name], demo_mode=False
+                )
+            elif persona_config.model_config:
+                logger.info(f"Using persona-configured model for {persona_name}")
                 persona_client = create_client_from_persona_config(
                     persona_config, demo_mode=False
                 )
-            elif provider_id:
-                persona_client = await create_client_from_provider_id(
-                    provider_id, demo_mode=False
-                )
             else:
+                logger.info(f"Using default client for {persona_name}")
                 persona_client = create_client_from_persona_config(
                     persona_config, demo_mode=False
                 )
@@ -755,6 +826,7 @@ class ADRGenerationService:
             related_context,
             referenced_adr_info,
             progress_callback,
+            synthesis_provider_id=synthesis_provider_id,
         )
 
         logger.info(
@@ -1220,17 +1292,24 @@ class ADRGenerationService:
         personas: List[str],
         related_context: List[str],
         progress_callback: Optional[callable] = None,
-        provider_id: Optional[str] = None,
+        persona_provider_overrides: Optional[Dict[str, str]] = None,
         tool_output_context: str = "",
     ) -> List[PersonaSynthesisInput]:
         """Generate perspectives from each persona.
+
+        Each persona will use:
+        1. Provider from persona_provider_overrides if specified
+        2. Otherwise, persona's configured model_config
+        3. Otherwise, default provider
+
+        This ensures no data leaks to unexpected providers.
 
         Args:
             prompt: The generation prompt
             personas: List of persona values to generate perspectives for
             related_context: Related context from vector DB
             progress_callback: Optional callback for progress updates
-            provider_id: Optional provider ID to use for personas without custom model_config
+            persona_provider_overrides: Optional dict mapping persona names to provider IDs
             tool_output_context: Formatted output from MCP tools
 
         Returns:
@@ -1256,21 +1335,27 @@ class ADRGenerationService:
                 )
                 persona_prompts.append(system_prompt)
 
-                # Create a client for this persona
-                # If persona has custom model_config, use it
-                # Otherwise, use the selected provider_id if provided
-                if persona_config.model_config:
-                    # Persona has custom model config - use it (don't override)
+                # Create a client for this persona with three-tier precedence:
+                # 1) User override from persona_provider_overrides
+                # 2) Persona's configured model_config
+                # 3) Default provider
+                if (
+                    persona_provider_overrides
+                    and persona_value in persona_provider_overrides
+                ):
+                    logger.info(
+                        f"Using provider override for {persona_value}: {persona_provider_overrides[persona_value]}"
+                    )
+                    persona_client = await create_client_from_provider_id(
+                        persona_provider_overrides[persona_value], demo_mode=False
+                    )
+                elif persona_config.model_config:
+                    logger.info(f"Using persona-configured model for {persona_value}")
                     persona_client = create_client_from_persona_config(
                         persona_config, demo_mode=False
                     )
-                elif provider_id:
-                    # No custom config, but provider selected - use that provider
-                    persona_client = await create_client_from_provider_id(
-                        provider_id, demo_mode=False
-                    )
                 else:
-                    # No custom config, no provider selected - use defaults
+                    logger.info(f"Using default client for {persona_value}")
                     persona_client = create_client_from_persona_config(
                         persona_config, demo_mode=False
                     )
@@ -1281,25 +1366,20 @@ class ADRGenerationService:
 
         # Use parallel generation if pool is available or if personas have custom models
         has_custom_models = any(
-            config.model_config is not None for _, config in persona_configs
+            config.model_config is not None
+            or (persona_provider_overrides and value in persona_provider_overrides)
+            for value, config in persona_configs
         )
 
-        # Check provider parallel settings
+        # Check default provider parallel settings
         parallel_enabled = False
         max_parallel = 2
 
         storage = get_provider_storage()
-        if provider_id:
-            provider_config = await storage.get(provider_id)
-            if provider_config:
-                parallel_enabled = provider_config.parallel_requests_enabled
-                max_parallel = provider_config.max_parallel_requests
-        else:
-            # Check default provider
-            default_provider = await storage.get_default()
-            if default_provider:
-                parallel_enabled = default_provider.parallel_requests_enabled
-                max_parallel = default_provider.max_parallel_requests
+        default_provider = await storage.get_default()
+        if default_provider:
+            parallel_enabled = default_provider.parallel_requests_enabled
+            max_parallel = default_provider.max_parallel_requests
 
         should_run_parallel = self.use_pool or has_custom_models or parallel_enabled
 
@@ -1590,6 +1670,7 @@ Ensure your response is practical, considers the constraints, and reflects your 
         referenced_adr_info: List[Dict[str, str]],
         progress_callback: Optional[callable] = None,
         tool_output_context: str = "",
+        synthesis_provider_id: Optional[str] = None,
     ) -> ADRGenerationResult:
         """Synthesize all persona perspectives into a complete ADR.
 
@@ -1600,6 +1681,7 @@ Ensure your response is practical, considers the constraints, and reflects your 
             referenced_adr_info: Info about ADRs referenced during generation (id, title, summary)
             progress_callback: Optional callback for progress updates
             tool_output_context: Formatted output from MCP tools
+            synthesis_provider_id: Optional provider ID to use for synthesis (overrides default client)
 
         Returns:
             Complete ADR generation result
@@ -1611,8 +1693,19 @@ Ensure your response is practical, considers the constraints, and reflects your 
 
         try:
             # Generate synthesized ADR
-            # Use primary client for synthesis
-            if self.use_pool:
+            # Use synthesis_provider_id if provided, otherwise use default client
+            if synthesis_provider_id:
+                # Create a dedicated client for synthesis
+                synthesis_client = await create_client_from_provider_id(
+                    synthesis_provider_id
+                )
+                async with synthesis_client:
+                    response = await synthesis_client.generate(
+                        prompt=synthesis_prompt,
+                        temperature=0.3,  # Lower temperature for more consistent synthesis
+                        num_predict=3000,
+                    )
+            elif self.use_pool:
                 client = self.llama_client.get_generation_client(0)
                 response = await client.generate(
                     prompt=synthesis_prompt,
