@@ -49,7 +49,14 @@ class GenerateADRRequest(BaseModel):
     tags: Optional[List[str]] = None
     personas: Optional[List[str]] = None  # List of persona names
     retrieval_mode: Optional[str] = "naive"  # RAG retrieval mode
-    provider_id: Optional[str] = None  # Optional LLM provider ID
+    persona_provider_overrides: Optional[Dict[str, str]] = Field(
+        default=None,
+        description="Map of persona name to provider ID override",
+    )
+    synthesis_provider_id: Optional[str] = Field(
+        default=None,
+        description="Provider ID for synthesis generation",
+    )
     record_type: Optional[str] = "decision"
     mcp_tools: Optional[List[Dict[str, Any]]] = Field(
         default=None,
@@ -80,7 +87,14 @@ class RefinePersonasRequest(BaseModel):
         default=None,
         description="Map of persona name to list of refinement indices to delete",
     )
-    provider_id: Optional[str] = None
+    persona_provider_overrides: Optional[Dict[str, str]] = Field(
+        default=None,
+        description="Map of persona name to provider ID override",
+    )
+    synthesis_provider_id: Optional[str] = Field(
+        default=None,
+        description="Provider ID to use for synthesis step (separate from persona generation)",
+    )
 
 
 class TaskResponse(BaseModel):
@@ -492,7 +506,8 @@ async def refine_personas(adr_id: str, request: RefinePersonasRequest):
             adr_id=adr_id,
             persona_refinements=persona_refinements,
             refinements_to_delete=request.refinements_to_delete or {},
-            provider_id=request.provider_id,
+            persona_provider_overrides=request.persona_provider_overrides or {},
+            synthesis_provider_id=request.synthesis_provider_id,
         )
 
         return TaskResponse(
@@ -515,7 +530,14 @@ class RefineOriginalPromptRequest(BaseModel):
     constraints: Optional[List[str]] = None
     stakeholders: Optional[List[str]] = None
     retrieval_mode: Optional[str] = None
-    provider_id: Optional[str] = None
+    persona_provider_overrides: Optional[Dict[str, str]] = Field(
+        default=None,
+        description="Map of persona name to provider ID override",
+    )
+    synthesis_provider_id: Optional[str] = Field(
+        default=None,
+        description="Provider ID for synthesis generation",
+    )
 
 
 @adr_router.post("/{adr_id}/refine-original-prompt", response_model=TaskResponse)
@@ -536,7 +558,7 @@ async def refine_original_prompt(adr_id: str, request: RefineOriginalPromptReque
     try:
         from src.celery_app import refine_original_prompt_task
 
-        # Build dict of refined fields (exclude None values and provider_id)
+        # Build dict of refined fields (exclude None values and provider IDs)
         refined_prompt_fields = {}
         if request.title is not None:
             refined_prompt_fields["title"] = request.title
@@ -557,11 +579,12 @@ async def refine_original_prompt(adr_id: str, request: RefineOriginalPromptReque
                 detail="At least one prompt field must be provided for refinement",
             )
 
-        # Queue the refinement task
+        # Queue the refinement task with per-persona provider overrides
         task = refine_original_prompt_task.delay(
             adr_id=adr_id,
             refined_prompt_fields=refined_prompt_fields,
-            provider_id=request.provider_id,
+            persona_provider_overrides=request.persona_provider_overrides or {},
+            synthesis_provider_id=request.synthesis_provider_id,
         )
 
         return TaskResponse(
@@ -1293,7 +1316,8 @@ async def generate_adr(request: GenerateADRRequest, background_tasks: Background
             tags=request.tags or [],
             personas=request.personas or [],
             retrieval_mode=request.retrieval_mode or "naive",
-            provider_id=request.provider_id,
+            persona_provider_overrides=request.persona_provider_overrides or {},
+            synthesis_provider_id=request.synthesis_provider_id,
             record_type=request.record_type,
             mcp_tools=request.mcp_tools or [],
             use_mcp=request.use_mcp or False,

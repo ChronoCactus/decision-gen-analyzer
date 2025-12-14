@@ -113,7 +113,8 @@ export interface GenerateADRRequest {
   tags?: string[];
   personas?: string[];
   retrieval_mode?: string;
-  provider_id?: string;
+  persona_provider_overrides?: Record<string, string>; // persona_value -> provider_id
+  synthesis_provider_id?: string;
   record_type?: 'decision' | 'principle';
   use_mcp?: boolean;
   status_filter?: string[];
@@ -127,7 +128,8 @@ export interface PersonaRefinementItem {
 export interface RefinePersonasRequest {
   refinements: PersonaRefinementItem[];
   refinements_to_delete?: Record<string, number[]>;
-  provider_id?: string;
+  persona_provider_overrides?: Record<string, string>; // persona_value -> provider_id
+  synthesis_provider_id?: string;
 }
 
 export interface RefineOriginalPromptRequest {
@@ -137,7 +139,8 @@ export interface RefineOriginalPromptRequest {
   constraints?: string[];
   stakeholders?: string[];
   retrieval_mode?: string;
-  provider_id?: string;
+  persona_provider_overrides?: Record<string, string>;
+  synthesis_provider_id?: string;
 }
 
 export interface ModelConfig {

@@ -9,6 +9,21 @@ vi.mock('@/hooks/useEscapeKey', () => ({
   useEscapeKey: vi.fn(),
 }));
 
+// Mock the API client
+vi.mock('@/lib/api', () => ({
+  apiClient: {
+    getPersonas: vi.fn().mockResolvedValue({ personas: [] }),
+    listProviders: vi.fn().mockResolvedValue({
+      providers: [{
+        id: 'env_default',
+        provider_type: 'ollama',
+        model_name: 'test-model',
+        is_default: true
+      }]
+    }),
+  },
+}));
+
 describe('PersonasModal', () => {
   const mockPersonas: PersonaResponse[] = [
     {
@@ -308,6 +323,9 @@ describe('PersonasModal', () => {
       const mockOnRefine = vi.fn();
       render(<PersonasModal {...mockProps} onRefine={mockOnRefine} />);
 
+      // Wait for providers to load (give extra time for async state updates)
+      await new Promise(resolve => setTimeout(resolve, 100));
+
       const refineButtons = screen.getAllByText('Refine');
       await user.click(refineButtons[0]);
 
@@ -324,7 +342,9 @@ describe('PersonasModal', () => {
             refinement_prompt: 'Add security details',
           },
         ],
-        {}
+        {},
+        {},
+        'env_default'
       );
     });
 
@@ -351,7 +371,9 @@ describe('PersonasModal', () => {
 
       expect(mockOnRefine).toHaveBeenCalledWith(
         [],
-        { technical_lead: [0] }
+        { technical_lead: [0] },
+        {},
+        undefined
       );
     });
 
@@ -368,6 +390,9 @@ describe('PersonasModal', () => {
       };
 
       render(<PersonasModal {...mockProps} personas={[personaWithHistory]} onRefine={mockOnRefine} />);
+
+      // Wait for providers to load (give extra time for async state updates)
+      await new Promise(resolve => setTimeout(resolve, 100));
 
       // Mark refinement for deletion
       const deleteButton = screen.getByText('Delete');
@@ -390,7 +415,9 @@ describe('PersonasModal', () => {
             refinement_prompt: 'New refinement',
           },
         ],
-        { technical_lead: [0] }
+        { technical_lead: [0] },
+        {},
+        'env_default'
       );
     });
 
