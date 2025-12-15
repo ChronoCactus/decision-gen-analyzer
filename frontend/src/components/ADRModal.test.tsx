@@ -17,6 +17,8 @@ vi.mock('@/hooks/useEscapeKey', () => ({
 vi.mock('@/lib/api', () => ({
   apiClient: {
     updateADRStatus: vi.fn(),
+    getPersonas: vi.fn().mockResolvedValue({ personas: [] }),
+    listProviders: vi.fn().mockResolvedValue({ providers: [] }),
   },
 }));
 
@@ -453,7 +455,8 @@ describe('ADRModal', () => {
               },
             ],
             refinements_to_delete: undefined,
-            provider_id: undefined,
+            synthesis_provider_id: undefined,
+            persona_provider_overrides: {},
           }
         );
       });
