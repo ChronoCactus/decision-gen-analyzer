@@ -574,4 +574,154 @@ describe('PersonasModal', () => {
       expect(Element.prototype.scrollIntoView).not.toHaveBeenCalled();
     });
   });
+
+  describe('Manual Editing', () => {
+    it('should show manual edit button in header', () => {
+      render(<PersonasModal {...mockProps} />);
+      
+      expect(screen.getByText('Manual Edit (JSON)')).toBeInTheDocument();
+    });
+
+    it('should enter bulk manual edit mode when clicking Manual Edit button', async () => {
+      const user = userEvent.setup();
+      render(<PersonasModal {...mockProps} />);
+
+      const manualEditButton = screen.getByText('Manual Edit (JSON)');
+      await user.click(manualEditButton);
+
+      expect(screen.getByText('Edit Personas as JSON')).toBeInTheDocument();
+      expect(screen.getByText('Cancel Manual Edit')).toBeInTheDocument();
+    });
+
+    it('should display JSON textarea in bulk edit mode', async () => {
+      const user = userEvent.setup();
+      render(<PersonasModal {...mockProps} />);
+
+      await user.click(screen.getByText('Manual Edit (JSON)'));
+
+      const textareas = screen.getAllByRole('textbox');
+      expect(textareas.length).toBeGreaterThan(0);
+    });
+
+    it('should show resynthesize checkbox in bulk edit mode', async () => {
+      const user = userEvent.setup();
+      render(<PersonasModal {...mockProps} />);
+
+      await user.click(screen.getByText('Manual Edit (JSON)'));
+
+      const checkbox = screen.getByLabelText(/Resynthesize final decision record/i);
+      expect(checkbox).toBeInTheDocument();
+      expect(checkbox).not.toBeChecked();
+    });
+
+    it('should cancel bulk manual edit mode', async () => {
+      const user = userEvent.setup();
+      render(<PersonasModal {...mockProps} />);
+
+      await user.click(screen.getByText('Manual Edit (JSON)'));
+      expect(screen.getByText('Edit Personas as JSON')).toBeInTheDocument();
+
+      await user.click(screen.getByText('Cancel Manual Edit'));
+      expect(screen.queryByText('Edit Personas as JSON')).not.toBeInTheDocument();
+    });
+
+    it('should show footer with buttons in bulk edit mode', async () => {
+      const user = userEvent.setup();
+      
+      render(<PersonasModal {...mockProps} />);
+
+      await user.click(screen.getByText('Manual Edit (JSON)'));
+      
+      // Check for cancel button which should always be visible
+      expect(screen.getByText('Cancel Manual Edit')).toBeInTheDocument();
+    });
+
+    it('should show individual Manual button next to each Refine button', () => {
+      render(<PersonasModal {...mockProps} onRefine={vi.fn()} />);
+
+      const manualButtons = screen.getAllByText('Manual');
+      expect(manualButtons).toHaveLength(mockPersonas.length);
+    });
+
+    it('should enter individual manual edit mode when clicking Manual button', async () => {
+      const user = userEvent.setup();
+      render(<PersonasModal {...mockProps} onRefine={vi.fn()} />);
+
+      const manualButtons = screen.getAllByText('Manual');
+      await user.click(manualButtons[0]);
+
+      expect(screen.getByText(/Edit this persona's JSON directly/i)).toBeInTheDocument();
+    });
+
+    it('should show resynthesize checkbox for individual persona edit', async () => {
+      const user = userEvent.setup();
+      render(<PersonasModal {...mockProps} onRefine={vi.fn()} />);
+
+      const manualButtons = screen.getAllByText('Manual');
+      await user.click(manualButtons[0]);
+
+      const checkbox = screen.getByLabelText(/Resynthesize final decision record/i);
+      expect(checkbox).toBeInTheDocument();
+      expect(checkbox).not.toBeChecked();
+    });
+
+    it('should show save button in individual edit mode', async () => {
+      const user = userEvent.setup();
+      
+      render(<PersonasModal {...mockProps} onRefine={vi.fn()} />);
+
+      const manualButtons = screen.getAllByText('Manual');
+      await user.click(manualButtons[0]);
+
+      expect(screen.getByText('Save Changes')).toBeInTheDocument();
+    });
+
+    it('should auto-scroll when entering bulk manual edit mode', async () => {
+      const user = userEvent.setup();
+      render(<PersonasModal {...mockProps} />);
+
+      await user.click(screen.getByText('Manual Edit (JSON)'));
+
+      await vi.waitFor(() => {
+        expect(Element.prototype.scrollIntoView).toHaveBeenCalled();
+      });
+    });
+
+    it('should auto-scroll when entering individual manual edit mode', async () => {
+      const user = userEvent.setup();
+      render(<PersonasModal {...mockProps} onRefine={vi.fn()} />);
+
+      const manualButtons = screen.getAllByText('Manual');
+      await user.click(manualButtons[0]);
+
+      await vi.waitFor(() => {
+        expect(Element.prototype.scrollIntoView).toHaveBeenCalled();
+      });
+    });
+
+    it('should have text area for JSON editing in bulk edit mode', async () => {
+      const user = userEvent.setup();
+      render(<PersonasModal {...mockProps} />);
+
+      await user.click(screen.getByText('Manual Edit (JSON)'));
+      
+      const textarea = screen.getByRole('textbox');
+      expect(textarea).toHaveClass('font-mono'); // JSON editor uses monospace font
+    });
+
+    it('should change save button text when resynthesize is checked', async () => {
+      const user = userEvent.setup();
+      render(<PersonasModal {...mockProps} onRefine={vi.fn()} />);
+
+      const manualButtons = screen.getAllByText('Manual');
+      await user.click(manualButtons[0]);
+
+      expect(screen.getByText('Save Changes')).toBeInTheDocument();
+
+      const checkbox = screen.getByLabelText(/Resynthesize final decision record/i);
+      await user.click(checkbox);
+
+      expect(screen.getByText('Save & Resynthesize')).toBeInTheDocument();
+    });
+  });
 });

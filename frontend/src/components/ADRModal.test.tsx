@@ -654,4 +654,48 @@ describe('ADRModal', () => {
     expect(screen.queryByText('Decision Outcome')).not.toBeInTheDocument();
     expect(screen.queryByText('Decision Drivers')).not.toBeInTheDocument();
   });
+
+  describe('ADR Refresh Functionality', () => {
+    it('should pass onADRUpdate callback to PersonasModal', async () => {
+      const onADRUpdate = vi.fn();
+      render(<ADRModal {...mockProps} adr={mockADRWithPersonas} onADRUpdate={onADRUpdate} />);
+
+      // Verify component renders without crashing when onADRUpdate is provided
+      expect(screen.getAllByText('Database Selection').length).toBeGreaterThan(0);
+    });
+
+    it('should update display when ADR prop changes', () => {
+      const { rerender } = render(<ADRModal {...mockProps} adr={mockADR} />);
+
+      // Initial render
+      expect(screen.getAllByText('Database Selection').length).toBeGreaterThan(0);
+
+      // Update ADR prop - verify component can rerender without crashing
+      const updatedADR = {
+        ...mockADR,
+        metadata: {
+          ...mockADR.metadata,
+          status: ADRStatus.ACCEPTED,
+        },
+      };
+      
+      // Verify component doesn't crash on rerender
+      expect(() => {
+        rerender(<ADRModal {...mockProps} adr={updatedADR} />);
+      }).not.toThrow();
+
+      // Verify component still renders after prop change
+      expect(screen.getAllByText('Database Selection').length).toBeGreaterThan(0);
+    });
+
+    it('should not crash with onADRUpdate callback', () => {
+      const onADRUpdate = vi.fn();
+      
+      // Component should render without errors
+      render(<ADRModal {...mockProps} adr={mockADR} onADRUpdate={onADRUpdate} />);
+      
+      // Use getAllByText since title appears twice (desktop + mobile views)
+      expect(screen.getAllByText('Database Selection').length).toBeGreaterThan(0);
+    });
+  });
 });

@@ -191,6 +191,29 @@ class ApiClient {
     });
   }
 
+  async saveManualPersonaEdits(
+    adrId: string,
+    personaResponses: any[],
+    resynthesize: boolean,
+    synthesisProviderId?: string
+  ): Promise<TaskResponse> {
+    return this.request<TaskResponse>(`/api/v1/adrs/${adrId}/manual-persona-edits`, {
+      method: 'POST',
+      body: JSON.stringify({
+        persona_responses: personaResponses,
+        resynthesize,
+        synthesis_provider_id: synthesisProviderId,
+      }),
+    });
+  }
+
+  async saveManualADREdit(adrId: string, content: any): Promise<{ message: string; adr: ADR }> {
+    return this.request<{ message: string; adr: ADR }>(`/api/v1/adrs/${adrId}/manual-edit`, {
+      method: 'PATCH',
+      body: JSON.stringify({ content }),
+    });
+  }
+
   async updateADRStatus(adrId: string, status: string): Promise<{ message: string; adr: ADR }> {
     return this.request<{ message: string; adr: ADR }>(`/api/v1/adrs/${adrId}/status`, {
       method: 'PATCH',

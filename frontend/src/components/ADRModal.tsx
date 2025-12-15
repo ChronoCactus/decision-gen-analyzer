@@ -51,6 +51,12 @@ export function ADRModal({ adr, onClose, onAnalyze, isAnalyzing, onADRUpdate, on
   const [showTagDropdown, setShowTagDropdown] = useState(false);
   const [newTagInput, setNewTagInput] = useState('');
 
+  // Manual editing state
+  const [isManualEditMode, setIsManualEditMode] = useState(false);
+  const [editedContentJson, setEditedContentJson] = useState('');
+  const [jsonError, setJsonError] = useState<string | null>(null);
+  const [isSavingManualEdit, setIsSavingManualEdit] = useState(false);
+
   // Model selection state for bulk refinement
   const [allPersonas, setAllPersonas] = useState<Persona[]>([]);
   const [providers, setProviders] = useState<LLMProvider[]>([]);
@@ -191,6 +197,20 @@ export function ADRModal({ adr, onClose, onAnalyze, isAnalyzing, onADRUpdate, on
     });
   };
 
+  const handleADRUpdate = async () => {
+    try {
+      const refreshedAdr = await apiClient.getADR(currentAdr.metadata.id);
+      setCurrentAdr(refreshedAdr);
+
+      // Notify parent component of the update
+      if (onADRUpdate) {
+        onADRUpdate(refreshedAdr);
+      }
+    } catch (error) {
+      console.error('Failed to refresh ADR:', error);
+    }
+  };
+
   const handleRefinePersonas = async (
     refinements: PersonaRefinementItem[],
     refinementsToDelete?: Record<string, number[]>,
@@ -283,6 +303,72 @@ export function ADRModal({ adr, onClose, onAnalyze, isAnalyzing, onADRUpdate, on
       } catch (error) {
         console.error('Failed to remove tag:', error);
       }
+    }
+  };
+
+  // Manual editing handlers
+  const handleEnterManualEdit = () => {
+    setIsManualEditMode(true);
+    setEditedContentJson(JSON.stringify(currentAdr.content, null, 2));
+    setJsonError(null);
+  };
+
+  const handleCancelManualEdit = () => {
+    setIsManualEditMode(false);
+    setEditedContentJson('');
+    setJsonError(null);
+  };
+
+  const validateAndSaveManualEdit = async () => {
+    try {
+      // Validate JSON
+      const parsed = JSON.parse(editedContentJson);
+
+      // Basic validation - must be an object
+      if (typeof parsed !== 'object' || Array.isArray(parsed)) {
+        setJsonError('Content must be a valid JSON object');
+        return;
+      }
+
+      // Validate required fields
+      if (!parsed.context_and_problem || !parsed.decision_outcome || !parsed.consequences) {
+        setJsonError('Missing required fields: context_and_problem, decision_outcome, or consequences');
+        return;
+      }
+
+      setJsonError(null);
+      setIsSavingManualEdit(true);
+
+      // Call API to save manual edit (never triggers AI regeneration)
+      const response = await apiClient.saveManualADREdit(
+        currentAdr.metadata.id,
+        parsed
+      );
+
+      // Update local state with the saved ADR
+      setCurrentAdr(response.adr);
+
+      // Notify parent component of the update
+      if (onADRUpdate) {
+        onADRUpdate(response.adr);
+      }
+
+      // Close manual edit mode and show success toast
+      setIsManualEditMode(false);
+      setEditedContentJson('');
+      setRefinementToast({
+        show: true,
+        message: 'Manual edit saved successfully',
+        type: 'success'
+      });
+    } catch (error) {
+      if (error instanceof SyntaxError) {
+        setJsonError(`Invalid JSON: ${error.message}`);
+      } else {
+        setJsonError(`Failed to save: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    } finally {
+      setIsSavingManualEdit(false);
     }
   };
 
@@ -392,30 +478,50 @@ export function ADRModal({ adr, onClose, onAnalyze, isAnalyzing, onADRUpdate, on
     <div className="fixed inset-0 bg-black bg-opacity-50 dark:bg-opacity-70 flex items-center justify-center sm:p-4 z-50">
       <div className="bg-white dark:bg-gray-800 w-full h-full flex flex-col sm:h-auto sm:max-w-4xl sm:max-h-[90vh] sm:rounded-lg overflow-hidden">
         {/* Sticky Header */}
-        <div className="relative flex-shrink-0 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 p-4 sm:p-6 flex justify-between items-start">
-          <div className="flex-1 hidden sm:block pr-12">
-            <h2 className="text-xl sm:text-2xl font-bold text-gray-900 dark:text-gray-100 mb-2">
-              {currentAdr.metadata.title}
-            </h2>
-            <div className="flex items-center gap-4 text-sm text-gray-600 dark:text-gray-400">
-              <span>By {currentAdr.metadata.author}</span>
-              <span>{new Date(currentAdr.metadata.created_at).toLocaleDateString()}</span>
-              <div className="relative">
-                <select
-                  value={currentAdr.metadata.status}
-                  onChange={(e) => handleStatusChange(e.target.value)}
-                  disabled={isUpdatingStatus}
-                  className={`px-3 py-1 rounded-full border cursor-pointer text-sm font-medium transition-colors ${getStatusColor(currentAdr.metadata.status)} ${isUpdatingStatus ? 'opacity-50 cursor-wait' : 'hover:opacity-80'
-                    } focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 dark:focus:ring-offset-gray-800`}
-                >
-                  <option value={ADRStatus.PROPOSED}>proposed</option>
-                  <option value={ADRStatus.ACCEPTED}>accepted</option>
-                  <option value={ADRStatus.REJECTED}>rejected</option>
-                  <option value={ADRStatus.DEPRECATED}>deprecated</option>
-                  <option value={ADRStatus.SUPERSEDED}>superseded</option>
-                </select>
-              </div>
+        <div className="relative flex-shrink-0 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 p-4 sm:p-6">
+          <div className="flex justify-between items-start mb-2">
+            <div className="flex-1 hidden sm:block pr-12">
+              <h2 className="text-xl sm:text-2xl font-bold text-gray-900 dark:text-gray-100">
+                {currentAdr.metadata.title}
+              </h2>
             </div>
+            <button
+              onClick={onClose}
+              className="p-2 rounded-full bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
+              aria-label="Close"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+          <div className="hidden sm:flex items-center gap-4 text-sm text-gray-600 dark:text-gray-400">
+            <span>By {currentAdr.metadata.author}</span>
+            <span>{new Date(currentAdr.metadata.created_at).toLocaleDateString()}</span>
+            <div className="relative">
+              <select
+                value={currentAdr.metadata.status}
+                onChange={(e) => handleStatusChange(e.target.value)}
+                disabled={isUpdatingStatus}
+                className={`px-3 py-1 rounded-full border cursor-pointer text-sm font-medium transition-colors ${getStatusColor(currentAdr.metadata.status)} ${isUpdatingStatus ? 'opacity-50 cursor-wait' : 'hover:opacity-80'
+                  } focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 dark:focus:ring-offset-gray-800`}
+              >
+                <option value={ADRStatus.PROPOSED}>proposed</option>
+                <option value={ADRStatus.ACCEPTED}>accepted</option>
+                <option value={ADRStatus.REJECTED}>rejected</option>
+                <option value={ADRStatus.DEPRECATED}>deprecated</option>
+                <option value={ADRStatus.SUPERSEDED}>superseded</option>
+              </select>
+            </div>
+            <button
+              onClick={() => isManualEditMode ? handleCancelManualEdit() : handleEnterManualEdit()}
+              className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${isManualEditMode
+                  ? 'bg-gray-200 dark:bg-gray-600 text-gray-700 dark:text-gray-300'
+                  : 'bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 hover:bg-purple-200 dark:hover:bg-purple-900/50'
+                }`}
+            >
+              {isManualEditMode ? 'Cancel Edit' : 'Manual Edit (JSON)'}
+            </button>
           </div>
           {/* Mobile Header Title (Minimal) */}
           <div className="flex-1 sm:hidden pr-12">
@@ -423,20 +529,54 @@ export function ADRModal({ adr, onClose, onAnalyze, isAnalyzing, onADRUpdate, on
               {currentAdr.metadata.title}
             </h2>
           </div>
-          <button
-            onClick={onClose}
-            className="absolute top-4 right-4 p-2 rounded-full bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors z-10"
-            aria-label="Close"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
         </div>
 
         <div className="flex-1 overflow-y-auto p-4 sm:p-6 min-h-0">
-          {/* Mobile Title & Metadata (Scrolls with content) */}
-          <div className="sm:hidden mb-6 space-y-4">
+          {/* Manual Edit Mode */}
+          {isManualEditMode ? (
+            <div className="space-y-4">
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Edit ADR Content as JSON</h3>
+              <p className="text-sm text-gray-600 dark:text-gray-400">
+                Edit the JSON below to manually modify the final synthesized ADR content. Changes are saved directly without AI regeneration.
+              </p>
+
+              <textarea
+                value={editedContentJson}
+                onChange={(e) => {
+                  setEditedContentJson(e.target.value);
+                  setJsonError(null);
+                }}
+                className="w-full h-96 px-4 py-3 bg-gray-50 dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-md text-sm font-mono text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-purple-500 dark:focus:ring-purple-400"
+                spellCheck={false}
+              />
+
+              {jsonError && (
+                <div className="p-3 bg-red-50 dark:bg-red-900/20 border border-red-300 dark:border-red-800 rounded-md">
+                  <p className="text-sm text-red-700 dark:text-red-400">{jsonError}</p>
+                </div>
+              )}
+
+              <div className="flex gap-3">
+                <button
+                  onClick={validateAndSaveManualEdit}
+                  disabled={isSavingManualEdit || !editedContentJson.trim()}
+                  className="flex-1 bg-purple-600 text-white px-6 py-3 rounded-md hover:bg-purple-700 disabled:bg-gray-400 dark:disabled:bg-gray-600 disabled:cursor-not-allowed transition-colors font-medium"
+                >
+                  {isSavingManualEdit ? 'Saving...' : 'Save Manual Edit'}
+                </button>
+                <button
+                  onClick={handleCancelManualEdit}
+                  disabled={isSavingManualEdit}
+                  className="px-6 py-3 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 rounded-md hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors font-medium disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          ) : (
+            <>
+              {/* Mobile Title & Metadata (Scrolls with content) */}
+              <div className="sm:hidden mb-6 space-y-4">
             <div className="flex flex-wrap items-center gap-3 text-sm text-gray-600 dark:text-gray-400">
               <span>By {currentAdr.metadata.author}</span>
               <span>•</span>
@@ -1069,10 +1209,12 @@ export function ADRModal({ adr, onClose, onAnalyze, isAnalyzing, onADRUpdate, on
               )}
             </div>
           )}
-
+            </>
+          )}
         </div>
 
-        {/* Footer with Buttons (Sticky on all screens) */}
+        {/* Footer with Buttons (Sticky on all screens) - Only show if not in manual edit mode */}
+        {!isManualEditMode && (
         <div className="flex-shrink-0 border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-3 sm:p-6">
           <div className="flex gap-2 sm:gap-4">
             {currentAdr.persona_responses && currentAdr.persona_responses.length > 0 && (
@@ -1118,6 +1260,7 @@ export function ADRModal({ adr, onClose, onAnalyze, isAnalyzing, onADRUpdate, on
             </button>
           </div>
         </div>
+        )}
       </div>
 
       {showPersonas && currentAdr.persona_responses && (
@@ -1126,6 +1269,7 @@ export function ADRModal({ adr, onClose, onAnalyze, isAnalyzing, onADRUpdate, on
           adrId={currentAdr.metadata.id}
           onClose={() => setShowPersonas(false)}
           onRefine={handleRefinePersonas}
+          onADRUpdate={handleADRUpdate}
         />
       )}
 

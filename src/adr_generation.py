@@ -601,6 +601,116 @@ class ADRGenerationService:
 
         return adr
 
+    async def synthesize_from_existing_personas(
+        self,
+        adr: ADR,
+        synthesis_provider_id: Optional[str] = None,
+    ) -> ADR:
+        """Synthesize a new final decision record from existing (possibly manually edited) persona responses.
+
+        This method takes the existing persona_responses from the ADR and synthesizes them into
+        a new final decision record without regenerating the persona perspectives. This is useful
+        when persona responses have been manually edited and you want to resynthesize the final ADR
+        from those manual edits.
+
+        Args:
+            adr: The existing ADR with persona responses
+            synthesis_provider_id: Optional provider ID for synthesis step
+
+        Returns:
+            Updated ADR with resynthesized content
+        """
+        logger.info(
+            "Starting resynthesis from existing personas",
+            adr_id=str(adr.metadata.id),
+            num_personas=len(adr.persona_responses) if adr.persona_responses else 0,
+        )
+
+        if not adr.persona_responses:
+            raise ValueError("ADR has no persona responses to synthesize")
+
+        # Convert persona_responses to PersonaSynthesisInput objects if they're dicts
+        from src.models import PersonaSynthesisInput
+
+        existing_persona_responses = []
+        for pr in adr.persona_responses:
+            if isinstance(pr, dict):
+                existing_persona_responses.append(PersonaSynthesisInput(**pr))
+            else:
+                existing_persona_responses.append(pr)
+
+        # Get the original prompt from ADR content
+        # Reconstruct the prompt from stored data
+        from src.models import ADRGenerationPrompt
+
+        if adr.content.original_generation_prompt:
+            # Use stored prompt if available
+            original_prompt = ADRGenerationPrompt(
+                **adr.content.original_generation_prompt
+            )
+        else:
+            # Fallback: reconstruct from ADR content
+            original_prompt = ADRGenerationPrompt(
+                title=adr.metadata.title,
+                context=(
+                    adr.content.context_and_problem.split("\n\n")[0]
+                    if "\n\n" in adr.content.context_and_problem
+                    else adr.content.context_and_problem
+                ),
+                problem_statement=(
+                    adr.content.context_and_problem.split("\n\n")[1]
+                    if "\n\n" in adr.content.context_and_problem
+                    else adr.content.context_and_problem
+                ),
+                tags=adr.metadata.tags,
+            )
+
+        # Get related context (empty list since we're just resynthesizing)
+        related_context: List[str] = []
+
+        # Get referenced ADR info from existing content
+        referenced_adr_info: List[Dict[str, str]] = []
+        if adr.content.referenced_adrs:
+            for ref in adr.content.referenced_adrs:
+                if isinstance(ref, dict):
+                    referenced_adr_info.append(ref)
+
+        # Synthesize the final ADR from existing persona responses
+        result = await self._synthesize_adr(
+            original_prompt,
+            existing_persona_responses,
+            related_context,
+            referenced_adr_info,
+            progress_callback=None,
+            synthesis_provider_id=synthesis_provider_id,
+        )
+
+        logger.info("ADR resynthesis completed successfully")
+
+        # Update the ADR with new content
+        adr.content.context_and_problem = result.context_and_problem
+        adr.content.decision_outcome = result.decision_outcome
+        adr.content.consequences = result.consequences
+        adr.content.considered_options = [
+            opt.option_name for opt in result.considered_options
+        ]
+        adr.content.decision_drivers = result.decision_drivers
+
+        # Preserve the persona_responses (don't update them since they weren't regenerated)
+        # They remain as-is from the manual edits
+
+        # Update timestamp
+        from datetime import UTC, datetime
+
+        adr.metadata.updated_at = datetime.now(UTC)
+
+        logger.info(
+            "Resynthesis from existing personas completed",
+            adr_id=str(adr.metadata.id),
+        )
+
+        return adr
+
     async def refine_original_prompt(
         self,
         adr: ADR,

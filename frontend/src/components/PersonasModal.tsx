@@ -12,11 +12,27 @@ interface PersonasModalProps {
   adrId: string;
   onClose: () => void;
   onRefine?: (refinements: PersonaRefinementItem[], refinementsToDelete?: Record<string, number[]>, personaProviderOverrides?: Record<string, string>, synthesisProviderId?: string) => void;
+  onADRUpdate?: () => void;
 }
 
-export function PersonasModal({ personas, onClose, onRefine }: PersonasModalProps) {
+export function PersonasModal({ personas, adrId, onClose, onRefine, onADRUpdate }: PersonasModalProps) {
   // Close this modal with ESC key
   useEscapeKey(onClose);
+
+  // Manual editing state (bulk edit all personas)
+  const [isManualEditMode, setIsManualEditMode] = useState(false);
+  const [editedPersonasJson, setEditedPersonasJson] = useState('');
+  const [jsonError, setJsonError] = useState<string | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
+  const [resynthesizeChecked, setResynthesizeChecked] = useState(false);
+  const [synthesisProviderIdForManual, setSynthesisProviderIdForManual] = useState<string>('');
+
+  // Individual persona manual editing state
+  const [editingPersona, setEditingPersona] = useState<Record<string, boolean>>({});
+  const [editedPersonaJson, setEditedPersonaJson] = useState<Record<string, string>>({});
+  const [personaJsonError, setPersonaJsonError] = useState<Record<string, string | null>>({});
+  const [personaResynthesizeChecked, setPersonaResynthesizeChecked] = useState<Record<string, boolean>>({});
+  const [personaSynthesisProviderId, setPersonaSynthesisProviderId] = useState<Record<string, string>>({});
 
   // Track which personas are being refined and their refinement prompts
   const [refining, setRefining] = useState<Record<string, boolean>>({});
@@ -24,6 +40,8 @@ export function PersonasModal({ personas, onClose, onRefine }: PersonasModalProp
   const [refinementsToDelete, setRefinementsToDelete] = useState<Record<string, number[]>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
   const refinementRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  const manualEditRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  const bulkManualEditRef = useRef<HTMLDivElement | null>(null);
 
   // Model selection state
   const [allPersonas, setAllPersonas] = useState<Persona[]>([]);
@@ -66,6 +84,22 @@ export function PersonasModal({ personas, onClose, onRefine }: PersonasModalProp
       refinementRefs.current[justActivated]?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     }
   }, [refining]);
+
+  // Scroll to manual edit section when a persona's manual edit mode is activated
+  useEffect(() => {
+    // Find the persona that was just set to editing
+    const justActivated = Object.keys(editingPersona).find(persona => editingPersona[persona]);
+    if (justActivated && manualEditRefs.current[justActivated]) {
+      manualEditRefs.current[justActivated]?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+  }, [editingPersona]);
+
+  // Scroll to bulk manual edit section when activated
+  useEffect(() => {
+    if (isManualEditMode && bulkManualEditRef.current) {
+      bulkManualEditRef.current.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+  }, [isManualEditMode]);
 
   const formatPersonaName = (persona: string) => {
     return persona
@@ -174,24 +208,291 @@ export function PersonasModal({ personas, onClose, onRefine }: PersonasModalProp
     Object.values(refinementPrompts).some(prompt => prompt.trim().length > 0) ||
     Object.keys(refinementsToDelete).length > 0;
 
+  // Manual editing handlers (bulk edit all personas)
+  const handleEnterManualEdit = () => {
+    setIsManualEditMode(true);
+    setEditedPersonasJson(JSON.stringify(personas, null, 2));
+    setJsonError(null);
+  };
+
+  const handleCancelManualEdit = () => {
+    setIsManualEditMode(false);
+    setEditedPersonasJson('');
+    setJsonError(null);
+    setResynthesizeChecked(false);
+  };
+
+  // Individual persona manual editing handlers
+  const handleTogglePersonaEdit = (personaName: string, persona: any) => {
+    setEditingPersona(prev => {
+      const newEditing = { ...prev, [personaName]: !prev[personaName] };
+
+      // If entering edit mode, initialize the JSON and default states
+      if (newEditing[personaName]) {
+        setEditedPersonaJson(prev => ({
+          ...prev,
+          [personaName]: JSON.stringify(persona, null, 2)
+        }));
+        setPersonaJsonError(prev => ({ ...prev, [personaName]: null }));
+        setPersonaResynthesizeChecked(prev => ({ ...prev, [personaName]: false }));
+        // Set default synthesis provider
+        const defaultProvider = providers.find(p => p.is_default);
+        if (defaultProvider) {
+          setPersonaSynthesisProviderId(prev => ({ ...prev, [personaName]: defaultProvider.id }));
+        }
+      } else {
+        // If exiting edit mode, clean up
+        const newJson = { ...editedPersonaJson };
+        delete newJson[personaName];
+        setEditedPersonaJson(newJson);
+
+        const newErrors = { ...personaJsonError };
+        delete newErrors[personaName];
+        setPersonaJsonError(newErrors);
+
+        const newResynthesize = { ...personaResynthesizeChecked };
+        delete newResynthesize[personaName];
+        setPersonaResynthesizeChecked(newResynthesize);
+
+        const newProviderId = { ...personaSynthesisProviderId };
+        delete newProviderId[personaName];
+        setPersonaSynthesisProviderId(newProviderId);
+      }
+
+      return newEditing;
+    });
+  };
+
+  const handlePersonaJsonChange = (personaName: string, value: string) => {
+    setEditedPersonaJson(prev => ({
+      ...prev,
+      [personaName]: value
+    }));
+    setPersonaJsonError(prev => ({ ...prev, [personaName]: null }));
+  };
+
+  const handleSaveIndividualPersona = async (personaName: string) => {
+    try {
+      const jsonValue = editedPersonaJson[personaName];
+      if (!jsonValue) return;
+
+      // Validate JSON
+      const parsed = JSON.parse(jsonValue);
+
+      // Validate it's an object with a persona field
+      if (typeof parsed !== 'object' || Array.isArray(parsed)) {
+        setPersonaJsonError(prev => ({
+          ...prev,
+          [personaName]: 'Persona must be a valid JSON object'
+        }));
+        return;
+      }
+
+      if (!parsed.persona || typeof parsed.persona !== 'string') {
+        setPersonaJsonError(prev => ({
+          ...prev,
+          [personaName]: 'Persona must have a "persona" field with a string value'
+        }));
+        return;
+      }
+
+      setPersonaJsonError(prev => ({ ...prev, [personaName]: null }));
+
+      // Replace the edited persona in the full array
+      const updatedPersonas = personas.map(p =>
+        p.persona === personaName ? parsed : p
+      );
+
+      const shouldResynthesize = personaResynthesizeChecked[personaName] || false;
+      const synthesisProvider = shouldResynthesize ? personaSynthesisProviderId[personaName] : undefined;
+
+      // Save all personas with the updated one
+      await apiClient.saveManualPersonaEdits(
+        adrId,
+        updatedPersonas,
+        shouldResynthesize,
+        synthesisProvider
+      );
+
+      // Exit edit mode for this persona
+      setEditingPersona(prev => ({ ...prev, [personaName]: false }));
+
+      // Clean up state
+      const newJson = { ...editedPersonaJson };
+      delete newJson[personaName];
+      setEditedPersonaJson(newJson);
+
+      const newResynthesize = { ...personaResynthesizeChecked };
+      delete newResynthesize[personaName];
+      setPersonaResynthesizeChecked(newResynthesize);
+
+      const newProviderId = { ...personaSynthesisProviderId };
+      delete newProviderId[personaName];
+      setPersonaSynthesisProviderId(newProviderId);
+
+      // Refresh the ADR to show updated data before closing
+      if (onADRUpdate) {
+        await onADRUpdate();
+      }
+
+      // Close modal
+      onClose();
+    } catch (error) {
+      if (error instanceof SyntaxError) {
+        setPersonaJsonError(prev => ({
+          ...prev,
+          [personaName]: `Invalid JSON: ${error.message}`
+        }));
+      } else {
+        setPersonaJsonError(prev => ({
+          ...prev,
+          [personaName]: `Failed to save: ${error instanceof Error ? error.message : String(error)}`
+        }));
+      }
+    }
+  };
+
+  const validateAndSaveManualEdit = async () => {
+    try {
+      // Validate JSON
+      const parsed = JSON.parse(editedPersonasJson);
+
+      // Validate it's an array
+      if (!Array.isArray(parsed)) {
+        setJsonError('JSON must be an array of persona responses');
+        return;
+      }
+
+      // Basic validation of persona structure
+      for (const persona of parsed) {
+        if (!persona.persona || typeof persona.persona !== 'string') {
+          setJsonError('Each persona must have a "persona" field with a string value');
+          return;
+        }
+      }
+
+      setJsonError(null);
+      setIsSaving(true);
+
+      // Call API to save manual edits
+      await apiClient.saveManualPersonaEdits(
+        adrId,
+        parsed,
+        resynthesizeChecked,
+        resynthesizeChecked ? synthesisProviderIdForManual : undefined
+      );
+
+      // Refresh the ADR to show updated data before closing
+      if (onADRUpdate) {
+        await onADRUpdate();
+      }
+
+      // Close modal
+      onClose();
+    } catch (error) {
+      if (error instanceof SyntaxError) {
+        setJsonError(`Invalid JSON: ${error.message}`);
+      } else {
+        setJsonError(`Failed to save: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 dark:bg-opacity-70 flex items-center justify-center z-[60] sm:p-4">
       <div className="bg-white dark:bg-gray-800 w-full h-full sm:h-auto sm:max-w-4xl sm:max-h-[90vh] sm:rounded-lg shadow-2xl flex flex-col">
-        <div className="flex-shrink-0 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 p-4 sm:p-6 flex justify-between items-center relative">
-          <h2 className="text-xl sm:text-2xl font-bold text-gray-900 dark:text-gray-100 pr-12">Individual Persona Responses</h2>
-          <button
-            onClick={onClose}
-            className="absolute top-4 right-4 p-2 rounded-full bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors z-10"
-            aria-label="Close"
-          >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
+        <div className="flex-shrink-0 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 p-4 sm:p-6 relative">
+          <div className="flex justify-between items-start">
+            <div className="flex-1">
+              <h2 className="text-xl sm:text-2xl font-bold text-gray-900 dark:text-gray-100 pr-12 mb-2">Individual Persona Responses</h2>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => isManualEditMode ? handleCancelManualEdit() : handleEnterManualEdit()}
+                  className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${isManualEditMode
+                    ? 'bg-gray-200 dark:bg-gray-600 text-gray-700 dark:text-gray-300'
+                    : 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 hover:bg-blue-200 dark:hover:bg-blue-900/50'
+                    }`}
+                >
+                  {isManualEditMode ? 'Cancel Manual Edit' : 'Manual Edit (JSON)'}
+                </button>
+              </div>
+            </div>
+            <button
+              onClick={onClose}
+              className="p-2 rounded-full bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
+              aria-label="Close"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
         </div>
 
-        {/* Show personas being refined with model info */}
-        {Object.keys(refining).some(p => refining[p]) && !loadingModels && allPersonas.length > 0 && (
+        {/* Manual Edit Mode */}
+        {isManualEditMode ? (
+          <div className="flex-1 overflow-y-auto p-6">
+            <div ref={bulkManualEditRef} className="mb-4">
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2">Edit Personas as JSON</h3>
+              <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
+                Edit the JSON below to manually modify persona responses. The JSON will be validated before saving.
+              </p>
+
+              <textarea
+                value={editedPersonasJson}
+                onChange={(e) => {
+                  setEditedPersonasJson(e.target.value);
+                  setJsonError(null);
+                }}
+                className="w-full h-96 px-4 py-3 bg-gray-50 dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-md text-sm font-mono text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400"
+                spellCheck={false}
+              />
+
+              {jsonError && (
+                <div className="mt-2 p-3 bg-red-50 dark:bg-red-900/20 border border-red-300 dark:border-red-800 rounded-md">
+                  <p className="text-sm text-red-700 dark:text-red-400">{jsonError}</p>
+                </div>
+              )}
+
+              <div className="mt-4 p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-md">
+                <label className="flex items-start">
+                  <input
+                    type="checkbox"
+                    checked={resynthesizeChecked}
+                    onChange={(e) => setResynthesizeChecked(e.target.checked)}
+                    className="mt-0.5 mr-3"
+                  />
+                  <div className="flex-1">
+                    <span className="text-sm font-medium text-gray-900 dark:text-gray-100">
+                      Resynthesize final decision record
+                    </span>
+                    <p className="text-xs text-gray-600 dark:text-gray-400 mt-1">
+                      If checked, the AI will synthesize a new final decision record from your edited personas (no regeneration).
+                      If unchecked, only the manual edits will be saved.
+                    </p>
+                  </div>
+                </label>
+
+                {resynthesizeChecked && !loadingModels && providers.length > 0 && (
+                  <div className="mt-3">
+                    <SynthesisModelSelector
+                      providers={providers}
+                      selectedProviderId={synthesisProviderIdForManual}
+                      onSelectProvider={setSynthesisProviderIdForManual}
+                      label="Synthesis Model"
+                      helpText="Model used to synthesize the final decision record from edited personas"
+                    />
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        ) : (
+          <>
+              {/* Show personas being refined with model info */}
+              {Object.keys(refining).some(p => refining[p]) && !loadingModels && allPersonas.length > 0 && (
           <div className="flex-shrink-0 bg-blue-50 dark:bg-blue-900/20 border-b border-blue-200 dark:border-blue-800 p-4">
             <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-3">
               Personas Being Refined
@@ -255,15 +556,26 @@ export function PersonasModal({ personas, onClose, onRefine }: PersonasModalProp
                     )}
                   </div>
                 </div>
-                <button
-                  onClick={() => handleToggleRefine(persona.persona)}
-                  className={`px-4 py-2 rounded-md transition-colors font-medium flex-shrink-0 ${refining[persona.persona]
+                <div className="flex gap-2 flex-shrink-0">
+                  <button
+                    onClick={() => handleTogglePersonaEdit(persona.persona, persona)}
+                    className={`px-4 py-2 rounded-md transition-colors font-medium ${editingPersona[persona.persona]
+                      ? 'bg-gray-200 dark:bg-gray-600 text-gray-700 dark:text-gray-300'
+                      : 'bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 hover:bg-purple-200 dark:hover:bg-purple-900/50'
+                      }`}
+                  >
+                    {editingPersona[persona.persona] ? 'Cancel' : 'Manual'}
+                  </button>
+                  <button
+                    onClick={() => handleToggleRefine(persona.persona)}
+                    className={`px-4 py-2 rounded-md transition-colors font-medium ${refining[persona.persona]
                       ? 'bg-gray-200 dark:bg-gray-600 text-gray-700 dark:text-gray-300'
                       : 'bg-blue-600 text-white hover:bg-blue-700'
-                    }`}
-                >
-                  {refining[persona.persona] ? 'Cancel' : 'Refine'}
-                </button>
+                      }`}
+                  >
+                    {refining[persona.persona] ? 'Cancel' : 'Refine'}
+                  </button>
+                </div>
               </div>
 
               <div className="space-y-4">
@@ -446,11 +758,88 @@ export function PersonasModal({ personas, onClose, onRefine }: PersonasModalProp
                   </p>
                 </div>
               )}
+
+              {editingPersona[persona.persona] && (
+                <div ref={el => { manualEditRefs.current[persona.persona] = el; }} className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-600">
+                  <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
+                    Manual Edit (JSON)
+                  </label>
+                  <textarea
+                    value={editedPersonaJson[persona.persona] || ''}
+                    onChange={(e) => handlePersonaJsonChange(persona.persona, e.target.value)}
+                    className="w-full h-64 px-4 py-3 bg-gray-50 dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-md text-sm font-mono text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-purple-500 dark:focus:ring-purple-400"
+                    spellCheck={false}
+                  />
+                  {personaJsonError[persona.persona] && (
+                    <div className="mt-2 p-3 bg-red-50 dark:bg-red-900/20 border border-red-300 dark:border-red-800 rounded-md">
+                      <p className="text-sm text-red-700 dark:text-red-400">{personaJsonError[persona.persona]}</p>
+                    </div>
+                  )}
+
+                  <div className="mt-4 p-4 bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800 rounded-md">
+                    <label className="flex items-start">
+                      <input
+                        type="checkbox"
+                        checked={personaResynthesizeChecked[persona.persona] || false}
+                        onChange={(e) => setPersonaResynthesizeChecked(prev => ({
+                          ...prev,
+                          [persona.persona]: e.target.checked
+                        }))}
+                        className="mt-0.5 mr-3"
+                      />
+                      <div className="flex-1">
+                        <span className="text-sm font-medium text-gray-900 dark:text-gray-100">
+                          Resynthesize final decision record
+                        </span>
+                        <p className="text-xs text-gray-600 dark:text-gray-400 mt-1">
+                          If checked, the AI will synthesize a new final decision record from the edited persona.
+                          If unchecked, only the manual edit will be saved.
+                        </p>
+                      </div>
+                    </label>
+
+                    {personaResynthesizeChecked[persona.persona] && !loadingModels && providers.length > 0 && (
+                      <div className="mt-3">
+                        <SynthesisModelSelector
+                          providers={providers}
+                          selectedProviderId={personaSynthesisProviderId[persona.persona] || ''}
+                          onSelectProvider={(providerId) => setPersonaSynthesisProviderId(prev => ({
+                            ...prev,
+                            [persona.persona]: providerId
+                          }))}
+                          label="Synthesis Model"
+                          helpText="Model used to synthesize the final decision record"
+                        />
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="mt-3 flex gap-2">
+                    <button
+                      onClick={() => handleSaveIndividualPersona(persona.persona)}
+                      disabled={!editedPersonaJson[persona.persona]?.trim()}
+                      className="px-4 py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700 disabled:bg-gray-400 dark:disabled:bg-gray-600 disabled:cursor-not-allowed transition-colors font-medium text-sm"
+                    >
+                      {personaResynthesizeChecked[persona.persona] ? 'Save & Resynthesize' : 'Save Changes'}
+                    </button>
+                    <button
+                      onClick={() => handleTogglePersonaEdit(persona.persona, persona)}
+                      className="px-4 py-2 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 rounded-md hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors font-medium text-sm"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                  <p className="mt-2 text-xs text-gray-600 dark:text-gray-400">
+                    Edit this persona&apos;s JSON directly. {personaResynthesizeChecked[persona.persona] ? 'The final ADR will be resynthesized after saving.' : 'Changes are saved without AI regeneration.'}
+                  </p>
+                </div>
+              )}
             </div>
           ))}
         </div>
 
-        {hasChanges && (
+              {/* Footer for refinement mode */}
+              {!isManualEditMode && hasChanges && (
           <div className="flex-shrink-0 bg-gray-50 dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700 p-4">
             <div className="space-y-2">
               <button
@@ -472,6 +861,30 @@ export function PersonasModal({ personas, onClose, onRefine }: PersonasModalProp
               </button>
             </div>
           </div>
+        )}
+
+            {/* Footer for manual edit mode */}
+            {isManualEditMode && (
+              <div className="flex-shrink-0 bg-gray-50 dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700 p-4">
+                <div className="space-y-2">
+                  <button
+                    onClick={validateAndSaveManualEdit}
+                    disabled={isSaving || !editedPersonasJson.trim()}
+                    className="w-full bg-green-600 text-white px-6 py-3 rounded-md hover:bg-green-700 disabled:bg-gray-400 dark:disabled:bg-gray-600 disabled:cursor-not-allowed transition-colors font-medium"
+                  >
+                    {isSaving ? 'Saving...' : resynthesizeChecked ? 'Save & Resynthesize' : 'Save Manual Edits'}
+                  </button>
+                  <button
+                    onClick={handleCancelManualEdit}
+                    disabled={isSaving}
+                    className="w-full bg-transparent text-gray-600 dark:text-gray-400 px-6 py-2 rounded-md hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors text-sm disabled:opacity-50"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            )}
+          </>
         )}
       </div>
     </div>
