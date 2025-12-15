@@ -54,12 +54,12 @@ describe('useNotifications', () => {
     expect(typeof result.current.sendNotification).toBe('function');
   });
 
-  it('should handle missing Notification API', () => {
+  it('should handle missing Notification API', async () => {
     global.Notification = undefined as any;
 
     const { result } = renderHook(() => useNotifications());
     
-    waitFor(() => {
+    await waitFor(() => {
       expect(result.current.isSupported).toBe(false);
     });
   });
