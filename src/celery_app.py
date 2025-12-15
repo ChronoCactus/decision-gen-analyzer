@@ -1107,6 +1107,164 @@ Considered Options:
         raise
 
 
+@celery_app.task(bind=True)
+def resynthesize_from_personas_task(
+    self,
+    adr_id: str,
+    synthesis_provider_id: str = None,  # Provider for synthesis step
+):
+    """Celery task for resynthesizing the final ADR from manually edited persona responses.
+
+    This task takes the existing persona responses (which may have been manually edited)
+    and synthesizes a new final decision record from them without regenerating the personas.
+
+    Args:
+        adr_id: ID of the ADR to resynthesize
+        synthesis_provider_id: Optional provider ID for synthesis generation
+    """
+    try:
+        import asyncio
+
+        from src.adr_file_storage import get_adr_storage
+        from src.adr_generation import ADRGenerationService
+        from src.lightrag_client import LightRAGClient
+        from src.llama_client import LlamaCppClient
+        from src.persona_manager import PersonaManager
+        from src.websocket_broadcaster import get_broadcaster
+
+        # Publish task started status
+        async def _publish_task_started():
+            broadcaster = get_broadcaster()
+            await broadcaster.publish_task_status(
+                task_id=self.request.id,
+                task_name="resynthesize_from_personas_task",
+                status="active",
+                position=None,
+                message="Starting resynthesis from manual edits",
+            )
+
+            # Track task in monitor for fast queue status
+            from src.task_queue_monitor import get_task_queue_monitor
+
+            monitor = get_task_queue_monitor()
+            await monitor.track_task_started(
+                task_id=self.request.id,
+                task_name="resynthesize_from_personas_task",
+                args=(adr_id,),
+                kwargs={"synthesis_provider_id": synthesis_provider_id},
+            )
+
+        asyncio.run(_publish_task_started())
+
+        self.update_state(state="PROGRESS", meta={"message": "Loading ADR"})
+
+        async def _resynthesize():
+            # Use single client for synthesis (no parallel processing needed)
+            llama_client = LlamaCppClient(demo_mode=False)
+            lightrag_client = LightRAGClient(demo_mode=False)
+            persona_manager = PersonaManager()
+
+            # Initialize the service
+            generation_service = ADRGenerationService(
+                llama_client=llama_client,
+                lightrag_client=lightrag_client,
+                persona_manager=persona_manager,
+            )
+
+            # Load the existing ADR (use asyncio.to_thread for blocking I/O)
+            storage = get_adr_storage()
+            adr = await asyncio.to_thread(storage.get_adr, adr_id)
+
+            if not adr:
+                raise ValueError(f"ADR not found: {adr_id}")
+
+            if not adr.persona_responses:
+                raise ValueError(f"ADR {adr_id} has no persona responses to synthesize")
+
+            self.update_state(
+                state="PROGRESS",
+                meta={"message": "Synthesizing from edited personas"},
+            )
+
+            # Synthesize using the existing (possibly manually edited) persona responses
+            async with llama_client:
+                synthesized_adr = (
+                    await generation_service.synthesize_from_existing_personas(
+                        adr,
+                        synthesis_provider_id=synthesis_provider_id,
+                    )
+                )
+
+            self.update_state(
+                state="PROGRESS",
+                meta={"message": "Saving resynthesized ADR"},
+            )
+
+            # Save the updated ADR (use asyncio.to_thread for blocking I/O)
+            await asyncio.to_thread(storage.save_adr, synthesized_adr)
+
+            # Broadcast completion
+            broadcaster = get_broadcaster()
+            await broadcaster.publish_upload_status(
+                adr_id=adr_id,
+                status="completed",
+                message="Resynthesis completed",
+            )
+
+            # Track task completion
+            from src.task_queue_monitor import get_task_queue_monitor
+
+            monitor = get_task_queue_monitor()
+            await monitor.track_task_completed(self.request.id)
+
+            return {
+                "adr_id": adr_id,
+                "title": synthesized_adr.metadata.title,
+                "updated_at": synthesized_adr.metadata.updated_at.isoformat(),
+            }
+
+        # Run the async resynthesis
+        result = asyncio.run(_resynthesize())
+        return result
+
+    except Exception as e:
+        # Log the full error for debugging
+        import traceback
+
+        logger.error(
+            "Error in resynthesize_from_personas_task",
+            adr_id=adr_id,
+            error=str(e),
+            error_type=type(e).__name__,
+            traceback=traceback.format_exc(),
+        )
+
+        # Publish task failed status
+        async def _publish_task_failed(error: Exception):
+            broadcaster = get_broadcaster()
+            await broadcaster.publish_task_status(
+                task_id=self.request.id,
+                task_name="resynthesize_from_personas_task",
+                status="failed",
+                position=None,
+                message=f"Error: {str(error)}",
+            )
+
+            # Track task completion even on failure
+            from src.task_queue_monitor import get_task_queue_monitor
+
+            monitor = get_task_queue_monitor()
+            await monitor.track_task_completed(self.request.id)
+
+        asyncio.run(_publish_task_failed(e))
+
+        # Properly handle exceptions for Celery serialization
+        error_msg = str(e)
+        self.update_state(state="FAILURE", meta={"error": error_msg})
+        # Re-raise the original exception to preserve type info
+        raise
+
+
 @celery_app.task(bind=True, name="monitor_upload_status")
 def monitor_upload_status_task(self, adr_id: str, track_id: str):
     """Monitor LightRAG upload status and update cache when complete.

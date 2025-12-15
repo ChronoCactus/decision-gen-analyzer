@@ -1064,3 +1064,192 @@ class TestTagRoutes:
         response = client.post(f"/api/v1/adrs/{uuid4()}/tags", json={"tag": "new-tag"})
 
         assert response.status_code == 404
+
+
+class TestManualEditingRoutes:
+    """Test manual editing routes."""
+
+    @patch("src.celery_app.resynthesize_from_personas_task")
+    @patch("src.adr_file_storage.get_adr_storage")
+    def test_save_manual_persona_edits_without_resynthesize(
+        self, mock_get_storage, mock_task
+    ):
+        """Test saving manual persona edits without resynthesis."""
+        adr = ADR.create(
+            title="Test ADR",
+            context_and_problem="Problem",
+            decision_outcome="Decision",
+            consequences="Consequences",
+        )
+        adr.persona_responses = [
+            {"persona": "technical_lead", "perspective": "Original perspective"}
+        ]
+
+        mock_storage = MagicMock()
+        mock_storage.get_adr.return_value = adr
+        mock_storage.save_adr.return_value = None
+        mock_get_storage.return_value = mock_storage
+
+        client = TestClient(app)
+        edited_personas = [
+            {"persona": "technical_lead", "perspective": "Edited perspective"}
+        ]
+        response = client.post(
+            f"/api/v1/adrs/{adr.metadata.id}/manual-persona-edits",
+            json={
+                "persona_responses": edited_personas,
+                "resynthesize": False,
+            },
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["status"] == "completed"
+        assert "no resynthesis" in data["message"].lower()
+        mock_storage.save_adr.assert_called_once()
+        mock_task.delay.assert_not_called()
+
+    @patch("src.celery_app.resynthesize_from_personas_task")
+    @patch("src.adr_file_storage.get_adr_storage")
+    def test_save_manual_persona_edits_with_resynthesize(
+        self, mock_get_storage, mock_task
+    ):
+        """Test saving manual persona edits with resynthesis."""
+        adr = ADR.create(
+            title="Test ADR",
+            context_and_problem="Problem",
+            decision_outcome="Decision",
+            consequences="Consequences",
+        )
+        adr.persona_responses = [
+            {"persona": "technical_lead", "perspective": "Original perspective"}
+        ]
+
+        mock_storage = MagicMock()
+        mock_storage.get_adr.return_value = adr
+        mock_storage.save_adr.return_value = None
+        mock_get_storage.return_value = mock_storage
+
+        mock_celery_task = MagicMock()
+        mock_celery_task.id = "task-123"
+        mock_task.delay.return_value = mock_celery_task
+
+        client = TestClient(app)
+        edited_personas = [
+            {"persona": "technical_lead", "perspective": "Edited perspective"}
+        ]
+        response = client.post(
+            f"/api/v1/adrs/{adr.metadata.id}/manual-persona-edits",
+            json={
+                "persona_responses": edited_personas,
+                "resynthesize": True,
+                "synthesis_provider_id": "provider-1",
+            },
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["status"] == "queued"
+        assert data["task_id"] == "task-123"
+        assert "resynthesis queued" in data["message"].lower()
+        mock_storage.save_adr.assert_called_once()
+        mock_task.delay.assert_called_once()
+
+    @patch("src.adr_file_storage.get_adr_storage")
+    def test_save_manual_persona_edits_nonexistent_adr(self, mock_get_storage):
+        """Test saving manual persona edits for non-existent ADR."""
+        mock_storage = MagicMock()
+        mock_storage.get_adr.return_value = None
+        mock_get_storage.return_value = mock_storage
+
+        client = TestClient(app)
+        response = client.post(
+            f"/api/v1/adrs/{uuid4()}/manual-persona-edits",
+            json={
+                "persona_responses": [{"persona": "test", "perspective": "test"}],
+                "resynthesize": False,
+            },
+        )
+
+        assert response.status_code == 404
+
+    @patch("src.adr_file_storage.get_adr_storage")
+    def test_save_manual_adr_edit(self, mock_get_storage):
+        """Test saving manual ADR content edit."""
+        adr = ADR.create(
+            title="Test ADR",
+            context_and_problem="Original problem",
+            decision_outcome="Original decision",
+            consequences="Original consequences",
+        )
+
+        mock_storage = MagicMock()
+        mock_storage.get_adr.return_value = adr
+        mock_storage.save_adr.return_value = None
+        mock_get_storage.return_value = mock_storage
+
+        client = TestClient(app)
+        edited_content = {
+            "context_and_problem": "Edited problem",
+            "decision_outcome": "Edited decision",
+            "consequences": "Edited consequences",
+        }
+        response = client.patch(
+            f"/api/v1/adrs/{adr.metadata.id}/manual-edit",
+            json={"content": edited_content},
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert "saved successfully" in data["message"].lower()
+        mock_storage.save_adr.assert_called_once()
+
+        # Verify the content was updated
+        saved_adr = mock_storage.save_adr.call_args[0][0]
+        assert saved_adr.content.context_and_problem == "Edited problem"
+        assert saved_adr.content.decision_outcome == "Edited decision"
+        assert saved_adr.content.consequences == "Edited consequences"
+
+    @patch("src.adr_file_storage.get_adr_storage")
+    def test_save_manual_adr_edit_nonexistent_adr(self, mock_get_storage):
+        """Test saving manual ADR edit for non-existent ADR."""
+        mock_storage = MagicMock()
+        mock_storage.get_adr.return_value = None
+        mock_get_storage.return_value = mock_storage
+
+        client = TestClient(app)
+        response = client.patch(
+            f"/api/v1/adrs/{uuid4()}/manual-edit",
+            json={
+                "content": {
+                    "context_and_problem": "Test",
+                    "decision_outcome": "Test",
+                    "consequences": "Test",
+                }
+            },
+        )
+
+        assert response.status_code == 404
+
+    @patch("src.adr_file_storage.get_adr_storage")
+    def test_save_manual_adr_edit_invalid_content(self, mock_get_storage):
+        """Test saving manual ADR edit with invalid content structure."""
+        adr = ADR.create(
+            title="Test ADR",
+            context_and_problem="Problem",
+            decision_outcome="Decision",
+            consequences="Consequences",
+        )
+
+        mock_storage = MagicMock()
+        mock_storage.get_adr.return_value = adr
+        mock_get_storage.return_value = mock_storage
+
+        client = TestClient(app)
+        # Missing required fields
+        response = client.patch(
+            f"/api/v1/adrs/{adr.metadata.id}/manual-edit",
+            json={"content": {"invalid_field": "value"}},
+        )
+
+        assert response.status_code == 400  # FastAPI returns 400 for validation errors

@@ -429,11 +429,21 @@ async def list_adrs(limit: int = 50, offset: int = 0):
 async def get_adr(adr_id: str):
     """Get a specific ADR by ID."""
     try:
-        # For now, return not found - we'll implement proper storage later
-        raise HTTPException(status_code=404, detail=f"ADR {adr_id} not found")
+        from src.adr_file_storage import get_adr_storage
+
+        storage = get_adr_storage()
+
+        # Get the ADR (run in thread pool - uses blocking file I/O)
+        adr = await asyncio.to_thread(storage.get_adr, adr_id)
+
+        if not adr:
+            raise HTTPException(status_code=404, detail=f"ADR {adr_id} not found")
+
+        return adr
     except HTTPException:
         raise
     except Exception as e:
+        logger.error(f"Failed to get ADR {adr_id}: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to get ADR: {str(e)}")
 
 
@@ -598,6 +608,143 @@ async def refine_original_prompt(adr_id: str, request: RefineOriginalPromptReque
         raise HTTPException(
             status_code=500,
             detail=f"Failed to queue original prompt refinement: {str(e)}",
+        )
+
+
+class ManualPersonaEditsRequest(BaseModel):
+    """Request model for manually editing persona responses."""
+
+    persona_responses: List[Dict[str, Any]]
+    resynthesize: bool = False
+    synthesis_provider_id: Optional[str] = Field(
+        default=None,
+        description="Provider ID for synthesis generation (if resynthesize=True)",
+    )
+
+
+@adr_router.post("/{adr_id}/manual-persona-edits", response_model=TaskResponse)
+async def save_manual_persona_edits(adr_id: str, request: ManualPersonaEditsRequest):
+    """Save manually edited persona responses and optionally resynthesize.
+
+    This endpoint allows direct manual editing of persona responses without regenerating them via AI.
+    If resynthesize=True, it will synthesize a new final decision record from the edited personas.
+    If resynthesize=False, it will just save the manual edits without any AI generation.
+
+    Args:
+        adr_id: The ADR ID to update
+        request: The manually edited persona responses and resynthesize flag
+
+    Returns:
+        TaskResponse with task_id if resynthesizing, or immediate success message
+    """
+    try:
+        from datetime import UTC, datetime
+
+        from src.adr_file_storage import get_adr_storage
+
+        storage = get_adr_storage()
+
+        # Get the ADR (run in thread pool - uses blocking file I/O)
+        adr = await asyncio.to_thread(storage.get_adr, adr_id)
+
+        if not adr:
+            raise HTTPException(status_code=404, detail=f"ADR {adr_id} not found")
+
+        # Update persona_responses with the manually edited data
+        adr.persona_responses = request.persona_responses
+        adr.metadata.updated_at = datetime.now(UTC)
+
+        # Save the updated ADR (run in thread pool - uses blocking file I/O)
+        await asyncio.to_thread(storage.save_adr, adr)
+
+        if request.resynthesize:
+            # Queue synthesis task using the manually edited personas
+            from src.celery_app import resynthesize_from_personas_task
+
+            task = resynthesize_from_personas_task.delay(
+                adr_id=adr_id,
+                synthesis_provider_id=request.synthesis_provider_id,
+            )
+
+            return TaskResponse(
+                task_id=task.id,
+                status="queued",
+                message="Manual edits saved and resynthesis queued",
+            )
+        else:
+            # Just return success without queuing any tasks
+            return TaskResponse(
+                task_id="",
+                status="completed",
+                message="Manual edits saved successfully (no resynthesis)",
+            )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to save manual persona edits: {e}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to save manual persona edits: {str(e)}"
+        )
+
+
+class ManualADREditRequest(BaseModel):
+    """Request model for manually editing the final ADR content."""
+
+    content: Dict[str, Any]
+
+
+@adr_router.patch("/{adr_id}/manual-edit")
+async def save_manual_adr_edit(adr_id: str, request: ManualADREditRequest):
+    """Save manually edited ADR content without any AI regeneration.
+
+    This endpoint allows direct manual editing of the final synthesized ADR content.
+    No AI regeneration or synthesis is triggered - this is a pure manual save operation.
+
+    Args:
+        adr_id: The ADR ID to update
+        request: The manually edited ADR content
+
+    Returns:
+        Success message with updated ADR
+    """
+    try:
+        from datetime import UTC, datetime
+
+        from src.adr_file_storage import get_adr_storage
+        from src.models import ADRContent
+
+        storage = get_adr_storage()
+
+        # Get the ADR (run in thread pool - uses blocking file I/O)
+        adr = await asyncio.to_thread(storage.get_adr, adr_id)
+
+        if not adr:
+            raise HTTPException(status_code=404, detail=f"ADR {adr_id} not found")
+
+        # Update content with manually edited data
+        # Use Pydantic to validate the content structure
+        try:
+            adr.content = ADRContent(**request.content)
+        except Exception as validation_error:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid ADR content structure: {str(validation_error)}",
+            )
+
+        adr.metadata.updated_at = datetime.now(UTC)
+
+        # Save the updated ADR (run in thread pool - uses blocking file I/O)
+        await asyncio.to_thread(storage.save_adr, adr)
+
+        logger.info(f"Saved manual edit for ADR {adr_id}")
+
+        return {"message": "Manual edit saved successfully", "adr": adr}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to save manual ADR edit: {e}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to save manual ADR edit: {str(e)}"
         )
 
 
