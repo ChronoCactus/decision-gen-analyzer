@@ -20,18 +20,21 @@ interface UsePWAUpdateStatusReturn {
  * - updateServiceWorker: function to manually trigger service worker update
  */
 export function usePWAUpdateStatus(): UsePWAUpdateStatusReturn {
-  const [status, setStatus] = useState<PWAUpdateStatus>("checking");
+  // Determine if we should skip service worker setup
+  const shouldSkipServiceWorker =
+    typeof window === "undefined" ||
+    !("serviceWorker" in navigator) ||
+    process.env.NODE_ENV === "development";
+
+  const [status, setStatus] = useState<PWAUpdateStatus>(
+    shouldSkipServiceWorker ? "current" : "checking"
+  );
   const [isInstalled, setIsInstalled] = useState(false);
   const [wb, setWb] = useState<Workbox | null>(null);
 
   useEffect(() => {
     // Only run in browser environment
-    if (
-      typeof window === "undefined" ||
-      !("serviceWorker" in navigator) ||
-      process.env.NODE_ENV === "development"
-    ) {
-      setStatus("current");
+    if (shouldSkipServiceWorker) {
       return;
     }
 
@@ -96,6 +99,7 @@ export function usePWAUpdateStatus(): UsePWAUpdateStatusReturn {
     return () => {
       // No cleanup needed for Workbox
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const updateServiceWorker = async () => {

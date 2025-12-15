@@ -58,7 +58,7 @@ describe('usePWAUpdateStatus', () => {
     expect(typeof result.current.updateServiceWorker).toBe('function');
   });
 
-  it('should return current status when service worker not supported', () => {
+  it('should return current status when service worker not supported', async () => {
     // Remove service worker support
     Object.defineProperty(navigator, 'serviceWorker', {
       writable: true,
@@ -67,6 +67,9 @@ describe('usePWAUpdateStatus', () => {
     });
 
     const { result } = renderHook(() => usePWAUpdateStatus());
-    expect(result.current.status).toBe('current');
+    
+    await waitFor(() => {
+      expect(result.current.status).toBe('current');
+    });
   });
 });

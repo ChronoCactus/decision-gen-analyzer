@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 
 export type NotificationPermission = "default" | "granted" | "denied";
 
@@ -21,16 +21,14 @@ interface UseNotificationsReturn {
  * - Check if notifications are supported
  */
 export function useNotifications(): UseNotificationsReturn {
-  const [permission, setPermission] = useState<NotificationPermission>("default");
-  const [isSupported, setIsSupported] = useState(false);
+  // Check notification support at initialization
+  const isBrowser = typeof window !== "undefined";
+  const hasNotificationAPI = isBrowser && "Notification" in window && !!window.Notification;
 
-  useEffect(() => {
-    // Check if notifications are supported
-    if (typeof window !== "undefined" && "Notification" in window) {
-      setIsSupported(true);
-      setPermission(Notification.permission as NotificationPermission);
-    }
-  }, []);
+  const [isSupported] = useState(hasNotificationAPI);
+  const [permission, setPermission] = useState<NotificationPermission>(
+    hasNotificationAPI ? (window.Notification.permission as NotificationPermission) : "default"
+  );
 
   const requestPermission = async (): Promise<NotificationPermission> => {
     if (!isSupported) {
