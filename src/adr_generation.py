@@ -1431,9 +1431,11 @@ class ADRGenerationService:
             progress_callback(f"Generating perspectives from {total_personas} personas")
 
         # Build prompts for all personas and create their specific clients
+        # Also track which provider each persona uses for per-provider semaphores
         persona_prompts = []
         persona_configs = []
         persona_clients = []
+        persona_provider_ids = []  # Track provider ID for each persona
 
         for persona_value in personas:
             persona_config = self.persona_manager.get_persona_config(persona_value)
@@ -1449,28 +1451,34 @@ class ADRGenerationService:
                 # 1) User override from persona_provider_overrides
                 # 2) Persona's configured model_config
                 # 3) Default provider
+                provider_id = None
                 if (
                     persona_provider_overrides
                     and persona_value in persona_provider_overrides
                 ):
+                    provider_id = persona_provider_overrides[persona_value]
                     logger.info(
-                        f"Using provider override for {persona_value}: {persona_provider_overrides[persona_value]}"
+                        f"Using provider override for {persona_value}: {provider_id}"
                     )
                     persona_client = await create_client_from_provider_id(
-                        persona_provider_overrides[persona_value], demo_mode=False
+                        provider_id, demo_mode=False
                     )
                 elif persona_config.model_config:
                     logger.info(f"Using persona-configured model for {persona_value}")
                     persona_client = create_client_from_persona_config(
                         persona_config, demo_mode=False
                     )
+                    # Persona config doesn't have a provider ID, use a unique identifier
+                    provider_id = f"persona_config_{persona_value}"
                 else:
                     logger.info(f"Using default client for {persona_value}")
                     persona_client = create_client_from_persona_config(
                         persona_config, demo_mode=False
                     )
+                    # Will get default provider ID later
 
                 persona_clients.append(persona_client)
+                persona_provider_ids.append(provider_id)
             else:
                 logger.warning(f"Skipping unknown persona: {persona_value}")
 
@@ -1481,40 +1489,62 @@ class ADRGenerationService:
             for value, config in persona_configs
         )
 
-        # Check default provider parallel settings
-        parallel_enabled = False
-        max_parallel = 2
-
+        # Get provider settings and create per-provider semaphores
         storage = get_provider_storage()
         default_provider = await storage.get_default()
-        if default_provider:
-            parallel_enabled = default_provider.parallel_requests_enabled
-            max_parallel = default_provider.max_parallel_requests
 
-        should_run_parallel = self.use_pool or has_custom_models or parallel_enabled
+        # Map provider IDs to their semaphores
+        provider_semaphores = {}
 
-        if should_run_parallel:
-            # Determine concurrency limit
-            concurrency_limit = total_personas
-            if parallel_enabled and not self.use_pool and not has_custom_models:
-                concurrency_limit = max_parallel
+        # Fill in None provider_ids with default provider
+        for i, provider_id in enumerate(persona_provider_ids):
+            if provider_id is None and default_provider:
+                persona_provider_ids[i] = default_provider.id
 
+        # Create semaphores for each unique provider
+        for provider_id in set(persona_provider_ids):
+            if provider_id and provider_id.startswith("persona_config_"):
+                # Persona with custom config - no limit (unique endpoint)
+                provider_semaphores[provider_id] = asyncio.Semaphore(1000)
+            elif provider_id:
+                # Fetch provider settings
+                provider = await storage.get(provider_id)
+                if provider and provider.parallel_requests_enabled:
+                    max_parallel = provider.max_parallel_requests
+                    provider_semaphores[provider_id] = asyncio.Semaphore(max_parallel)
+                    logger.info(
+                        f"Created semaphore for provider {provider_id}",
+                        max_parallel=max_parallel,
+                    )
+                else:
+                    # No parallel limit configured for this provider
+                    provider_semaphores[provider_id] = asyncio.Semaphore(1000)
+
+        should_run_parallel = (
+            self.use_pool or has_custom_models or any(provider_semaphores.values())
+        )
+
+        if should_run_parallel and provider_semaphores:
             logger.info(
-                "Using parallel generation for persona perspectives",
+                "Using parallel generation with per-provider concurrency limits",
                 persona_count=total_personas,
-                has_custom_models=has_custom_models,
-                provider_parallel_enabled=parallel_enabled,
-                concurrency_limit=concurrency_limit,
+                providers=list(set(persona_provider_ids)),
             )
 
-            semaphore = asyncio.Semaphore(concurrency_limit)
+            # Track persona states
+            responses = [None] * total_personas
+            completed_indices = set()
 
-            # Create tasks with indices for parallel execution with progress tracking
+            # Wrapper that uses the appropriate provider's semaphore
             async def generate_with_index(
-                idx: int, prompt_text: str, client: LlamaCppClient
+                idx: int, prompt_text: str, client: LlamaCppClient, provider_id: str
             ) -> tuple[int, str]:
                 """Generate response and return with index for ordering."""
                 try:
+                    # Use this provider's semaphore
+                    semaphore = provider_semaphores.get(
+                        provider_id, asyncio.Semaphore(1)
+                    )
                     async with semaphore:
                         async with client:
                             response = await client.generate(
@@ -1530,31 +1560,62 @@ class ADRGenerationService:
                     return (idx, "")
 
             tasks = [
-                generate_with_index(idx, prompt_text, client)
-                for idx, (prompt_text, client) in enumerate(
-                    zip(persona_prompts, persona_clients)
+                generate_with_index(idx, prompt_text, client, provider_id)
+                for idx, (prompt_text, client, provider_id) in enumerate(
+                    zip(persona_prompts, persona_clients, persona_provider_ids)
                 )
             ]
 
-            # Execute with progress tracking as each completes
-            responses = [None] * total_personas
-            completed_count = 0
+            # Show initial status BEFORE entering completion loop
+            if progress_callback:
+                # Calculate total potential parallelism across all providers
+                total_parallel = sum(
+                    sem._value
+                    for sem in provider_semaphores.values()
+                    if hasattr(sem, "_value")
+                )
+                actual_parallel = min(total_parallel, total_personas)
+                progress_callback(
+                    f"Starting generation of {total_personas} personas (up to {actual_parallel} parallel)"
+                )
 
+            # Process completions
             for coro in asyncio.as_completed(tasks):
                 idx, response = await coro
                 responses[idx] = response
-                completed_count += 1
+                completed_indices.add(idx)
 
                 if progress_callback:
-                    in_progress = total_personas - completed_count
                     persona_name = personas[idx].replace("_", " ").title()
+                    completed_count = len(completed_indices)
 
-                    if in_progress > 0:
-                        progress_callback(
-                            f"✓ {persona_name} completed ({completed_count}/{total_personas}), "
-                            f"{in_progress} in progress"
+                    # Calculate remaining personas
+                    remaining_indices = [
+                        i for i in range(total_personas) if i not in completed_indices
+                    ]
+
+                    if remaining_indices:
+                        # Show remaining personas (we can't know exact active count with per-provider semaphores,
+                        # so show all remaining up to a reasonable display limit)
+                        display_limit = min(10, len(remaining_indices))
+                        remaining_names = sorted(
+                            [
+                                personas[i].replace("_", " ").title()
+                                for i in remaining_indices[:display_limit]
+                            ]
                         )
+
+                        status_msg = f"✓ {persona_name} • {completed_count}/{total_personas} complete"
+                        if remaining_names:
+                            status_msg += "||" + "\n".join(
+                                [f"🔄 {p}" for p in remaining_names]
+                            )
+                            if len(remaining_indices) > display_limit:
+                                status_msg += f"\n... and {len(remaining_indices) - display_limit} more"
+
+                        progress_callback(status_msg)
                     else:
+                        # All done
                         progress_callback(
                             f"✓ All {total_personas} persona perspectives completed"
                         )
