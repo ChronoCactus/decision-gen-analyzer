@@ -1094,22 +1094,37 @@ export default function Home() {
                   : 0;
                 const showTimer = task.startTime && (task.status === 'queued' || task.status === 'progress');
 
+                // Parse multi-line status: "header||line1\nline2\nline3"
+                const [mainMessage, ...statusLines] = task.message.split('||');
+                const hasMultipleLines = statusLines.length > 0 && statusLines[0].trim();
+
                 return (
                   <div
                     key={taskId}
                     className="p-4 rounded-md bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800"
                   >
                     <div className="flex items-center justify-between gap-4">
-                      <div className="flex items-center gap-3 flex-1">
-                        <span className="text-sm font-medium text-gray-900 dark:text-gray-100">
-                          {task.status === 'queued' && '⏳ '}
-                          {task.status === 'progress' && '🔄 '}
-                          {task.message}
-                        </span>
-                        {showTimer && (
-                          <span className="text-sm font-semibold text-blue-700 dark:text-blue-300 bg-blue-100 dark:bg-blue-900/40 px-2.5 py-1 rounded-md whitespace-nowrap">
-                            {elapsedSeconds}s
+                      <div className="flex-1 space-y-2">
+                        <div className="flex items-center gap-3">
+                          <span className="text-sm font-medium text-gray-900 dark:text-gray-100">
+                            {task.status === 'queued' && '⏳ '}
+                            {task.status === 'progress' && '🔄 '}
+                            {mainMessage}
                           </span>
+                          {showTimer && (
+                            <span className="text-sm font-semibold text-blue-700 dark:text-blue-300 bg-blue-100 dark:bg-blue-900/40 px-2.5 py-1 rounded-md whitespace-nowrap">
+                              {elapsedSeconds}s
+                            </span>
+                          )}
+                        </div>
+                        {hasMultipleLines && (
+                          <div className="mt-2 ml-6 space-y-1.5 border-l-2 border-blue-300 dark:border-blue-700 pl-3">
+                            {statusLines[0].split('\n').filter(line => line.trim()).map((line, idx) => (
+                              <div key={idx} className="text-sm text-gray-700 dark:text-gray-300 font-medium">
+                                {line}
+                              </div>
+                            ))}
+                          </div>
                         )}
                       </div>
                     </div>
